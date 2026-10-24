@@ -4,9 +4,9 @@
 
 ---
 
-## 1. Dart ⇄ ネイティブ間の通信ブリッジ仕様
+## 1. Dart ⇄ ネイティブ間の通信ブリッジ仕様（Pigeon）
 
-完成したレスポンスボディ `Uint8List` を 1 リクエストにつき 1 往復でやり取りする（通信方式は Step 0-3 で確定、スキーマは Step 2-1 で確定）。
+通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、完成したレスポンスボディ `Uint8List`（Android `byte[]` / iOS `FlutterStandardTypedData`）を 1 リクエストにつき 1 往復でやり取りする（詳細スキーマは Step 2-1 で確定）。
 
 ### 通信データモデル
 
@@ -31,8 +31,10 @@
 
 ## 2. Android ネイティブ層仕様（`OkHttp3`）
 
+- **ターゲット・依存バージョン**:
+  - `minSdk = 24`（Android 7.0+）
+  - `com.squareup.okhttp3:okhttp:4.12.0`
 - **クライアント構成**:
-  - `com.squareup.okhttp3:okhttp` を使用する。
   - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MB ウィンドウ）を保持し、リクエスト単位のタイムアウト・リダイレクト設定は `client.newBuilder()` で適用する。
 - **一括受信処理**:
   - `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` を呼び出し、チャンク結合完了後に Dart へ 1 回で返却する。
@@ -50,12 +52,14 @@
 
 ## 3. iOS ネイティブ層仕様（`URLSession`）
 
+- **ターゲット・パッケージ構成**:
+  - 最小 Deployment Target: `iOS 13.0+`
+  - パッケージ管理: Swift Package Manager（SPM）および CocoaPods 両対応
 - **クライアント構成・一括受信処理**:
-  - `NSURLSessionDataDelegate` は使用せず、`URLSession` の `data(for: request)` または `dataTask(with: request, completionHandler:)` を使用する。
+  - `NSURLSessionDataDelegate` は使用せず、`URLSession` の `dataTask(with: request, completionHandler:)` を使用する。
   - CFNetwork 層で結合済みの `Data` を 1 回だけ Dart へ返却する。
 - **ライフサイクル・並行管理**:
-  - `requestId` と `URLSessionDataTask`（または Swift `Task`）をスレッドセーフに辞書管理し、`cancelRequest(requestId)` で `task.cancel()` を呼ぶ。
-  - Swift Package Manager（SPM）および CocoaPods に対応する。
+  - `requestId` と `URLSessionDataTask` をスレッドセーフに辞書管理し、`cancelRequest(requestId)` で `task.cancel()` を呼ぶ。
 - **エラー分類**:
   - `URLError.cancelled` → `cancel`
   - `URLError.timedOut` → `connectionTimeout` / `receiveTimeout`
