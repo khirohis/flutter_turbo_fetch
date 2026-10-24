@@ -27,7 +27,7 @@ Flutter（`package:dio`）において、数十KB〜数百KB以上の中〜大�
 | :--- | :--- | :--- | :--- |
 | **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart 側**<br>（細切れ往復） | **不採用（比較ベースラインとして使用）**<br>`StreamedResponse` 仕様のためチャンク単位の FFI 往復と iOS ヘッダ受信時の一時停止が解消できない。 |
 | **`ok_http`** | Android: `OkHttp` (`jnigen`) | **Dart 側**<br>（ストリーム読出） | **不採用**<br>これも `package:http` のストリーミング実装であり、一括 `response.body.bytes()` の恩恵を受けられない。 |
-| **`rhttp`** | 全 OS: Rust `reqwest` + `tokio` | **Rust 側で一括結合可** | **要比較検討（Step 0-1）**<br>Rust スレッドで一括バイト結合して FFI 返却する機能（`Body.bytes`）を持つ唯一の既存パッケージ。ただし Rust バイナリ同梱（数 MB 増）や OS 標準 TLS キャッシュ非利用、Dio 互換レイヤー経由時の挙動に注意が必要。 |
+| **`rhttp`** | 全 OS: Rust `reqwest` + `tokio` | **Rust 側で一括結合可** | **不採用（Step 0-1 にて確定）**<br>Rust スレッドで一括バイト結合して FFI 返却する機能（`Body.bytes`）を持つが、Rust バイナリ同梱によるアプリサイズ増加（数 MB）、OS 標準 TLS セッションキャッシュ・証明書ストア・プロキシ統合の非利用、Rust ビルド依存のコストから不採用。 |
 | **`flutter_turbo_fetch`**<br>（本プラグイン） | **Android: `OkHttp`**<br>**iOS: `URLSession.data(for:)`** | **各 OS ネイティブ側で一括結合** | **本命アーキテクチャ**<br>OS 標準/定番の軽量スタックを用い、チャンク結合までをネイティブのバックグラウンドスレッドで完結させ、完成した `Uint8List` を 1 回だけ Dart へ渡す。 |
 
 ---
@@ -45,10 +45,10 @@ Flutter（`package:dio`）において、数十KB〜数百KB以上の中〜大�
 
 ---
 
-## 4. Dart ⇄ ネイティブ通信ブリッジ方式の比較背景（Step 0-3 用）
+## 4. Dart ⇄ ネイティブ通信ブリッジ方式の比較背景（Step 0-3 にて案Aに確定）
 
-- **案A: Pigeon / MethodChannel (`StandardMessageCodec`)**
+- **案A（採用）: Pigeon (`StandardMessageCodec` + 型安全コード生成)**
   - Android の `byte[]` / iOS の `FlutterStandardTypedData(bytes: Data)` として 1 回返却する。
-  - チャンク毎ではなく **1 リクエストにつき 1 往復のみ** であるため、Channel のシリアライズ/エンベロープオーバーヘッドは極小であり、スレッド安全性・保守性が非常に高い（Android/iOS のバックグラウンドスレッドからの返却方法やメモリコピー回数を確認する）。
-- **案B: FFI / JNI (`jnigen` / `ffigen`)**
-  - メモリコピー回数をさらに 1 回削減できる可能性があるが、非同期コールバックのライフサイクル管理や GC 連動（Finalizer）、スレッド制御の複雑性が大幅に増す。
+  - チャンク毎ではなく **1 リクエストにつき 1 往復のみ** であるため、Channel のシリアライズ/メモリコピー（100KB で約 0.02〜0.05ms）のオーバーヘッドは極小であり、バックグラウンドスレッドからのコールバック返却・スレッド安全性・型安全な保守性に優れる。
+- **案B（不採用）: FFI / JNI (`jnigen` / `ffigen`)**
+  - メモリコピー回数をさらに 1 回削減できる可能性があるが、非同期コールバックのライフサイクル管理や GC 連動（Finalizer）、スレッド制御の複雑性が大幅に増すため見送り。

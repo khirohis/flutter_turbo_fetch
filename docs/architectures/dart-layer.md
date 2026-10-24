@@ -1,6 +1,6 @@
-# Dart 層設計（Dio Adapter & ZeroCopyJsonTransformer）
+# Dart 層設計（`TurboHttpAdapter` & `TurboTransformer`）
 
-本ドキュメントでは、Dart 層で提供する公開 API（Dio 用 `HttpClientAdapter` と `ZeroCopyJsonTransformer`）の責務およびフォールバック仕様を定義する。
+本ドキュメントでは、Dart 層で提供する公開 API（Dio 用 `TurboHttpAdapter` と `TurboTransformer`）の責務およびフォールバック仕様を定義する。
 
 ---
 
@@ -10,18 +10,19 @@
 
 ```dart
 final dio = Dio();
-dio.httpClientAdapter = NativeBatchHttpAdapter(); // 仮称（Step 0-2 / 2-4 で正式名称確定）
-dio.transformer = ZeroCopyJsonTransformer();
+dio.httpClientAdapter = TurboHttpAdapter();
+dio.transformer = TurboTransformer();
 ```
 
 ---
 
-## 2. Dio `HttpClientAdapter` の責務とスコープ（Step 0-2）
+## 2. `TurboHttpAdapter`（Dio `HttpClientAdapter`）の責務とスコープ
 
 ### 2.1 サポート対象（ネイティブ一括受信経路）
 
+- **対応プラットフォーム**: Android / iOS（それ以外の OS で実行された場合は `UnsupportedError` をスローする）
 - **HTTP メソッド**: GET / POST / PUT / DELETE / PATCH / HEAD 等の基本メソッド
-- **リクエスト**: リクエストヘッダ、リクエストボディ（`Stream<Uint8List>` を `Uint8List` として集約）
+- **リクエスト**: リクエストヘッダ、リクエストボディ（`Stream<Uint8List>` をサイズ制限なしで `Uint8List` として集約）
 - **レスポンス**: ステータスコード、レスポンスヘッダ、一括受信ボディ（単一チャンクの `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` として返却）
 - **制御機能**:
   - タイムアウト制御（`connectTimeout`, `receiveTimeout`, `sendTimeout`）
@@ -30,7 +31,7 @@ dio.transformer = ZeroCopyJsonTransformer();
 
 ### 2.2 除外・自動フォールバック対象
 
-- `options.responseType == ResponseType.stream` 等による SSE / 無期限ストリーミング受信、または巨大ファイルのストリームアップロードなど、一括受信に適さないリクエストは、内部で保持する標準 `IOHttpClientAdapter` へ**自動フォールバック**する設計とする。
+- `options.responseType == ResponseType.stream`（SSE / ストリーミング受信）が指定された場合のみ、内部で保持する標準 `IOHttpClientAdapter` へ**自動フォールバック**する。
 
 ### 2.3 エラーハンドリング（`DioException` マッピング）
 
@@ -39,13 +40,16 @@ dio.transformer = ZeroCopyJsonTransformer();
 
 ---
 
-## 3. `ZeroCopyJsonTransformer` の設計仕様
+## 3. `TurboTransformer` の設計仕様
 
-ネイティブアダプタから渡された単一チャンクの `Uint8List` を、Main Isolate をブロックせず最小のコピーコストで JSON パースする。
+`TurboHttpAdapter` から渡された単一チャンクの `Uint8List` を、Main Isolate をブロックせず最小のコピーコストで **バイト列・テキスト・JSON パースオブジェクトの 3 種類** に変換する。
 
 - **単一チャンクのゼロコピー受領**: `BytesBuilder(copy: false)` でストリームから `Uint8List` を取り出す。
-- **直接 UTF-8 + JSON 変換**: `utf8.decoder.fuse(json.decoder)` を使用し、中間 `String` を生成せずにバイト列から直接デコードする。
-- **サイズ閾値による分岐（デフォルト 24KB）**:
+- **取得データ種別ごとの変換処理**:
+  1. **バイト列 (`ResponseType.bytes` → `Uint8List`)**: 取り出した単一チャンクの `Uint8List` をそのまま O(1) ゼロコピーで返却する。
+  2. **テキスト (`ResponseType.plain` → `String`)**: 閾値未満は Main Isolate で `utf8.decode`、閾値以上は Isolate オフロードでデコードして返却する。
+  3. **JSON パースオブジェクト (`ResponseType.json` → `dynamic`)**: `utf8.decoder.fuse(json.decoder)` を使用し、中間 `String` を生成せずにバイト列から直接デコードする（閾値未満は Main Isolate、閾値以上は Isolate オフロード）。
+- **Isolate オフロード制御（閾値デフォルト 24KB / セマフォデフォルト最大同時 3）**:
   - **閾値未満**: Isolate 起動コスト（約 0.5〜1.5ms）を回避するため、Main Isolate で同期変換する。
-  - **閾値以上**: セマフォ（デフォルト最大同時 3）制御のもと、行きは `TransferableTypedData`、帰りは `Isolate.run`（`Isolate.exit`）により往復 O(1) ゼロコピーでオフロードする。
-- **リファレンス実装**: 詳細な設計解説とコードは [`docs/references/zero-copy-json-transformer.md`](../references/zero-copy-json-transformer.md) を参照。
+  - **閾値以上**: セマフォ制御のもと、行きは `TransferableTypedData`、帰りは `Isolate.run`（`Isolate.exit`）により往復 O(1) ゼロコピーでオフロードする。
+- **リファレンス実装**: 詳細な設計解説とコードは [`docs/references/turbo-transformer.md`](../references/turbo-transformer.md) を参照。
