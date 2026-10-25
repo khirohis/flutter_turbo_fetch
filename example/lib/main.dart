@@ -104,6 +104,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
   BenchmarkPreset _selectedPreset = BenchmarkPreset.turboFetch;
   int _concurrency = 15;
   ResponseType _responseType = ResponseType.json;
+  bool _allowBadCertificates = true;
   bool _isRunning = false;
   final List<BenchmarkResult> _results = [];
 
@@ -161,18 +162,35 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
 
     switch (preset) {
       case BenchmarkPreset.ioHttp1:
-        dio.httpClientAdapter = IOHttpClientAdapter();
+        dio.httpClientAdapter = IOHttpClientAdapter(
+          createHttpClient: () {
+            final client = HttpClient();
+            if (_allowBadCertificates) {
+              client.badCertificateCallback = (cert, host, port) => true;
+            }
+            return client;
+          },
+        );
         dio.transformer = BackgroundTransformer();
       case BenchmarkPreset.dioHttp2:
         dio.httpClientAdapter = Http2Adapter(
-          ConnectionManager(idleTimeout: const Duration(seconds: 15)),
+          ConnectionManager(
+            idleTimeout: const Duration(seconds: 15),
+            onClientCreate: (_, config) {
+              if (_allowBadCertificates) {
+                config.onBadCertificate = (_) => true;
+              }
+            },
+          ),
         );
         dio.transformer = BackgroundTransformer();
       case BenchmarkPreset.nativeDio:
         dio.httpClientAdapter = NativeAdapter();
         dio.transformer = BackgroundTransformer();
       case BenchmarkPreset.turboFetch:
-        dio.httpClientAdapter = TurboHttpAdapter();
+        dio.httpClientAdapter = TurboHttpAdapter(
+          allowBadCertificates: _allowBadCertificates,
+        );
         dio.transformer = TurboTransformer();
     }
     return dio;
@@ -374,7 +392,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Allow self-signed certificates (for local mock server)',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    value: _allowBadCertificates,
+                    onChanged: _isRunning
+                        ? null
+                        : (v) => setState(() => _allowBadCertificates = v),
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(

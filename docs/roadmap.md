@@ -43,9 +43,10 @@
 - [x] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
   - **完了事項**:
     - `FlutterTurboFetchPlugin.swift` にて `URLSessionDataDelegate` を使わず、`URLSession.dataTask(with: request, completionHandler:)` を用いて CFNetwork 層で一括結合された `Data` を 1 回で Dart へ返却する処理を実装（`httpMaximumConnectionsPerHost` 設定、`NSLock` による `URLSessionDataTask` 辞書管理・`cancelRequest`、`URLError` 分類、および `allowBadCertificates` / `followRedirects` 制御を含む）。
-- [ ] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
-  - ネイティブから受け取った `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で Dio へ渡し、`TurboTransformer` へ流す一気通貫パイプラインを動かす。
-  - `example/` アプリ上でベースライン（①〜③）との並列通信パフォーマンス比較を行う。
+- [x] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
+  - **完了事項**:
+    - `TurboHttpAdapter.fetch` にて Pigeon `TurboFetchHostApi` を呼び出し、リクエストボディ結合・ヘッダ変換・`cancelFuture` 連動・ネイティブからの一括 `Uint8List` 受領（`ResponseBody.fromBytes`）および `DioExceptionType` マッピングを結合。
+    - `example/` アプリからベースライン（①〜③）と `TurboHttpAdapter` + `TurboTransformer`（④）を同一条件（自己署名証明書許可スイッチ付き）で比較できる一気通貫パイプラインを完成。
 
 ---
 
