@@ -24,6 +24,8 @@ class TurboHttpRequest {
     this.sendTimeoutMs,
     required this.followRedirects,
     required this.maxRedirects,
+    required this.maxRequestsPerHost,
+    required this.allowBadCertificates,
   });
 
   final String requestId;
@@ -36,6 +38,8 @@ class TurboHttpRequest {
   final int? sendTimeoutMs;
   final bool followRedirects;
   final int maxRedirects;
+  final int maxRequestsPerHost;
+  final bool allowBadCertificates;
 }
 
 class TurboHttpResponse {

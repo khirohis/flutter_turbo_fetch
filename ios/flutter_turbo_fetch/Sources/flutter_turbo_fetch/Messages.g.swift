@@ -76,6 +76,8 @@ struct TurboHttpRequest {
   var sendTimeoutMs: Int64? = nil
   var followRedirects: Bool
   var maxRedirects: Int64
+  var maxRequestsPerHost: Int64
+  var allowBadCertificates: Bool
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -90,6 +92,8 @@ struct TurboHttpRequest {
     let sendTimeoutMs: Int64? = nilOrValue(pigeonVar_list[7])
     let followRedirects = pigeonVar_list[8] as! Bool
     let maxRedirects = pigeonVar_list[9] as! Int64
+    let maxRequestsPerHost = pigeonVar_list[10] as! Int64
+    let allowBadCertificates = pigeonVar_list[11] as! Bool
 
     return TurboHttpRequest(
       requestId: requestId,
@@ -101,7 +105,9 @@ struct TurboHttpRequest {
       receiveTimeoutMs: receiveTimeoutMs,
       sendTimeoutMs: sendTimeoutMs,
       followRedirects: followRedirects,
-      maxRedirects: maxRedirects
+      maxRedirects: maxRedirects,
+      maxRequestsPerHost: maxRequestsPerHost,
+      allowBadCertificates: allowBadCertificates
     )
   }
   func toList() -> [Any?] {
@@ -116,6 +122,8 @@ struct TurboHttpRequest {
       sendTimeoutMs,
       followRedirects,
       maxRedirects,
+      maxRequestsPerHost,
+      allowBadCertificates,
     ]
   }
 }
