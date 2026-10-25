@@ -40,9 +40,9 @@
   - **完了事項**:
     - `android/build.gradle.kts` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient`（`ConnectionPool`、`Dispatcher.maxRequestsPerHost = 32` デフォルト＋指定値に応じた `maxRequests` 自動引き上げ）を構成。
     - `FlutterTurboFetchPlugin.kt` にて `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body?.bytes()` による一括結合を行い、`Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する処理を実装（`allowBadCertificates` オプションおよび `cancelRequest` 対応を含む）。
-- [ ] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
-  - Plugin の `ios/` にて、`URLSession` の `dataTask(with: request, completionHandler:)` を実装する。
-  - デリゲート（`didReceiveData:`）を使わず、CFNetwork 層で結合済みの `Data` を 1 回で Dart へ返す実装を作る。
+- [x] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
+  - **完了事項**:
+    - `FlutterTurboFetchPlugin.swift` にて `URLSessionDataDelegate` を使わず、`URLSession.dataTask(with: request, completionHandler:)` を用いて CFNetwork 層で一括結合された `Data` を 1 回で Dart へ返却する処理を実装（`httpMaximumConnectionsPerHost` 設定、`NSLock` による `URLSessionDataTask` 辞書管理・`cancelRequest`、`URLError` 分類、および `allowBadCertificates` / `followRedirects` 制御を含む）。
 - [ ] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
   - ネイティブから受け取った `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で Dio へ渡し、`TurboTransformer` へ流す一気通貫パイプラインを動かす。
   - `example/` アプリ上でベースライン（①〜③）との並列通信パフォーマンス比較を行う。
