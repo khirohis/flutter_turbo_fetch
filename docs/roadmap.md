@@ -17,7 +17,7 @@
     - **`TurboHttpAdapter` の必須スコープ**: GET/POST/PUT/DELETE/PATCH/HEAD 等の基本メソッド、リクエストヘッダ/ボディ（サイズ制限なしで `Uint8List` 化）、レスポンスヘッダ/ステータスコード/一括ボディ（`Uint8List`）、タイムアウト制御（connect/receive/send）、キャンセル（`CancelToken` 連動）、リダイレクト追従設定。
     - **フォールバック・プラットフォーム仕様**: `ResponseType.stream` のみ標準 `IOHttpClientAdapter` へ自動フォールバックする。また、Android / iOS 以外のプラットフォームで実行された場合は `UnsupportedError` をスローする。
 - [x] **0-3. Dart ⇄ ネイティブ間の通信ブリッジ方式の選定**
-  - **決定事項**: **Pigeon（`StandardMessageCodec` ベースの型安全コード生成）** を採用する。1 リクエスト 1 往復のみのためメモリコピーコストは無視できる水準であり、バックグラウンドスレッドからの 안전한コールバック返却と Dart/Kotlin/Swift 間の型安全性を優先する（[`docs/architectures/native-layer.md`](architectures/native-layer.md) および [`docs/references/design-rationale.md`](references/design-rationale.md) 参照）。
+  - **決定事項**: **Pigeon（`StandardMessageCodec` ベースの型安全コード生成）** を採用する。1 リクエスト 1 往復のみのためメモリコピーコストは無視できる水準であり、バックグラウンドスレッドからの安全なコールバック返却と Dart/Kotlin/Swift 間の型安全性を優先する（[`docs/architectures/native-layer.md`](architectures/native-layer.md) および [`docs/references/design-rationale.md`](references/design-rationale.md) 参照）。
 - [x] **0-4. ターゲット環境・ネイティブ依存ライブラリのバージョン定義**
   - **決定事項**（[`docs/architectures/native-layer.md`](architectures/native-layer.md) 参照）:
     - **Dart / Flutter / Dio**: Dart `^3.5.0`、Flutter `>=3.24.0`、`dio: ^5.4.0`（Dio 5系）
@@ -30,8 +30,8 @@
 
 `flutter_turbo_fetch` の Plugin 構造と `example/` アプリを立ち上げ、最小のネイティブ一括受信＋`TurboTransformer` パイプラインを実装してベンチマークでアーキテクチャの実効性を証明するフェーズ。
 
-- [ ] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
-  - `flutter create --template=plugin --platforms=android,ios .` 相当のパッケージ構造（`lib/`, `android/`, `ios/`, `example/`）を作成する（プライベート利用のため単一パッケージ構成を基本とし、iOS は SPM + CocoaPods 両対応とする）。
+- [x] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
+  - **完了事項**: `io.github.khirohis` を Organization Identifier とする単一パッケージ構成（`lib/`, `pigeons/`, `android/`, `ios/`, `example/`）を作成。iOS は Swift Package Manager (`Package.swift`) + CocoaPods (`flutter_turbo_fetch.podspec`) 両対応（iOS 13.0+）、Android は `minSdk = 24` とし、不要な `PlatformInterface` ボイラープレートを排除したシンプル構成（`lib/src/turbo_http_adapter.dart`, `lib/src/turbo_transformer.dart`, `lib/src/messages.g.dart`）を構築。
 - [ ] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
   - `example/` アプリにて、HTTP/2 対応エンドポイントに対し数十KB〜数百KBの JSON を 10〜20 並列でリクエストし、所要時間（TTFB・全完了時間）・UI フレームドロップ・メモリ波形を計測するハーネスを作成する。
   - 比較対象ベースラインとして「① 標準 `IOHttpClientAdapter` (HTTP/1.1)」「② `dio_http2_adapter`」「③ `native_dio_adapter`」を切り替え計測できる状態にする。
