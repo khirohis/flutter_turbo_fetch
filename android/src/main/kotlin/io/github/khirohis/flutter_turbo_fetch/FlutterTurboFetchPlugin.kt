@@ -150,7 +150,7 @@ class FlutterTurboFetchPlugin :
                         // Native background thread: read & concatenate all HTTP/2 frames into a single ByteArray
                         val bodyBytes = res.body?.bytes() ?: ByteArray(0)
                         val rawMultimap = res.headers.toMultimap()
-                        val headersMap = HashMap<String?, List<String?>?>(rawMultimap.size)
+                        val headersMap = HashMap<String?, Any?>(rawMultimap.size)
                         for ((k, v) in rawMultimap) {
                             headersMap[k] = v
                         }

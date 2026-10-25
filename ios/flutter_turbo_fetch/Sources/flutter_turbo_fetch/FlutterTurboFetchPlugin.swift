@@ -104,7 +104,7 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
         return
       }
 
-      var headersMap: [String?: [String?]?] = [:]
+      var headersMap: [String?: Any?] = [:]
       for (rawKey, rawValue) in httpResponse.allHeaderFields {
         let key = String(describing: rawKey).lowercased()
         let value = String(describing: rawValue)

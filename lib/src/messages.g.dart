@@ -105,7 +105,7 @@ class TurboHttpResponse {
 
   String? statusMessage;
 
-  Map<String?, List<String?>?>? headers;
+  Map<String?, Object?>? headers;
 
   Uint8List? body;
 
@@ -129,7 +129,7 @@ class TurboHttpResponse {
     return TurboHttpResponse(
       statusCode: result[0] as int?,
       statusMessage: result[1] as String?,
-      headers: (result[2] as Map<Object?, Object?>?)?.cast<String?, List<String?>?>(),
+      headers: (result[2] as Map<Object?, Object?>?)?.cast<String?, Object?>(),
       body: result[3] as Uint8List?,
       errorType: result[4] as String?,
       errorMessage: result[5] as String?,

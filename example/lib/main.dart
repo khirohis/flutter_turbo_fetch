@@ -292,6 +292,17 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
       errorMessage: errorMsg,
     );
 
+    debugPrint(
+      '[BenchmarkResult] ${result.preset.shortName} | '
+      'OK: ${result.successCount}/${result.concurrency} | '
+      'Total: ${result.totalElapsedMs}ms | '
+      '1st: ${result.firstCompletionMs}ms | '
+      'Avg/Max: ${result.avgLatencyMs.toStringAsFixed(0)}/${result.maxLatencyMs}ms | '
+      'Jank: ${result.jankFrames}/${result.totalFrames} (max ${result.maxFrameDurationMs.toStringAsFixed(1)}ms) | '
+      'RSS: ${result.rssBeforeMb.toStringAsFixed(1)}->${result.rssPeakMb.toStringAsFixed(1)}->${result.rssAfterMb.toStringAsFixed(1)}MB'
+      '${result.errorMessage != null ? " | Error: ${result.errorMessage}" : ""}',
+    );
+
     if (!mounted) return;
     setState(() {
       _isRunning = false;
@@ -331,24 +342,22 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<BenchmarkPreset>(
-                    initialValue: _selectedPreset,
-                    isExpanded: true,
-                    items: BenchmarkPreset.values
-                        .map(
-                          (preset) => DropdownMenuItem(
-                            value: preset,
-                            child: Text(preset.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _isRunning
-                        ? null
-                        : (val) {
-                            if (val != null) {
-                              setState(() => _selectedPreset = val);
-                            }
-                          },
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: BenchmarkPreset.values.map((preset) {
+                      return ChoiceChip(
+                        label: Text(preset.shortName),
+                        selected: _selectedPreset == preset,
+                        onSelected: _isRunning
+                            ? null
+                            : (selected) {
+                                if (selected) {
+                                  setState(() => _selectedPreset = preset);
+                                }
+                              },
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 16),
                   const Text(
@@ -416,6 +425,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                             ),
                             const SizedBox(height: 8),
                             SegmentedButton<int>(
+                              showSelectedIcon: false,
                               segments: const [
                                 ButtonSegment(value: 10, label: Text('10')),
                                 ButtonSegment(value: 15, label: Text('15')),
@@ -440,6 +450,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                             ),
                             const SizedBox(height: 8),
                             SegmentedButton<ResponseType>(
+                              showSelectedIcon: false,
                               segments: const [
                                 ButtonSegment(
                                   value: ResponseType.json,
