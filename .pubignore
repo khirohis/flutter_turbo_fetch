@@ -50,3 +50,6 @@ app.*.symbols
 **/ios/.generated/
 **/ios/Flutter/
 **/ios/Runner/GeneratedPluginRegistrant.*
+
+# Local mock server certificates
+*.pem
