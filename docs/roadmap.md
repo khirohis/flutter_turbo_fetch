@@ -17,7 +17,7 @@
     - **`TurboHttpAdapter` の必須スコープ**: GET/POST/PUT/DELETE/PATCH/HEAD 等の基本メソッド、リクエストヘッダ/ボディ（サイズ制限なしで `Uint8List` 化）、レスポンスヘッダ/ステータスコード/一括ボディ（`Uint8List`）、タイムアウト制御（connect/receive/send）、キャンセル（`CancelToken` 連動）、リダイレクト追従設定。
     - **フォールバック・プラットフォーム仕様**: `ResponseType.stream` のみ標準 `IOHttpClientAdapter` へ自動フォールバックする。また、Android / iOS 以外のプラットフォームで実行された場合は `UnsupportedError` をスローする。
 - [x] **0-3. Dart ⇄ ネイティブ間の通信ブリッジ方式の選定**
-  - **決定事項**: **Pigeon（`StandardMessageCodec` ベースの型安全コード生成）** を採用する。1 リクエスト 1 往復のみのためメモリコピーコストは無視できる水準であり、バックグラウンドスレッドからの 안전한コールバック返却と Dart/Kotlin/Swift 間の型安全性を優先する（[`docs/architectures/native-layer.md`](architectures/native-layer.md) および [`docs/references/design-rationale.md`](references/design-rationale.md) 参照）。
+  - **決定事項**: **Pigeon（`StandardMessageCodec` ベースの型安全コード生成）** を採用する。1 リクエスト 1 往復のみのためメモリコピーコストは無視できる水準であり、バックグラウンドスレッドからの安全なコールバック返却と Dart/Kotlin/Swift 間の型安全性を優先する（[`docs/architectures/native-layer.md`](architectures/native-layer.md) および [`docs/references/design-rationale.md`](references/design-rationale.md) 参照）。
 - [x] **0-4. ターゲット環境・ネイティブ依存ライブラリのバージョン定義**
   - **決定事項**（[`docs/architectures/native-layer.md`](architectures/native-layer.md) 参照）:
     - **Dart / Flutter / Dio**: Dart `^3.5.0`、Flutter `>=3.24.0`、`dio: ^5.4.0`（Dio 5系）
@@ -30,20 +30,23 @@
 
 `flutter_turbo_fetch` の Plugin 構造と `example/` アプリを立ち上げ、最小のネイティブ一括受信＋`TurboTransformer` パイプラインを実装してベンチマークでアーキテクチャの実効性を証明するフェーズ。
 
-- [ ] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
-  - `flutter create --template=plugin --platforms=android,ios .` 相当のパッケージ構造（`lib/`, `android/`, `ios/`, `example/`）を作成する（プライベート利用のため単一パッケージ構成を基本とし、iOS は SPM + CocoaPods 両対応とする）。
-- [ ] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
-  - `example/` アプリにて、HTTP/2 対応エンドポイントに対し数十KB〜数百KBの JSON を 10〜20 並列でリクエストし、所要時間（TTFB・全完了時間）・UI フレームドロップ・メモリ波形を計測するハーネスを作成する。
-  - 比較対象ベースラインとして「① 標準 `IOHttpClientAdapter` (HTTP/1.1)」「② `dio_http2_adapter`」「③ `native_dio_adapter`」を切り替え計測できる状態にする。
-- [ ] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
-  - Plugin の `android/` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient` インスタンス（`ConnectionPool`・HTTP/2 16MB ウィンドウ）を構成する。
-  - `enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` によりチャンク結合までを完了させ、1 回の通知で Dart へ `Uint8List` を返す実装を作る。
-- [ ] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
-  - Plugin の `ios/` にて、`URLSession` の `dataTask(with: request, completionHandler:)` を実装する。
-  - デリゲート（`didReceiveData:`）を使わず、CFNetwork 層で結合済みの `Data` を 1 回で Dart へ返す実装を作る。
-- [ ] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
-  - ネイティブから受け取った `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で Dio へ渡し、`TurboTransformer` へ流す一気通貫パイプラインを動かす。
-  - `example/` アプリ上でベースライン（①〜③）との並列通信パフォーマンス比較を行う。
+- [x] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
+  - **完了事項**: `io.github.khirohis` を Organization Identifier とする単一パッケージ構成（`lib/`, `pigeons/`, `android/`, `ios/`, `example/`）を作成。iOS は Swift Package Manager (`Package.swift`) + CocoaPods (`flutter_turbo_fetch.podspec`) 両対応（iOS 13.0+）、Android は `minSdk = 24` とし、不要な `PlatformInterface` ボイラープレートを排除したシンプル構成（`lib/src/turbo_http_adapter.dart`, `lib/src/turbo_transformer.dart`, `lib/src/messages.g.dart`）を構築。
+- [x] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
+  - **完了事項**:
+    - `example/server/http2_mock_server.mjs` に Node.js 標準 `node:http2` による HTTP/2 モックサーバー（任意の KB サイズ JSON・遅延指定対応）を用意。
+    - `example/lib/main.dart` に 4 プリセット（① 標準 `IOHttpClientAdapter` / ② `dio_http2_adapter` / ③ `native_dio_adapter` / ④ `TurboHttpAdapter` + `TurboTransformer`）の切り替え、並列数（10 / 15 / 20）、`ResponseType`（`json` / `plain` / `bytes`）選択、および所要時間（初回完了・全体完了・平均/最大レイテンシ）・UI ジャンクフレーム数（`FrameTiming` > 16.67ms）・メモリ使用量（RSS Before / Peak / After）を計測・比較するハーネスを実装。
+- [x] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
+  - **完了事項**:
+    - `android/build.gradle.kts` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient`（`ConnectionPool`、`Dispatcher.maxRequestsPerHost = 32` デフォルト＋指定値に応じた `maxRequests` 自動引き上げ）を構成。
+    - `FlutterTurboFetchPlugin.kt` にて `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body?.bytes()` による一括結合を行い、`Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する処理を実装（`allowBadCertificates` オプションおよび `cancelRequest` 対応を含む）。
+- [x] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
+  - **完了事項**:
+    - `FlutterTurboFetchPlugin.swift` にて `URLSessionDataDelegate` を使わず、`URLSession.dataTask(with: request, completionHandler:)` を用いて CFNetwork 層で一括結合された `Data` を 1 回で Dart へ返却する処理を実装（`httpMaximumConnectionsPerHost` 設定、`NSLock` による `URLSessionDataTask` 辞書管理・`cancelRequest`、`URLError` 分類、および `allowBadCertificates` / `followRedirects` 制御を含む）。
+- [x] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
+  - **完了事項**:
+    - `TurboHttpAdapter.fetch` にて Pigeon `TurboFetchHostApi` を呼び出し、リクエストボディ結合・ヘッダ変換・`cancelFuture` 連動・ネイティブからの一括 `Uint8List` 受領（`ResponseBody.fromBytes`）および `DioExceptionType` マッピングを結合。
+    - `example/` アプリからベースライン（①〜③）と `TurboHttpAdapter` + `TurboTransformer`（④）を同一条件（自己署名証明書許可スイッチ付き）で比較できる一気通貫パイプラインを完成。
 
 ---
 

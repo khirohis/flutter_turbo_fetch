@@ -10,7 +10,10 @@
 
 ```dart
 final dio = Dio();
-dio.httpClientAdapter = TurboHttpAdapter();
+dio.httpClientAdapter = TurboHttpAdapter(
+  maxRequestsPerHost: 32,
+  allowBadCertificates: false,
+);
 dio.transformer = TurboTransformer();
 ```
 
@@ -24,7 +27,9 @@ dio.transformer = TurboTransformer();
 - **HTTP メソッド**: GET / POST / PUT / DELETE / PATCH / HEAD 等の基本メソッド
 - **リクエスト**: リクエストヘッダ、リクエストボディ（`Stream<Uint8List>` をサイズ制限なしで `Uint8List` として集約）
 - **レスポンス**: ステータスコード、レスポンスヘッダ、一括受信ボディ（単一チャンクの `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` として返却）
-- **制御機能**:
+- **制御機能・オプション**:
+  - 1 ホストあたりの同時リクエスト上限設定（`maxRequestsPerHost`、デフォルト `32`）
+  - 自己署名証明書の許可設定（`allowBadCertificates`、ローカル検証環境向け、デフォルト `false`）
   - タイムアウト制御（`connectTimeout`, `receiveTimeout`, `sendTimeout`）
   - キャンセル連動（`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す）
   - リダイレクト追従設定（`followRedirects`, `maxRedirects`）
