@@ -32,9 +32,10 @@
 
 - [x] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
   - **完了事項**: `io.github.khirohis` を Organization Identifier とする単一パッケージ構成（`lib/`, `pigeons/`, `android/`, `ios/`, `example/`）を作成。iOS は Swift Package Manager (`Package.swift`) + CocoaPods (`flutter_turbo_fetch.podspec`) 両対応（iOS 13.0+）、Android は `minSdk = 24` とし、不要な `PlatformInterface` ボイラープレートを排除したシンプル構成（`lib/src/turbo_http_adapter.dart`, `lib/src/turbo_transformer.dart`, `lib/src/messages.g.dart`）を構築。
-- [ ] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
-  - `example/` アプリにて、HTTP/2 対応エンドポイントに対し数十KB〜数百KBの JSON を 10〜20 並列でリクエストし、所要時間（TTFB・全完了時間）・UI フレームドロップ・メモリ波形を計測するハーネスを作成する。
-  - 比較対象ベースラインとして「① 標準 `IOHttpClientAdapter` (HTTP/1.1)」「② `dio_http2_adapter`」「③ `native_dio_adapter`」を切り替え計測できる状態にする。
+- [x] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
+  - **完了事項**:
+    - `example/server/http2_mock_server.mjs` に Node.js 標準 `node:http2` による HTTP/2 モックサーバー（任意の KB サイズ JSON・遅延指定対応）を用意。
+    - `example/lib/main.dart` に 4 プリセット（① 標準 `IOHttpClientAdapter` / ② `dio_http2_adapter` / ③ `native_dio_adapter` / ④ `TurboHttpAdapter` + `TurboTransformer`）の切り替え、並列数（10 / 15 / 20）、`ResponseType`（`json` / `plain` / `bytes`）選択、および所要時間（初回完了・全体完了・平均/最大レイテンシ）・UI ジャンクフレーム数（`FrameTiming` > 16.67ms）・メモリ使用量（RSS Before / Peak / After）を計測・比較するハーネスを実装。
 - [ ] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
   - Plugin の `android/` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient` インスタンス（`ConnectionPool`・HTTP/2 16MB ウィンドウ）を構成する。
   - `enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` によりチャンク結合までを完了させ、1 回の通知で Dart へ `Uint8List` を返す実装を作る。

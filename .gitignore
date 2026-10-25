@@ -118,3 +118,6 @@ app.*.symbols
 
 # FVM Version Cache
 .fvm/
+
+# Local mock server certificates
+*.pem
