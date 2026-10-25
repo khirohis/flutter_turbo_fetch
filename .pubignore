@@ -11,6 +11,10 @@ _agent/
 # Internal design & architecture documentation
 docs/
 
+# FVM configuration & version cache
+.fvm/
+.fvmrc
+
 # Miscellaneous & IDE / Build artifacts (kept in sync as .pubignore overrides .gitignore)
 *.class
 *.lock
