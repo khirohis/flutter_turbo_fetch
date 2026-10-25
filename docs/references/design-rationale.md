@@ -28,7 +28,7 @@ Flutter（`package:dio`）において、数十KB〜数百KB以上の中〜大�
 | **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart 側**<br>（細切れ往復） | **不採用（比較ベースラインとして使用）**<br>`StreamedResponse` 仕様のためチャンク単位の FFI 往復と iOS ヘッダ受信時の一時停止が解消できない。 |
 | **`ok_http`** | Android: `OkHttp` (`jnigen`) | **Dart 側**<br>（ストリーム読出） | **不採用**<br>これも `package:http` のストリーミング実装であり、一括 `response.body.bytes()` の恩恵を受けられない。 |
 | **`rhttp`** | 全 OS: Rust `reqwest` + `tokio` | **Rust 側で一括結合可** | **不採用（Step 0-1 にて確定）**<br>Rust スレッドで一括バイト結合して FFI 返却する機能（`Body.bytes`）を持つが、Rust バイナリ同梱によるアプリサイズ増加（数 MB）、OS 標準 TLS セッションキャッシュ・証明書ストア・プロキシ統合の非利用、Rust ビルド依存のコストから不採用。 |
-| **`flutter_turbo_fetch`**<br>（本プラグイン） | **Android: `OkHttp`**<br>**iOS: `URLSession.data(for:)`** | **各 OS ネイティブ側で一括結合** | **本命アーキテクチャ**<br>OS 標準/定番の軽量スタックを用い、チャンク結合までをネイティブのバックグラウンドスレッドで完結させ、完成した `Uint8List` を 1 回だけ Dart へ渡す。 |
+| **`flutter_turbo_fetch`**<br>（本プラグイン） | **Android: `OkHttp`**<br>**iOS: `URLSession.dataTask(with:completionHandler:)`** | **各 OS ネイティブ側で一括結合** | **本命アーキテクチャ**<br>OS 標準/定番の軽量スタックを用い、チャンク結合までをネイティブのバックグラウンドスレッドで完結させ、完成した `Uint8List` を 1 回だけ Dart へ渡す。 |
 
 ---
 
@@ -39,7 +39,7 @@ Flutter（`package:dio`）において、数十KB〜数百KB以上の中〜大�
 2. **なぜ Android エンジンは Cronet ではなく `OkHttp` なのか**
    - Cronet のような GMS 動的ロード遅延がなく、HTTP/2 初期ウィンドウがデフォルトで `16MB` に拡張されており、`Okio` のセグメントプールを用いた `response.body.bytes()` の 1 行で高速なチャンク結合が完結するため（HTTP/3 QUIC が必須要件の場合のみ Cronet カスタムを検討）。
 3. **なぜ iOS エンジンは `NSURLSessionDataDelegate` を使わないのか**
-   - デリゲート方式では `didReceiveResponse:` / `didReceiveData:` のたびにスレッド間・言語間の通知コストが発生するため。`urlSession.data(for: urlRequest)` または `dataTask(with:completionHandler:)` を使用すれば、ヘッダ処理からチャンク結合までを iOS の CFNetwork 層（C/C++ バックグラウンドスレッド）内部で完結できる。
+   - デリゲート方式では `didReceiveResponse:` / `didReceiveData:` のたびにスレッド間・言語間の通知コストが発生するため。`dataTask(with:completionHandler:)` を使用すれば、ヘッダ処理からチャンク結合までを iOS の CFNetwork 層（C/C++ バックグラウンドスレッド）内部で完結でき、`URLSessionDataTask` によるリクエスト単位のキャンセル制御も直接行える。
 4. **なぜ常駐ワーカープール（`SendPort.send`）ではなく「セマフォ付き `Isolate.run`」なのか**
    - 常駐ワーカーが生き続けると、戻り値返却時の `SendPort.send(result)` で共有ヒープ内のオブジェクトツリー全体のディープコピー（Transitive Copy: パース時間の 25〜40% 相当のオーバーヘッド）が発生するため。`Isolate.run`（内部で `Isolate.exit` を使用）であれば、ワーカー終了に伴い共有ヒープのポインタ所有権を移すだけの **O(1) ゼロコピー（数μs）** で Main Isolate へ返却できる。
 

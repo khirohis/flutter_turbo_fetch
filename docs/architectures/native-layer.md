@@ -6,7 +6,7 @@
 
 ## 1. Dart ⇄ ネイティブ間の通信ブリッジ仕様（Pigeon）
 
-通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、完成したレスポンスボディ `Uint8List`（Android `byte[]` / iOS `FlutterStandardTypedData`）を 1 リクエストにつき 1 往復でやり取りする（詳細スキーマは Step 2-1 で確定）。
+通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、完成したレスポンスボディ `Uint8List`（Android `byte[]` / iOS `FlutterStandardTypedData`）を 1 リクエストにつき 1 往復でやり取りする。
 
 ### 通信データモデル
 
@@ -19,13 +19,14 @@
   - `connectTimeoutMs` / `receiveTimeoutMs` / `sendTimeoutMs`: タイムアウト設定（ミリ秒）
   - `followRedirects` / `maxRedirects`: リダイレクト追従設定
   - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）
-  - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証環境用、デフォルト `false`）
+  - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証用、デフォルト `false`）
+  - `maxResponseBytes`: レスポンスボディの最大許容バイト数（nullable、未指定時は無制限。超過時は途中で切り詰めず即中断し、エラーコード `maxResponseBytesExceeded` を返す）
 - **レスポンス情報**:
   - `statusCode`: HTTP ステータスコード
   - `statusMessage`: ステータスメッセージ（任意）
   - `headers`: レスポンスヘッダ（マルチバリュー対応）
   - `body`: 一括結合済みレスポンスボディ（`Uint8List`）
-  - エラー発生時: 共通エラー種別コード＋詳細メッセージ
+  - `errorCode` / `errorMessage`: エラー発生時の共通エラーコードと詳細メッセージ
 - **キャンセル操作**:
   - `cancelRequest(requestId)`: 実行中のネイティブリクエストを即座に中断する
 
@@ -33,39 +34,39 @@
 
 ## 2. Android ネイティブ層仕様（`OkHttp3`）
 
-- **ターゲット・依存バージョン**:
-  - `minSdk = 24`（Android 7.0+）
-  - `com.squareup.okhttp3:okhttp:4.12.0`
+- **ターゲット・依存バージョン**: `minSdk = 24`（Android 7.0+）、`com.squareup.okhttp3:okhttp:4.12.0`
 - **クライアント構成**:
   - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MB ウィンドウ）を保持する。
-  - `Dispatcher` の `maxRequestsPerHost` はデフォルト `32`（全体 `maxRequests` はデフォルト `64`）とし、オプションで `maxRequests` を超える `maxRequestsPerHost` が指定された場合は `maxRequests` も自動的に同値まで引き上げる。
-  - リクエスト単位のタイムアウト・リダイレクト・TLS 証明書検証スキップ設定（`allowBadCertificates`）は `client.newBuilder()` で適用する。
+  - `Dispatcher.maxRequestsPerHost` はデフォルト `32`（全体 `maxRequests` はデフォルト `64`、これを超える `maxRequestsPerHost` 指定時は `maxRequests` も同値へ自動引き上げ）。
+  - リクエスト単位のタイムアウト・リダイレクト・`allowBadCertificates` は `client.newBuilder()` で適用する。
 - **一括受信処理**:
-  - `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` を呼び出し、チャンク結合完了後にメインスレッドの `Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する。
+  - `Call.enqueue(Callback)` のバックグラウンドスレッド上で、`maxResponseBytes` 未指定時は `response.body.bytes()`、指定時は `contentLength()` 事前判定＋`Okio` の `BufferedSource.request(maxResponseBytes + 1)` による上限判定付き `readByteArray()` を実行し、`Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する。
 - **ライフサイクル・並行管理**:
-  - `ConcurrentHashMap<String, Call>` で `requestId` と `okhttp3.Call` を管理し、`cancelRequest(requestId)` で `call.cancel()` を呼ぶ。
-  - `FlutterPlugin.onDetachedFromEngine` 時に未完了リクエストのキャンセルを行う。
-- **エラー分類**:
+  - `ConcurrentHashMap<String, Call>` で実行中リクエストを管理し、`cancelRequest(requestId)` で `call.cancel()` を呼ぶ。
+  - `FlutterPlugin.onDetachedFromEngine` 時に未完了リクエストの一括キャンセルおよび `dispatcher.executorService.shutdown()` / `connectionPool.evictAll()` を行う。
+- **エラー分類（ネイティブ例外 → 共通エラーコード）**:
   - `InterruptedIOException` / `call.isCanceled()` → `cancel`
   - `SocketTimeoutException` → `connectionTimeout` / `sendTimeout` / `receiveTimeout`
   - `UnknownHostException` / `ConnectException` → `connectionError`
-  - `SSLException` / `CertificateException` → `badCertificate` / `connectionError`
-  - その他 `IOException` → 通信エラー
+  - `SSLException` / `CertificateException` → `badCertificate`
+  - `maxResponseBytes` 超過 → `maxResponseBytesExceeded`
+  - その他 `IOException` → `connectionError` / `unknown`
 
 ---
 
 ## 3. iOS ネイティブ層仕様（`URLSession`）
 
-- **ターゲット・パッケージ構成**:
-  - 最小 Deployment Target: `iOS 13.0+`
-  - パッケージ管理: Swift Package Manager（SPM）および CocoaPods 両対応
+- **ターゲット・パッケージ構成**: `iOS 13.0+`、Swift Package Manager（SPM）および CocoaPods 両対応
 - **クライアント構成・一括受信処理**:
   - `NSURLSessionDataDelegate` は使用せず、`URLSession` の `dataTask(with: request, completionHandler:)` を使用する。
-  - CFNetwork 層で結合済みの `Data` を 1 回だけ Dart へ返却する。
+  - CFNetwork 層で結合済みの `Data` を 1 回だけ Dart へ返却する（`maxResponseBytes` 指定時は `completionHandler` 内で `response.expectedContentLength` および `data.count` の上限超過を判定する）。
 - **ライフサイクル・並行管理**:
-  - `requestId` と `URLSessionDataTask` をスレッドセーフに辞書管理し、`cancelRequest(requestId)` で `task.cancel()` を呼ぶ。
-- **エラー分類**:
+  - `requestId` と `URLSessionDataTask` を `NSLock` で辞書管理し、`cancelRequest(requestId)` で `task.cancel()` を呼ぶ。
+  - `FlutterPlugin.detachFromEngine` 時に未完了タスクの一括キャンセルおよび共有 `URLSession` の `invalidateAndCancel()` を行う。
+- **エラー分類（ネイティブエラー → 共通エラーコード）**:
   - `URLError.cancelled` → `cancel`
   - `URLError.timedOut` → `connectionTimeout` / `receiveTimeout`
   - `.notConnectedToInternet`, `.cannotFindHost`, `.cannotConnectToHost`, `.networkConnectionLost` → `connectionError`
   - サーバー証明書関連 `URLError` → `badCertificate`
+  - `maxResponseBytes` 超過 → `maxResponseBytesExceeded`
+  - その他エラー → `unknown`
