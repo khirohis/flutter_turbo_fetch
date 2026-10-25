@@ -18,6 +18,8 @@
   - `body`: リクエストボディ（nullable `Uint8List`）
   - `connectTimeoutMs` / `receiveTimeoutMs` / `sendTimeoutMs`: タイムアウト設定（ミリ秒）
   - `followRedirects` / `maxRedirects`: リダイレクト追従設定
+  - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）
+  - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証環境用、デフォルト `false`）
 - **レスポンス情報**:
   - `statusCode`: HTTP ステータスコード
   - `statusMessage`: ステータスメッセージ（任意）
@@ -35,12 +37,14 @@
   - `minSdk = 24`（Android 7.0+）
   - `com.squareup.okhttp3:okhttp:4.12.0`
 - **クライアント構成**:
-  - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MB ウィンドウ）を保持し、リクエスト単位のタイムアウト・リダイレクト設定は `client.newBuilder()` で適用する。
+  - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MB ウィンドウ）を保持する。
+  - `Dispatcher` の `maxRequestsPerHost` はデフォルト `32`（全体 `maxRequests` はデフォルト `64`）とし、オプションで `maxRequests` を超える `maxRequestsPerHost` が指定された場合は `maxRequests` も自動的に同値まで引き上げる。
+  - リクエスト単位のタイムアウト・リダイレクト・TLS 証明書検証スキップ設定（`allowBadCertificates`）は `client.newBuilder()` で適用する。
 - **一括受信処理**:
-  - `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` を呼び出し、チャンク結合完了後に Dart へ 1 回で返却する。
+  - `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` を呼び出し、チャンク結合完了後にメインスレッドの `Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する。
 - **ライフサイクル・並行管理**:
   - `ConcurrentHashMap<String, Call>` で `requestId` と `okhttp3.Call` を管理し、`cancelRequest(requestId)` で `call.cancel()` を呼ぶ。
-  - `FlutterPlugin.onDetachedFromEngine` 時に未完了リクエストのキャンセルおよびリソース解放（`dispatcher.executorService.shutdown()` 等）を行う。
+  - `FlutterPlugin.onDetachedFromEngine` 時に未完了リクエストのキャンセルを行う。
 - **エラー分類**:
   - `InterruptedIOException` / `call.isCanceled()` → `cancel`
   - `SocketTimeoutException` → `connectionTimeout` / `sendTimeout` / `receiveTimeout`

@@ -36,9 +36,10 @@
   - **完了事項**:
     - `example/server/http2_mock_server.mjs` に Node.js 標準 `node:http2` による HTTP/2 モックサーバー（任意の KB サイズ JSON・遅延指定対応）を用意。
     - `example/lib/main.dart` に 4 プリセット（① 標準 `IOHttpClientAdapter` / ② `dio_http2_adapter` / ③ `native_dio_adapter` / ④ `TurboHttpAdapter` + `TurboTransformer`）の切り替え、並列数（10 / 15 / 20）、`ResponseType`（`json` / `plain` / `bytes`）選択、および所要時間（初回完了・全体完了・平均/最大レイテンシ）・UI ジャンクフレーム数（`FrameTiming` > 16.67ms）・メモリ使用量（RSS Before / Peak / After）を計測・比較するハーネスを実装。
-- [ ] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
-  - Plugin の `android/` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient` インスタンス（`ConnectionPool`・HTTP/2 16MB ウィンドウ）を構成する。
-  - `enqueue(Callback)` のバックグラウンドスレッド上で `response.body.bytes()` によりチャンク結合までを完了させ、1 回の通知で Dart へ `Uint8List` を返す実装を作る。
+- [x] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
+  - **完了事項**:
+    - `android/build.gradle.kts` に `com.squareup.okhttp3:okhttp:4.12.0` を導入し、共有の `OkHttpClient`（`ConnectionPool`、`Dispatcher.maxRequestsPerHost = 32` デフォルト＋指定値に応じた `maxRequests` 自動引き上げ）を構成。
+    - `FlutterTurboFetchPlugin.kt` にて `Call.enqueue(Callback)` のバックグラウンドスレッド上で `response.body?.bytes()` による一括結合を行い、`Handler(Looper.getMainLooper())` 経由で Dart へ 1 回で返却する処理を実装（`allowBadCertificates` オプションおよび `cancelRequest` 対応を含む）。
 - [ ] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
   - Plugin の `ios/` にて、`URLSession` の `dataTask(with: request, completionHandler:)` を実装する。
   - デリゲート（`didReceiveData:`）を使わず、CFNetwork 層で結合済みの `Data` を 1 回で Dart へ返す実装を作る。

@@ -7,8 +7,19 @@ import 'package:dio/io.dart';
 class TurboHttpAdapter implements HttpClientAdapter {
   final HttpClientAdapter _fallbackAdapter;
 
-  TurboHttpAdapter({HttpClientAdapter? fallbackAdapter})
-      : _fallbackAdapter = fallbackAdapter ?? IOHttpClientAdapter();
+  /// 1ホストあたりの最大同時リクエスト数（デフォルト 32）。
+  /// Android (OkHttp Dispatcher) の maxRequests (64) を超える値が指定された場合、
+  /// ネイティブ側で maxRequests も自動的に同値まで引き上げられる。
+  final int maxRequestsPerHost;
+
+  /// ローカル検証環境等で自己署名証明書を許可するかどうかのフラグ（デフォルト false）。
+  final bool allowBadCertificates;
+
+  TurboHttpAdapter({
+    this.maxRequestsPerHost = 32,
+    this.allowBadCertificates = false,
+    HttpClientAdapter? fallbackAdapter,
+  }) : _fallbackAdapter = fallbackAdapter ?? IOHttpClientAdapter();
 
   @override
   Future<ResponseBody> fetch(
@@ -26,8 +37,8 @@ class TurboHttpAdapter implements HttpClientAdapter {
       return _fallbackAdapter.fetch(options, requestStream, cancelFuture);
     }
 
-    // Step 1-3 〜 1-5 でネイティブ層（Pigeon ブリッジ）との連携を実装する。
-    throw UnimplementedError('Native fetch is not implemented yet.');
+    // Step 1-5 でネイティブ層（Pigeon ブリッジ）との結合を実装する。
+    throw UnimplementedError('Native fetch is not connected yet.');
   }
 
   @override
