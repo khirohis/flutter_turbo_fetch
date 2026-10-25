@@ -128,10 +128,14 @@ class TurboHttpAdapter implements HttpClientAdapter {
     }
 
     final responseHeaders = <String, List<String>>{};
-    response.headers?.forEach((key, values) {
-      if (key != null && values != null) {
-        responseHeaders[key.toLowerCase()] =
-            values.whereType<String>().toList();
+    response.headers?.forEach((key, rawValues) {
+      if (key != null && rawValues != null) {
+        if (rawValues is Iterable) {
+          responseHeaders[key.toLowerCase()] =
+              rawValues.whereType<Object>().map((e) => e.toString()).toList();
+        } else {
+          responseHeaders[key.toLowerCase()] = [rawValues.toString()];
+        }
       }
     });
 

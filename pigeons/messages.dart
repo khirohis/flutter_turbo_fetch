@@ -54,7 +54,7 @@ class TurboHttpResponse {
 
   final int? statusCode;
   final String? statusMessage;
-  final Map<String?, List<String?>?>? headers;
+  final Map<String?, Object?>? headers;
   final Uint8List? body;
   final String? errorType;
   final String? errorMessage;

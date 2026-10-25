@@ -132,7 +132,7 @@ struct TurboHttpRequest {
 struct TurboHttpResponse {
   var statusCode: Int64? = nil
   var statusMessage: String? = nil
-  var headers: [String?: [String?]?]? = nil
+  var headers: [String?: Any?]? = nil
   var body: FlutterStandardTypedData? = nil
   var errorType: String? = nil
   var errorMessage: String? = nil
@@ -142,7 +142,7 @@ struct TurboHttpResponse {
   static func fromList(_ pigeonVar_list: [Any?]) -> TurboHttpResponse? {
     let statusCode: Int64? = nilOrValue(pigeonVar_list[0])
     let statusMessage: String? = nilOrValue(pigeonVar_list[1])
-    let headers: [String?: [String?]?]? = nilOrValue(pigeonVar_list[2])
+    let headers: [String?: Any?]? = nilOrValue(pigeonVar_list[2])
     let body: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[3])
     let errorType: String? = nilOrValue(pigeonVar_list[4])
     let errorMessage: String? = nilOrValue(pigeonVar_list[5])

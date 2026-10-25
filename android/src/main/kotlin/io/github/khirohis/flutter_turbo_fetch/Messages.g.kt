@@ -101,7 +101,7 @@ data class TurboHttpRequest (
 data class TurboHttpResponse (
   val statusCode: Long? = null,
   val statusMessage: String? = null,
-  val headers: Map<String?, List<String?>?>? = null,
+  val headers: Map<String?, Any?>? = null,
   val body: ByteArray? = null,
   val errorType: String? = null,
   val errorMessage: String? = null
@@ -111,7 +111,7 @@ data class TurboHttpResponse (
     fun fromList(pigeonVar_list: List<Any?>): TurboHttpResponse {
       val statusCode = pigeonVar_list[0] as Long?
       val statusMessage = pigeonVar_list[1] as String?
-      val headers = pigeonVar_list[2] as Map<String?, List<String?>?>?
+      val headers = pigeonVar_list[2] as Map<String?, Any?>?
       val body = pigeonVar_list[3] as ByteArray?
       val errorType = pigeonVar_list[4] as String?
       val errorMessage = pigeonVar_list[5] as String?
