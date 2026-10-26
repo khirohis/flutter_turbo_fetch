@@ -40,7 +40,7 @@ PoC で実証したコアパイプラインに対し、実運用で必須とな�
   - [`docs/architectures/native-layer.md`](architectures/native-layer.md) に基づき、リクエスト情報（`maxResponseBytes` 追加等）・レスポンス情報・`cancelRequest(requestId)` のスキーマを確定しコードを再生成する。
 - [x] **2-2. Android Plugin クラス（`FlutterPlugin`）のプロダクション対応**
   - `maxResponseBytes` 指定時のサイズ上限チェック（超過時は即座にストリームを切断し `maxResponseBytesExceeded` を返却）および Engine デタッチ時のリソース解放を実装する。
-- [ ] **2-3. iOS Plugin クラス（`FlutterPlugin`）のプロダクション対応**
+- [x] **2-3. iOS Plugin クラス（`FlutterPlugin`）のプロダクション対応**
   - `maxResponseBytes` 指定時のサイズ上限チェック（超過時は `maxResponseBytesExceeded` を返却）および Engine デタッチ時のリソース解放（`invalidateAndCancel()`）を実装する。
 - [ ] **2-4. `TurboHttpAdapter`、`TurboTransformer` & `TurboOptions` の API 仕上げ**
   - [`docs/architectures/dart-layer.md`](architectures/dart-layer.md) に基づき、`TurboOptions<T>`（`mapper` / `maxResponseBytes`）の実装、`TurboHttpAdapter` のフォールバック廃止（`ResponseType.stream` の単一チャンクラップ統一）、`TurboTransformer` の 4 データ種別＋マッパー対応および動的デフォルトセマフォ数設定を実装する。
