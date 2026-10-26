@@ -75,9 +75,9 @@ struct TurboHttpRequest {
   var receiveTimeoutMs: Int64? = nil
   var sendTimeoutMs: Int64? = nil
   var followRedirects: Bool
-  var maxRedirects: Int64
   var maxRequestsPerHost: Int64
   var allowBadCertificates: Bool
+  var maxResponseBytes: Int64? = nil
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -91,9 +91,9 @@ struct TurboHttpRequest {
     let receiveTimeoutMs: Int64? = nilOrValue(pigeonVar_list[6])
     let sendTimeoutMs: Int64? = nilOrValue(pigeonVar_list[7])
     let followRedirects = pigeonVar_list[8] as! Bool
-    let maxRedirects = pigeonVar_list[9] as! Int64
-    let maxRequestsPerHost = pigeonVar_list[10] as! Int64
-    let allowBadCertificates = pigeonVar_list[11] as! Bool
+    let maxRequestsPerHost = pigeonVar_list[9] as! Int64
+    let allowBadCertificates = pigeonVar_list[10] as! Bool
+    let maxResponseBytes: Int64? = nilOrValue(pigeonVar_list[11])
 
     return TurboHttpRequest(
       requestId: requestId,
@@ -105,9 +105,9 @@ struct TurboHttpRequest {
       receiveTimeoutMs: receiveTimeoutMs,
       sendTimeoutMs: sendTimeoutMs,
       followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
       maxRequestsPerHost: maxRequestsPerHost,
-      allowBadCertificates: allowBadCertificates
+      allowBadCertificates: allowBadCertificates,
+      maxResponseBytes: maxResponseBytes
     )
   }
   func toList() -> [Any?] {
@@ -121,9 +121,9 @@ struct TurboHttpRequest {
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRedirects,
       maxRequestsPerHost,
       allowBadCertificates,
+      maxResponseBytes,
     ]
   }
 }
@@ -134,7 +134,7 @@ struct TurboHttpResponse {
   var statusMessage: String? = nil
   var headers: [String?: Any?]? = nil
   var body: FlutterStandardTypedData? = nil
-  var errorType: String? = nil
+  var errorCode: String? = nil
   var errorMessage: String? = nil
 
 
@@ -144,7 +144,7 @@ struct TurboHttpResponse {
     let statusMessage: String? = nilOrValue(pigeonVar_list[1])
     let headers: [String?: Any?]? = nilOrValue(pigeonVar_list[2])
     let body: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[3])
-    let errorType: String? = nilOrValue(pigeonVar_list[4])
+    let errorCode: String? = nilOrValue(pigeonVar_list[4])
     let errorMessage: String? = nilOrValue(pigeonVar_list[5])
 
     return TurboHttpResponse(
@@ -152,7 +152,7 @@ struct TurboHttpResponse {
       statusMessage: statusMessage,
       headers: headers,
       body: body,
-      errorType: errorType,
+      errorCode: errorCode,
       errorMessage: errorMessage
     )
   }
@@ -162,7 +162,7 @@ struct TurboHttpResponse {
       statusMessage,
       headers,
       body,
-      errorType,
+      errorCode,
       errorMessage,
     ]
   }

@@ -2,12 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 import 'messages.g.dart';
+import 'turbo_options.dart';
 
 /// ネイティブ層（Android OkHttp3 / iOS URLSession）の一括受信を利用する Dio 用 HttpClientAdapter。
 class TurboHttpAdapter implements HttpClientAdapter {
-  final HttpClientAdapter _fallbackAdapter;
   final TurboFetchHostApi _hostApi;
   final bool _overridePlatformCheck;
 
@@ -25,10 +24,8 @@ class TurboHttpAdapter implements HttpClientAdapter {
   TurboHttpAdapter({
     this.maxRequestsPerHost = 32,
     this.allowBadCertificates = false,
-    HttpClientAdapter? fallbackAdapter,
     TurboFetchHostApi? hostApi,
-  })  : _fallbackAdapter = fallbackAdapter ?? IOHttpClientAdapter(),
-        _hostApi = hostApi ?? TurboFetchHostApi(),
+  })  : _hostApi = hostApi ?? TurboFetchHostApi(),
         _overridePlatformCheck = hostApi != null;
 
   @override
@@ -47,11 +44,6 @@ class TurboHttpAdapter implements HttpClientAdapter {
       throw UnsupportedError(
         'TurboHttpAdapter is only supported on Android and iOS.',
       );
-    }
-
-    // SSE / ストリーミング受信が要求された場合は標準 IOHttpClientAdapter へ自動フォールバック
-    if (options.responseType == ResponseType.stream) {
-      return _fallbackAdapter.fetch(options, requestStream, cancelFuture);
     }
 
     // リクエストボディの集約（サイズ制限なし）
@@ -76,13 +68,18 @@ class TurboHttpAdapter implements HttpClientAdapter {
       }
     });
 
+    final maxResponseBytes =
+        options.extra[turboMaxResponseBytesExtraKey] as int?;
+
     final requestId =
         'turbo_${++_requestCounter}_${DateTime.now().microsecondsSinceEpoch}';
 
     bool isCompleted = false;
+    bool isCancelled = false;
     if (cancelFuture != null) {
       cancelFuture.whenComplete(() {
         if (!isCompleted) {
+          isCancelled = true;
           unawaited(_hostApi.cancelRequest(requestId));
         }
       });
@@ -98,9 +95,9 @@ class TurboHttpAdapter implements HttpClientAdapter {
       receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
       sendTimeoutMs: options.sendTimeout?.inMilliseconds,
       followRedirects: options.followRedirects,
-      maxRedirects: options.maxRedirects,
       maxRequestsPerHost: maxRequestsPerHost,
       allowBadCertificates: allowBadCertificates,
+      maxResponseBytes: maxResponseBytes,
     );
 
     final TurboHttpResponse response;
@@ -112,18 +109,32 @@ class TurboHttpAdapter implements HttpClientAdapter {
         requestOptions: options,
         error: e,
         stackTrace: stackTrace,
-        type: DioExceptionType.unknown,
+        type: isCancelled ? DioExceptionType.cancel : DioExceptionType.unknown,
         message: e.toString(),
       );
     }
     isCompleted = true;
 
-    if (response.errorType != null) {
+    if (response.errorCode != null) {
+      final errorCode = isCancelled ? 'cancel' : response.errorCode!;
+      final errorMessage = _resolveErrorMessage(
+        errorCode: errorCode,
+        rawMessage: response.errorMessage,
+        maxResponseBytes: maxResponseBytes,
+      );
       throw DioException(
         requestOptions: options,
-        type: _mapErrorType(response.errorType!),
-        message: response.errorMessage,
-        error: response.errorMessage,
+        type: _mapErrorCode(errorCode),
+        message: errorMessage,
+        error: errorMessage,
+      );
+    }
+
+    if (isCancelled) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+        message: 'Request was cancelled.',
       );
     }
 
@@ -147,8 +158,22 @@ class TurboHttpAdapter implements HttpClientAdapter {
     );
   }
 
-  DioExceptionType _mapErrorType(String errorType) {
-    switch (errorType) {
+  String? _resolveErrorMessage({
+    required String errorCode,
+    required String? rawMessage,
+    required int? maxResponseBytes,
+  }) {
+    if (errorCode == 'maxResponseBytesExceeded') {
+      if (rawMessage != null && rawMessage.isNotEmpty) {
+        return rawMessage;
+      }
+      return 'Response body exceeded maxResponseBytes limit (${maxResponseBytes ?? 0} bytes)';
+    }
+    return rawMessage;
+  }
+
+  DioExceptionType _mapErrorCode(String errorCode) {
+    switch (errorCode) {
       case 'cancel':
         return DioExceptionType.cancel;
       case 'connectionTimeout':
@@ -161,6 +186,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
         return DioExceptionType.badCertificate;
       case 'connectionError':
         return DioExceptionType.connectionError;
+      case 'maxResponseBytesExceeded':
       default:
         return DioExceptionType.unknown;
     }
@@ -169,6 +195,5 @@ class TurboHttpAdapter implements HttpClientAdapter {
   @override
   void close({bool force = false}) {
     _closed = true;
-    _fallbackAdapter.close(force: force);
   }
 }

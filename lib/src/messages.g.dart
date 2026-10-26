@@ -26,9 +26,9 @@ class TurboHttpRequest {
     this.receiveTimeoutMs,
     this.sendTimeoutMs,
     required this.followRedirects,
-    required this.maxRedirects,
     required this.maxRequestsPerHost,
     required this.allowBadCertificates,
+    this.maxResponseBytes,
   });
 
   String requestId;
@@ -49,11 +49,11 @@ class TurboHttpRequest {
 
   bool followRedirects;
 
-  int maxRedirects;
-
   int maxRequestsPerHost;
 
   bool allowBadCertificates;
+
+  int? maxResponseBytes;
 
   Object encode() {
     return <Object?>[
@@ -66,9 +66,9 @@ class TurboHttpRequest {
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRedirects,
       maxRequestsPerHost,
       allowBadCertificates,
+      maxResponseBytes,
     ];
   }
 
@@ -84,9 +84,9 @@ class TurboHttpRequest {
       receiveTimeoutMs: result[6] as int?,
       sendTimeoutMs: result[7] as int?,
       followRedirects: result[8]! as bool,
-      maxRedirects: result[9]! as int,
-      maxRequestsPerHost: result[10]! as int,
-      allowBadCertificates: result[11]! as bool,
+      maxRequestsPerHost: result[9]! as int,
+      allowBadCertificates: result[10]! as bool,
+      maxResponseBytes: result[11] as int?,
     );
   }
 }
@@ -97,7 +97,7 @@ class TurboHttpResponse {
     this.statusMessage,
     this.headers,
     this.body,
-    this.errorType,
+    this.errorCode,
     this.errorMessage,
   });
 
@@ -109,7 +109,7 @@ class TurboHttpResponse {
 
   Uint8List? body;
 
-  String? errorType;
+  String? errorCode;
 
   String? errorMessage;
 
@@ -119,7 +119,7 @@ class TurboHttpResponse {
       statusMessage,
       headers,
       body,
-      errorType,
+      errorCode,
       errorMessage,
     ];
   }
@@ -131,7 +131,7 @@ class TurboHttpResponse {
       statusMessage: result[1] as String?,
       headers: (result[2] as Map<Object?, Object?>?)?.cast<String?, Object?>(),
       body: result[3] as Uint8List?,
-      errorType: result[4] as String?,
+      errorCode: result[4] as String?,
       errorMessage: result[5] as String?,
     );
   }
