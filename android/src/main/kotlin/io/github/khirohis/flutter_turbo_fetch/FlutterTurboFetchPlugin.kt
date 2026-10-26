@@ -20,8 +20,12 @@ import okio.BufferedSink
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.ProtocolException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.net.UnknownServiceException
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -283,8 +287,13 @@ class FlutterTurboFetchPlugin :
             e is SSLException || e.cause is CertificateException || e.cause is SSLException -> {
                 "badCertificate"
             }
-            e is UnknownHostException || e is ConnectException -> "connectionError"
-            else -> "connectionError"
+            e is UnknownHostException ||
+                e is ConnectException ||
+                e is NoRouteToHostException ||
+                e is SocketException ||
+                e is ProtocolException ||
+                e is UnknownServiceException -> "connectionError"
+            else -> "unknown"
         }
     }
 
