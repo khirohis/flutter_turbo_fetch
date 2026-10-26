@@ -51,7 +51,7 @@ PoC で実証したコアパイプラインに対し、実運用で必須とな�
 
 ## Phase 3: テスト・パッケージ品質整備・プライベート導入（非公開運用）
 
-- [ ] **3-1. 自動テスト（Unit Test / Integration Test）およびパフォーマンス計測の整備**
+- [x] **3-1. 自動テスト（Unit Test / Integration Test）およびパフォーマンス計測の整備**
   - Dart 層の単体機能テスト（アダプタ入出力、エラーマッピング、`maxResponseBytes`、`TurboTransformer` の全 `ResponseType`・`TurboOptions(mapper: ...)`・閾値分岐・セマフォ制御・単一 `Dio` インスタンス並列非干渉）を整備する。
   - Dart 層マイクロベンチマーク（`test/turbo_benchmark_test.dart`: Dio 標準 `BackgroundTransformer` vs `TurboTransformer` + `TurboOptions(mapper)` の変換速度・Main Isolate イベントループ最大遅延・RSS メモリ比較）と、`example/` の `integration_test`（ネイティブ実通信の機能検証＋4プリセット並列ベンチマーク）を整備する。
 - [ ] **3-2. 導入ドキュメント（`README.md`）と設定・ベンチマークガイドの作成**
