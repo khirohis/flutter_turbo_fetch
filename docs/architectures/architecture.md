@@ -9,7 +9,7 @@
 ```text
 [ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler)]
   ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp は初期 16MB ウィンドウ）
-  ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時のみ超過でエラー中断）
+  ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時は上限超過を検知した時点で処理を中断しエラー返却）
   └─ 完成した byte[] / Data (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
         │
         ▼ (1 回のみのバッファ転送・再シリアライズ不要)

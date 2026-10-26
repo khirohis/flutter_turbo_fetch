@@ -11,7 +11,6 @@ final dio = Dio();
 dio.httpClientAdapter = TurboHttpAdapter(
   maxRequestsPerHost: 32,
   allowBadCertificates: false,
-  maxResponseBytes: null, // デフォルトは無制限
 );
 dio.transformer = TurboTransformer(
   // maxConcurrentIsolates 未指定時は max(4, Platform.numberOfProcessors - 2)
@@ -42,10 +41,10 @@ final User user = response.data!;
 - **制御機能・オプション**:
   - `maxRequestsPerHost`: 1 ホストあたりの同時リクエスト上限（デフォルト `32`）
   - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）
-  - `maxResponseBytes`: 最大許容レスポンスバイト数（デフォルト `null`＝無制限。アダプタ全体または `TurboOptions` で指定可能）
+  - `maxResponseBytes`: 最大許容レスポンスバイト数（`TurboOptions` でリクエスト単位に指定可能。未指定時は無制限）
   - タイムアウト制御（`connectTimeout`, `receiveTimeout`, `sendTimeout`）
   - キャンセル連動（`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す）
-  - リダイレクト追従設定（`followRedirects`, `maxRedirects`）
+  - リダイレクト追従設定（`followRedirects` の真偽値制御。ネイティブ層がリダイレクト上限回数の標準設定プロパティを持たないため、`maxRedirects` による追加の回数制御は行わない）
 
 ### 2.2 エラーハンドリング（`DioException` マッピング）
 

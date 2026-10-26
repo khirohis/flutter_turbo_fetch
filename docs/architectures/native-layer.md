@@ -17,10 +17,10 @@
   - `headers`: リクエストヘッダ
   - `body`: リクエストボディ（nullable `Uint8List`）
   - `connectTimeoutMs` / `receiveTimeoutMs` / `sendTimeoutMs`: タイムアウト設定（ミリ秒）
-  - `followRedirects` / `maxRedirects`: リダイレクト追従設定
+  - `followRedirects`: リダイレクト追従設定（真偽値。`OkHttp` / `URLSession` ともにリダイレクト上限回数の標準設定プロパティを持たないため、`maxRedirects` による追加の回数制御は行わない）
   - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）
   - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証用、デフォルト `false`）
-  - `maxResponseBytes`: レスポンスボディの最大許容バイト数（nullable、未指定時は無制限。超過時は途中で切り詰めず即中断し、エラーコード `maxResponseBytesExceeded` を返す）
+  - `maxResponseBytes`: レスポンスボディの最大許容バイト数（nullable、未指定時は無制限。超過時はデータを切り詰めて正常返却することはせず、上限超過を検知した時点で処理を中断してエラーコード `maxResponseBytesExceeded` を返す）
 - **レスポンス情報**:
   - `statusCode`: HTTP ステータスコード
   - `statusMessage`: ステータスメッセージ（任意）
@@ -44,9 +44,9 @@
 - **ライフサイクル・並行管理**:
   - `ConcurrentHashMap<String, Call>` で実行中リクエストを管理し、`cancelRequest(requestId)` で `call.cancel()` を呼ぶ。
   - `FlutterPlugin.onDetachedFromEngine` 時に未完了リクエストの一括キャンセルおよび `dispatcher.executorService.shutdown()` / `connectionPool.evictAll()` を行う。
-- **エラー分類（ネイティブ例外 → 共通エラーコード）**:
+- **エラー分類（ネイティブ例外 → 共通エラーコード `errorCode`）**:
   - `InterruptedIOException` / `call.isCanceled()` → `cancel`
-  - `SocketTimeoutException` → `connectionTimeout` / `sendTimeout` / `receiveTimeout`
+  - `SocketTimeoutException` → `connectionTimeout`（TCP/TLS 接続段階） / `sendTimeout`（`RequestBody.writeTo` によるリクエストボディ書込中） / `receiveTimeout`（リクエスト送信完了後のレスポンス待機・読込中）
   - `UnknownHostException` / `ConnectException` → `connectionError`
   - `SSLException` / `CertificateException` → `badCertificate`
   - `maxResponseBytes` 超過 → `maxResponseBytesExceeded`
@@ -59,13 +59,13 @@
 - **ターゲット・パッケージ構成**: `iOS 13.0+`、Swift Package Manager（SPM）および CocoaPods 両対応
 - **クライアント構成・一括受信処理**:
   - `NSURLSessionDataDelegate` は使用せず、`URLSession` の `dataTask(with: request, completionHandler:)` を使用する。
-  - CFNetwork 層で結合済みの `Data` を 1 回だけ Dart へ返却する（`maxResponseBytes` 指定時は `completionHandler` 内で `response.expectedContentLength` および `data.count` の上限超過を判定する）。
+  - CFNetwork 層で結合済みの `Data` を 1 回だけ Dart へ返却する（`maxResponseBytes` 指定時は `completionHandler` 内で `response.expectedContentLength` および `data.count` の上限超過を判定し、超過時は処理を中断して `maxResponseBytesExceeded` を返す）。
 - **ライフサイクル・並行管理**:
   - `requestId` と `URLSessionDataTask` を `NSLock` で辞書管理し、`cancelRequest(requestId)` で `task.cancel()` を呼ぶ。
   - `FlutterPlugin.detachFromEngine` 時に未完了タスクの一括キャンセルおよび共有 `URLSession` の `invalidateAndCancel()` を行う。
-- **エラー分類（ネイティブエラー → 共通エラーコード）**:
+- **エラー分類（ネイティブエラー → 共通エラーコード `errorCode`）**:
   - `URLError.cancelled` → `cancel`
-  - `URLError.timedOut` → `connectionTimeout` / `receiveTimeout`
+  - `URLError.timedOut` / フェーズ別タイマー超過 → `connectionTimeout`（接続・送信開始前） / `sendTimeout`（`URLSessionTaskDelegate` によるリクエストボディ送信完了前） / `receiveTimeout`（リクエスト送信完了後のレスポンス待機・受信中）
   - `.notConnectedToInternet`, `.cannotFindHost`, `.cannotConnectToHost`, `.networkConnectionLost` → `connectionError`
   - サーバー証明書関連 `URLError` → `badCertificate`
   - `maxResponseBytes` 超過 → `maxResponseBytesExceeded`
