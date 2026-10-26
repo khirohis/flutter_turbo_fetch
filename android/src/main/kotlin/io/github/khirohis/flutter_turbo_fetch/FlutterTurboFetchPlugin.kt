@@ -8,6 +8,7 @@ import okhttp3.Callback
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Headers
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -15,12 +16,14 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.internal.http.HttpMethod
+import okio.BufferedSink
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.SecureRandom
+import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -36,19 +39,48 @@ class FlutterTurboFetchPlugin :
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val activeCalls = ConcurrentHashMap<String, Call>()
+    private val clientLock = Any()
 
-    private val dispatcher = Dispatcher().apply {
+    private var dispatcher: Dispatcher = createDispatcher()
+    private var baseClient: OkHttpClient = createBaseClient(dispatcher)
+
+    private fun createDispatcher(): Dispatcher = Dispatcher().apply {
         maxRequests = DEFAULT_MAX_REQUESTS
         maxRequestsPerHost = DEFAULT_MAX_REQUESTS_PER_HOST
     }
 
-    private val baseClient: OkHttpClient = OkHttpClient.Builder()
-        .dispatcher(dispatcher)
-        .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-        .build()
+    private fun createBaseClient(targetDispatcher: Dispatcher): OkHttpClient =
+        OkHttpClient.Builder()
+            .dispatcher(targetDispatcher)
+            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            .build()
+
+    private fun ensureClient(requestedPerHost: Int): OkHttpClient {
+        synchronized(clientLock) {
+            if (dispatcher.executorService.isShutdown) {
+                dispatcher = createDispatcher()
+                baseClient = createBaseClient(dispatcher)
+            }
+            if (requestedPerHost > dispatcher.maxRequests) {
+                dispatcher.maxRequests = requestedPerHost
+            } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
+                dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
+            }
+            if (dispatcher.maxRequestsPerHost != requestedPerHost) {
+                dispatcher.maxRequestsPerHost = requestedPerHost
+            }
+            return baseClient
+        }
+    }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        synchronized(clientLock) {
+            if (dispatcher.executorService.isShutdown) {
+                dispatcher = createDispatcher()
+                baseClient = createBaseClient(dispatcher)
+            }
+        }
         TurboFetchHostApi.setUp(flutterPluginBinding.binaryMessenger, this)
     }
 
@@ -58,6 +90,10 @@ class FlutterTurboFetchPlugin :
             call.cancel()
         }
         activeCalls.clear()
+        synchronized(clientLock) {
+            dispatcher.executorService.shutdown()
+            baseClient.connectionPool.evictAll()
+        }
     }
 
     override fun executeRequest(
@@ -65,18 +101,9 @@ class FlutterTurboFetchPlugin :
         callback: (Result<TurboHttpResponse>) -> Unit
     ) {
         val requestedPerHost = request.maxRequestsPerHost.toInt().coerceAtLeast(1)
-        synchronized(dispatcher) {
-            if (requestedPerHost > dispatcher.maxRequests) {
-                dispatcher.maxRequests = requestedPerHost
-            } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
-                dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
-            }
-            if (dispatcher.maxRequestsPerHost != requestedPerHost) {
-                dispatcher.maxRequestsPerHost = requestedPerHost
-            }
-        }
+        val sharedClient = ensureClient(requestedPerHost)
 
-        val clientBuilder = baseClient.newBuilder()
+        val clientBuilder = sharedClient.newBuilder()
             .followRedirects(request.followRedirects)
             .followSslRedirects(request.followRedirects)
 
@@ -103,10 +130,14 @@ class FlutterTurboFetchPlugin :
             }
         }
 
+        val sendPhaseTracker = SendPhaseTracker()
         val method = request.method.uppercase()
         val requestBody: RequestBody? = when {
             !HttpMethod.permitsRequestBody(method) -> null
-            request.body != null -> request.body.toRequestBody(null)
+            request.body != null -> TrackingRequestBody(
+                delegate = request.body.toRequestBody(null),
+                tracker = sendPhaseTracker
+            )
             HttpMethod.requiresRequestBody(method) -> ByteArray(0).toRequestBody(null)
             else -> null
         }
@@ -134,7 +165,7 @@ class FlutterTurboFetchPlugin :
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 activeCalls.remove(request.requestId)
-                val errorCode = classifyException(call, e)
+                val errorCode = classifyException(call, e, sendPhaseTracker.isSendingBody)
                 val turboResponse = TurboHttpResponse(
                     errorCode = errorCode,
                     errorMessage = e.message ?: e.javaClass.simpleName
@@ -147,8 +178,47 @@ class FlutterTurboFetchPlugin :
             override fun onResponse(call: Call, response: Response) {
                 try {
                     response.use { res ->
-                        // Native background thread: read & concatenate all HTTP/2 frames into a single ByteArray
-                        val bodyBytes = res.body?.bytes() ?: ByteArray(0)
+                        val maxBytes = request.maxResponseBytes
+                        val bodyBytes: ByteArray
+
+                        if (maxBytes == null) {
+                            // Unlimited: read & concatenate all HTTP/2 frames into a single ByteArray
+                            bodyBytes = res.body?.bytes() ?: ByteArray(0)
+                        } else {
+                            val safeMaxBytes = maxBytes.coerceAtLeast(0L)
+                            val responseBody = res.body
+                            if (responseBody == null) {
+                                bodyBytes = ByteArray(0)
+                            } else {
+                                val contentLength = responseBody.contentLength()
+                                if (contentLength > safeMaxBytes) {
+                                    activeCalls.remove(request.requestId)
+                                    val exceededResponse = TurboHttpResponse(
+                                        errorCode = "maxResponseBytesExceeded",
+                                        errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes, contentLength: $contentLength)"
+                                    )
+                                    mainHandler.post {
+                                        callback(Result.success(exceededResponse))
+                                    }
+                                    return
+                                }
+
+                                val source = responseBody.source()
+                                if (safeMaxBytes < Long.MAX_VALUE && source.request(safeMaxBytes + 1L)) {
+                                    activeCalls.remove(request.requestId)
+                                    val exceededResponse = TurboHttpResponse(
+                                        errorCode = "maxResponseBytesExceeded",
+                                        errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes)"
+                                    )
+                                    mainHandler.post {
+                                        callback(Result.success(exceededResponse))
+                                    }
+                                    return
+                                }
+                                bodyBytes = source.buffer.readByteArray()
+                            }
+                        }
+
                         val rawMultimap = res.headers.toMultimap()
                         val headersMap = HashMap<String?, Any?>(rawMultimap.size)
                         for ((k, v) in rawMultimap) {
@@ -168,7 +238,7 @@ class FlutterTurboFetchPlugin :
                     }
                 } catch (e: IOException) {
                     activeCalls.remove(request.requestId)
-                    val errorCode = classifyException(call, e)
+                    val errorCode = classifyException(call, e, sendPhaseTracker.isSendingBody)
                     val turboResponse = TurboHttpResponse(
                         errorCode = errorCode,
                         errorMessage = e.message ?: e.javaClass.simpleName
@@ -185,18 +255,35 @@ class FlutterTurboFetchPlugin :
         activeCalls.remove(requestId)?.cancel()
     }
 
-    private fun classifyException(call: Call, e: IOException): String {
+    private fun classifyException(
+        call: Call,
+        e: IOException,
+        isSendingBody: Boolean
+    ): String {
         if (call.isCanceled()) {
             return "cancel"
         }
-        return when (e) {
-            is SocketTimeoutException -> {
+        return when {
+            e is SocketTimeoutException -> {
                 val msg = e.message?.lowercase() ?: ""
-                if (msg.contains("connect")) "connectionTimeout" else "receiveTimeout"
+                when {
+                    msg.contains("connect") -> "connectionTimeout"
+                    isSendingBody -> "sendTimeout"
+                    else -> "receiveTimeout"
+                }
             }
-            is InterruptedIOException -> "cancel"
-            is SSLException -> "badCertificate"
-            is UnknownHostException, is ConnectException -> "connectionError"
+            e is InterruptedIOException -> {
+                val msg = e.message?.lowercase() ?: ""
+                if (msg.contains("timeout")) {
+                    if (isSendingBody) "sendTimeout" else "receiveTimeout"
+                } else {
+                    "cancel"
+                }
+            }
+            e is SSLException || e.cause is CertificateException || e.cause is SSLException -> {
+                "badCertificate"
+            }
+            e is UnknownHostException || e is ConnectException -> "connectionError"
             else -> "connectionError"
         }
     }
@@ -214,6 +301,31 @@ class FlutterTurboFetchPlugin :
         val trustManager = trustAllCerts[0] as X509TrustManager
         builder.sslSocketFactory(sslContext.socketFactory, trustManager)
         builder.hostnameVerifier { _, _ -> true }
+    }
+
+    private class SendPhaseTracker {
+        @Volatile
+        var isSendingBody: Boolean = false
+    }
+
+    private class TrackingRequestBody(
+        private val delegate: RequestBody,
+        private val tracker: SendPhaseTracker
+    ) : RequestBody() {
+        override fun contentType(): MediaType? = delegate.contentType()
+
+        override fun contentLength(): Long = delegate.contentLength()
+
+        override fun writeTo(sink: BufferedSink) {
+            tracker.isSendingBody = true
+            try {
+                delegate.writeTo(sink)
+                sink.flush()
+                tracker.isSendingBody = false
+            } catch (e: IOException) {
+                throw e
+            }
+        }
     }
 
     companion object {
