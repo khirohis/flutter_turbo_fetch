@@ -98,7 +98,6 @@ class TurboHttpAdapter implements HttpClientAdapter {
       receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
       sendTimeoutMs: options.sendTimeout?.inMilliseconds,
       followRedirects: options.followRedirects,
-      maxRedirects: options.maxRedirects,
       maxRequestsPerHost: maxRequestsPerHost,
       allowBadCertificates: allowBadCertificates,
     );
@@ -118,10 +117,10 @@ class TurboHttpAdapter implements HttpClientAdapter {
     }
     isCompleted = true;
 
-    if (response.errorType != null) {
+    if (response.errorCode != null) {
       throw DioException(
         requestOptions: options,
-        type: _mapErrorType(response.errorType!),
+        type: _mapErrorType(response.errorCode!),
         message: response.errorMessage,
         error: response.errorMessage,
       );

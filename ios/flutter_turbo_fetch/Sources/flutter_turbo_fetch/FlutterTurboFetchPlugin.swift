@@ -43,7 +43,7 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
   ) {
     guard let url = URL(string: request.url) else {
       let errorResponse = TurboHttpResponse(
-        errorType: "connectionError",
+        errorCode: "connectionError",
         errorMessage: "Invalid request URL: \(request.url)"
       )
       DispatchQueue.main.async {
@@ -82,9 +82,9 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
       self.removeTask(for: request.requestId)
 
       if let error = error {
-        let (errorType, errorMessage) = self.classifyError(error)
+        let (errorCode, errorMessage) = self.classifyError(error)
         let turboResponse = TurboHttpResponse(
-          errorType: errorType,
+          errorCode: errorCode,
           errorMessage: errorMessage
         )
         DispatchQueue.main.async {
@@ -95,7 +95,7 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
 
       guard let httpResponse = response as? HTTPURLResponse else {
         let turboResponse = TurboHttpResponse(
-          errorType: "connectionError",
+          errorCode: "connectionError",
           errorMessage: "Non-HTTP response received"
         )
         DispatchQueue.main.async {
