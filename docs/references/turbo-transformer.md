@@ -60,7 +60,7 @@ class TurboOptions<T> extends Options {
     super.listFormat,
   }) : super() {
     if (mapper != null || maxResponseBytes != null) {
-      this.extra = <String, Object?>{
+      extra = <String, Object?>{
         ...?extra,
         if (mapper != null) turboMapperExtraKey: mapper,
         if (maxResponseBytes != null)
@@ -97,7 +97,7 @@ class TurboTransformer extends BackgroundTransformer {
   final int maxConcurrentIsolates;
 
   TurboTransformer({
-    this.isolateThresholdBytes = 24 * 1024,
+    int isolateThresholdBytes = 24 * 1024,
     int? maxConcurrentIsolates,
   }) : this._(
          isolateThresholdBytes: isolateThresholdBytes,
