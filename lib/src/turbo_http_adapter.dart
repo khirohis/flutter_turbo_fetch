@@ -75,9 +75,11 @@ class TurboHttpAdapter implements HttpClientAdapter {
         'turbo_${++_requestCounter}_${DateTime.now().microsecondsSinceEpoch}';
 
     bool isCompleted = false;
+    bool isCancelled = false;
     if (cancelFuture != null) {
       cancelFuture.whenComplete(() {
         if (!isCompleted) {
+          isCancelled = true;
           unawaited(_hostApi.cancelRequest(requestId));
         }
       });
@@ -107,14 +109,14 @@ class TurboHttpAdapter implements HttpClientAdapter {
         requestOptions: options,
         error: e,
         stackTrace: stackTrace,
-        type: DioExceptionType.unknown,
+        type: isCancelled ? DioExceptionType.cancel : DioExceptionType.unknown,
         message: e.toString(),
       );
     }
     isCompleted = true;
 
     if (response.errorCode != null) {
-      final errorCode = response.errorCode!;
+      final errorCode = isCancelled ? 'cancel' : response.errorCode!;
       final errorMessage = _resolveErrorMessage(
         errorCode: errorCode,
         rawMessage: response.errorMessage,
@@ -125,6 +127,14 @@ class TurboHttpAdapter implements HttpClientAdapter {
         type: _mapErrorCode(errorCode),
         message: errorMessage,
         error: errorMessage,
+      );
+    }
+
+    if (isCancelled) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+        message: 'Request was cancelled.',
       );
     }
 

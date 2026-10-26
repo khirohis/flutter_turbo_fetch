@@ -36,7 +36,9 @@ function getJsonPayloadBuffer(sizeKb) {
     });
     index++;
     if (index % 10 === 0) {
-      const current = Buffer.byteLength(JSON.stringify({ sizeKb: clampedKb, count: items.length, items }));
+      const current = Buffer.byteLength(
+        JSON.stringify({ sizeKb: clampedKb, count: items.length, items }),
+      );
       if (current >= targetBytes) {
         break;
       }
@@ -63,17 +65,35 @@ function handleRequest(req, res) {
     return;
   }
 
+  if (reqUrl.pathname === '/redirect') {
+    const target = reqUrl.searchParams.get('to') ?? '/health';
+    res.writeHead(302, { location: target });
+    res.end();
+    return;
+  }
+
+  const status = Number(reqUrl.searchParams.get('status') ?? 200);
   const sizeKb = Number(reqUrl.searchParams.get('sizeKb') ?? 100);
   const delayMs = Number(reqUrl.searchParams.get('delayMs') ?? 0);
+  const omitContentLength = reqUrl.searchParams.get('omitContentLength') === '1';
   const payload = getJsonPayloadBuffer(Number.isFinite(sizeKb) ? sizeKb : 100);
 
   const send = () => {
-    res.writeHead(200, {
+    const headers = {
       'content-type': 'application/json; charset=utf-8',
-      'content-length': String(payload.byteLength),
       'x-http-version': req.httpVersion,
-    });
-    res.end(payload);
+    };
+    if (!omitContentLength) {
+      headers['content-length'] = String(payload.byteLength);
+    }
+    res.writeHead(Number.isFinite(status) ? status : 200, headers);
+    if (omitContentLength && payload.byteLength > 16384) {
+      const mid = Math.floor(payload.byteLength / 2);
+      res.write(payload.subarray(0, mid));
+      res.end(payload.subarray(mid));
+    } else {
+      res.end(payload);
+    }
   };
 
   if (delayMs > 0) {
