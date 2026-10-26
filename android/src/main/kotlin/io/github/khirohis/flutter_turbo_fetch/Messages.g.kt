@@ -57,9 +57,9 @@ data class TurboHttpRequest (
   val receiveTimeoutMs: Long? = null,
   val sendTimeoutMs: Long? = null,
   val followRedirects: Boolean,
-  val maxRedirects: Long,
   val maxRequestsPerHost: Long,
-  val allowBadCertificates: Boolean
+  val allowBadCertificates: Boolean,
+  val maxResponseBytes: Long? = null
 )
  {
   companion object {
@@ -73,10 +73,10 @@ data class TurboHttpRequest (
       val receiveTimeoutMs = pigeonVar_list[6] as Long?
       val sendTimeoutMs = pigeonVar_list[7] as Long?
       val followRedirects = pigeonVar_list[8] as Boolean
-      val maxRedirects = pigeonVar_list[9] as Long
-      val maxRequestsPerHost = pigeonVar_list[10] as Long
-      val allowBadCertificates = pigeonVar_list[11] as Boolean
-      return TurboHttpRequest(requestId, url, method, headers, body, connectTimeoutMs, receiveTimeoutMs, sendTimeoutMs, followRedirects, maxRedirects, maxRequestsPerHost, allowBadCertificates)
+      val maxRequestsPerHost = pigeonVar_list[9] as Long
+      val allowBadCertificates = pigeonVar_list[10] as Boolean
+      val maxResponseBytes = pigeonVar_list[11] as Long?
+      return TurboHttpRequest(requestId, url, method, headers, body, connectTimeoutMs, receiveTimeoutMs, sendTimeoutMs, followRedirects, maxRequestsPerHost, allowBadCertificates, maxResponseBytes)
     }
   }
   fun toList(): List<Any?> {
@@ -90,9 +90,9 @@ data class TurboHttpRequest (
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRedirects,
       maxRequestsPerHost,
       allowBadCertificates,
+      maxResponseBytes,
     )
   }
 }
@@ -103,7 +103,7 @@ data class TurboHttpResponse (
   val statusMessage: String? = null,
   val headers: Map<String?, Any?>? = null,
   val body: ByteArray? = null,
-  val errorType: String? = null,
+  val errorCode: String? = null,
   val errorMessage: String? = null
 )
  {
@@ -113,9 +113,9 @@ data class TurboHttpResponse (
       val statusMessage = pigeonVar_list[1] as String?
       val headers = pigeonVar_list[2] as Map<String?, Any?>?
       val body = pigeonVar_list[3] as ByteArray?
-      val errorType = pigeonVar_list[4] as String?
+      val errorCode = pigeonVar_list[4] as String?
       val errorMessage = pigeonVar_list[5] as String?
-      return TurboHttpResponse(statusCode, statusMessage, headers, body, errorType, errorMessage)
+      return TurboHttpResponse(statusCode, statusMessage, headers, body, errorCode, errorMessage)
     }
   }
   fun toList(): List<Any?> {
@@ -124,7 +124,7 @@ data class TurboHttpResponse (
       statusMessage,
       headers,
       body,
-      errorType,
+      errorCode,
       errorMessage,
     )
   }

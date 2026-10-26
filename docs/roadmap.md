@@ -36,7 +36,7 @@
 
 PoC で実証したコアパイプラインに対し、実運用で必須となる通信制御・ライフサイクル管理・エラーマッピング・カスタムオブジェクトマッピングを完備するフェーズ。
 
-- [ ] **2-1. 通信インターフェース（Pigeon スキーマ）の確定・拡張**
+- [x] **2-1. 通信インターフェース（Pigeon スキーマ）の確定・拡張**
   - [`docs/architectures/native-layer.md`](architectures/native-layer.md) に基づき、リクエスト情報（`maxResponseBytes` 追加等）・レスポンス情報・`cancelRequest(requestId)` のスキーマを確定しコードを再生成する。
 - [ ] **2-2. Android Plugin クラス（`FlutterPlugin`）のプロダクション対応**
   - `maxResponseBytes` 指定時のサイズ上限チェック（超過時は即座にストリームを切断し `maxResponseBytesExceeded` を返却）および Engine デタッチ時のリソース解放を実装する。

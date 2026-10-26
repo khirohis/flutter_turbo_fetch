@@ -119,7 +119,7 @@ class FlutterTurboFetchPlugin :
                 .build()
         } catch (e: Exception) {
             val errorResponse = TurboHttpResponse(
-                errorType = "connectionError",
+                errorCode = "connectionError",
                 errorMessage = e.message ?: "Invalid request URL or parameters"
             )
             mainHandler.post {
@@ -134,9 +134,9 @@ class FlutterTurboFetchPlugin :
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 activeCalls.remove(request.requestId)
-                val errorType = classifyException(call, e)
+                val errorCode = classifyException(call, e)
                 val turboResponse = TurboHttpResponse(
-                    errorType = errorType,
+                    errorCode = errorCode,
                     errorMessage = e.message ?: e.javaClass.simpleName
                 )
                 mainHandler.post {
@@ -168,9 +168,9 @@ class FlutterTurboFetchPlugin :
                     }
                 } catch (e: IOException) {
                     activeCalls.remove(request.requestId)
-                    val errorType = classifyException(call, e)
+                    val errorCode = classifyException(call, e)
                     val turboResponse = TurboHttpResponse(
-                        errorType = errorType,
+                        errorCode = errorCode,
                         errorMessage = e.message ?: e.javaClass.simpleName
                     )
                     mainHandler.post {

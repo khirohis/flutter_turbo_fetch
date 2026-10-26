@@ -23,9 +23,9 @@ class TurboHttpRequest {
     this.receiveTimeoutMs,
     this.sendTimeoutMs,
     required this.followRedirects,
-    required this.maxRedirects,
     required this.maxRequestsPerHost,
     required this.allowBadCertificates,
+    this.maxResponseBytes,
   });
 
   final String requestId;
@@ -37,9 +37,9 @@ class TurboHttpRequest {
   final int? receiveTimeoutMs;
   final int? sendTimeoutMs;
   final bool followRedirects;
-  final int maxRedirects;
   final int maxRequestsPerHost;
   final bool allowBadCertificates;
+  final int? maxResponseBytes;
 }
 
 class TurboHttpResponse {
@@ -48,7 +48,7 @@ class TurboHttpResponse {
     this.statusMessage,
     this.headers,
     this.body,
-    this.errorType,
+    this.errorCode,
     this.errorMessage,
   });
 
@@ -56,7 +56,7 @@ class TurboHttpResponse {
   final String? statusMessage;
   final Map<String?, Object?>? headers;
   final Uint8List? body;
-  final String? errorType;
+  final String? errorCode;
   final String? errorMessage;
 }
 
