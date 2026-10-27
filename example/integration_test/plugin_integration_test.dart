@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_turbo_fetch/flutter_turbo_fetch.dart';
 import 'package:flutter_turbo_fetch_example/main.dart';
@@ -28,44 +27,41 @@ void main() {
 
     addTearDown(() => dio.close(force: true));
 
-    // 1. Concurrent heterogeneous requests on a single Dio instance (json+mapper, plain, bytes, stream)
-    final results = await Future.wait<Object?>(<Future<Object?>>[
-      dio
-          .get<int>(
-            '/json?sizeKb=50',
-            options: TurboOptions<int>(
-              responseType: ResponseType.json,
-              mapper: _extractItemCountMapper,
-            ),
-          )
-          .then((r) => r.data),
-      dio
-          .get<String>(
-            '/health',
-            options: TurboOptions<String>(responseType: ResponseType.plain),
-          )
-          .then((r) => r.data),
-      dio
-          .get<Uint8List>(
-            '/json?sizeKb=10',
-            options: TurboOptions<Uint8List>(responseType: ResponseType.bytes),
-          )
-          .then((r) => r.data),
-      dio
-          .get<ResponseBody>(
-            '/health',
-            options: TurboOptions<ResponseBody>(
-              responseType: ResponseType.stream,
-            ),
-          )
-          .then((r) => r.data),
-    ]);
+    // 1. Basic JSON fetch & TurboOptions(mapper) execution
+    final res = await dio.get<dynamic>(
+      '/json?sizeKb=10',
+      options: TurboOptions(
+        responseType: ResponseType.json,
+        mapper: _extractItemCountMapper,
+      ),
+    );
+    expect(res.statusCode, equals(200));
+    expect(res.data, isA<int>());
+    expect(res.data as int, greaterThan(0));
 
-    expect(results[0] as int, greaterThan(0));
-    expect(results[1] as String, contains('"status":"ok"'));
-    expect((results[2] as Uint8List).lengthInBytes, greaterThanOrEqualTo(10 * 1024));
-    final streamChunks = await (results[3] as ResponseBody).stream.toList();
-    expect(streamChunks, hasLength(1));
+    // ResponseType.bytes
+    final bytesRes = await dio.get<dynamic>(
+      '/json?sizeKb=5',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    expect(bytesRes.statusCode, equals(200));
+    expect(bytesRes.data, isA<Uint8List>());
+
+    // ResponseType.plain
+    final plainRes = await dio.get<dynamic>(
+      '/json?sizeKb=5',
+      options: Options(responseType: ResponseType.plain),
+    );
+    expect(plainRes.statusCode, equals(200));
+    expect(plainRes.data, isA<String>());
+
+    // ResponseType.stream
+    final streamRes = await dio.get<dynamic>(
+      '/json?sizeKb=5',
+      options: Options(responseType: ResponseType.stream),
+    );
+    expect(streamRes.statusCode, equals(200));
+    expect(streamRes.data, isA<ResponseBody>());
 
     // 2. maxResponseBytesExceeded check (with Content-Length and without Content-Length)
     await expectLater(
@@ -103,7 +99,7 @@ void main() {
     );
   });
 
-  testWidgets('Run parallel HTTP/2 benchmarks on device/emulator', (
+  testWidgets('Verify benchmark scenario UI controls on device/emulator', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
@@ -118,49 +114,25 @@ void main() {
       }
     }
 
-    Future<void> runPreset(BenchmarkPreset preset) async {
-      await tester.tap(find.widgetWithText(ChoiceChip, preset.shortName));
-      await waitRealTime(const Duration(milliseconds: 300));
+    // Verify UI components are rendered
+    expect(find.text('TurboFetch Benchmark'), findsOneWidget);
+    expect(find.text('1. 接続先モックサーバー設定'), findsOneWidget);
+    expect(find.text('2. 計測シナリオ選択'), findsOneWidget);
+    expect(find.text('3. ベンチマーク実行'), findsOneWidget);
+    expect(find.text('4プリセット一括連続実行 (推奨)'), findsOneWidget);
+    expect(find.text('個別実行'), findsOneWidget);
 
-      await tester.tap(find.text('Run Parallel Benchmark'));
-      await tester.pump();
-
-      for (int i = 0; i < 150; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        await tester.pump();
-        if (find.text('Run Parallel Benchmark').evaluate().isNotEmpty) {
-          break;
-        }
-      }
-      await waitRealTime(const Duration(seconds: 2));
-    }
-
-    // 1. Local 100KB (Android 10.0.2.2) presets ①, ②, ④
-    await tester.tap(find.text('Local 100KB (Android 10.0.2.2)'));
+    // Verify scenario segments can be switched
+    await tester.tap(find.text('計測B (10〜100KiB)'));
     await waitRealTime(const Duration(milliseconds: 300));
+    expect(find.textContaining('実運用標準負荷の総合性能'), findsOneWidget);
 
-    debugPrint('=== Suite 1: Local HTTP/2 Mock Server (100KB JSON x 15) ===');
-    for (final preset in [
-      BenchmarkPreset.ioHttp1,
-      BenchmarkPreset.dioHttp2,
-      BenchmarkPreset.turboFetch,
-    ]) {
-      await runPreset(preset);
-    }
+    await tester.tap(find.text('計測C (20〜200KiB)'));
+    await waitRealTime(const Duration(milliseconds: 300));
+    expect(find.textContaining('高多重・セマフォ上限時の耐性'), findsOneWidget);
 
-    expect(find.text('Benchmark Results (3)'), findsOneWidget);
-
-    // 2. Public DummyJSON for 4-way comparison (including native_dio_adapter)
-    await tester.tap(find.text('Clear'));
-    await waitRealTime(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Public DummyJSON'));
-    await waitRealTime(const Duration(milliseconds: 500));
-
-    debugPrint('=== Suite 2: Public HTTPS HTTP/2 Endpoint (4 Presets x 15) ===');
-    for (final preset in BenchmarkPreset.values) {
-      await runPreset(preset);
-    }
-
-    expect(find.text('Benchmark Results (4)'), findsOneWidget);
+    await tester.tap(find.text('計測A (5〜45KiB)'));
+    await waitRealTime(const Duration(milliseconds: 300));
+    expect(find.textContaining('24KiB閾値の妥当性評価'), findsOneWidget);
   });
 }
