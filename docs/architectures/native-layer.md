@@ -36,7 +36,7 @@
 
 - **ターゲット・依存バージョン**: `minSdk = 24`（Android 7.0+）、`com.squareup.okhttp3:okhttp:4.12.0`
 - **クライアント構成**:
-  - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MB ウィンドウ）を保持する。
+  - 共有の `OkHttpClient` インスタンス（`ConnectionPool`、HTTP/2 初期 16MiB ウィンドウ）を保持する。
   - `Dispatcher.maxRequestsPerHost` はデフォルト `32`（全体 `maxRequests` はデフォルト `64`、これを超える `maxRequestsPerHost` 指定時は `maxRequests` も同値へ自動引き上げ）。
   - リクエスト単位のタイムアウト・リダイレクト・`allowBadCertificates` は `client.newBuilder()` で適用する。
 - **一括受信処理**:
