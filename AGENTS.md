@@ -30,6 +30,7 @@
 - **`docs/references/`**（通常時は参照不要・必要時のみオンデマンド参照）:
   - [`design-rationale.md`](docs/references/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
   - [`turbo-transformer.md`](docs/references/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
+  - [`benchmark-results.md`](docs/references/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析。
 
 ---
 

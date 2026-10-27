@@ -131,3 +131,12 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
    - アプリ画面上での結果表示（テーブル表示）。
    - debugPrint への Markdown テーブル出力およびクリップボードコピー機能。
 ```
+
+---
+
+## 7. 実測結果の参照先
+
+本プロンプトおよび仕様に基づいて実施したベンチマークの実行結果、詳細データ、技術的評価レポートは以下を参照のこと。
+
+- 📄 **[ベンチマーク実測結果・性能検証レポート (`docs/references/benchmark-results.md`)](../references/benchmark-results.md)**
+
