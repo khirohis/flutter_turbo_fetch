@@ -20,3 +20,4 @@
 ### 設計背景・リファレンス資料 (`references/`) — Why / Reference（オンデマンド参照）
 - [`references/design-rationale.md`](references/design-rationale.md): 解決すべき 3 大ボトルネック、`pub.dev` 既存パッケージ評価、設計 4 原則の技術的根拠、通信ブリッジ比較背景
 - [`references/turbo-transformer.md`](references/turbo-transformer.md): `TurboTransformer` & `TurboOptions` の設計解説およびリファレンス実装コード
+- [`references/benchmark-results.md`](references/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析レポート

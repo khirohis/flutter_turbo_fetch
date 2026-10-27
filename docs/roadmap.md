@@ -73,7 +73,7 @@ PoC で実証したコアパイプラインに対し、実運用で必須とな�
   - `example/lib/main.dart` に計測シナリオA / B / C および個別・4構成一括実行UIを実装する。
   - 実行中のリアルタイム進捗表示および完了後の比較テーブル表示を実装する。
   - 結果の Markdown テーブル生成、コンソール出力（`debugPrint`）、クリップボードコピー機能を実装する。
-- [ ] **4-3. ベンチマーク計測の実施と性能評価レポート（結果検証）の作成**
+- [x] **4-3. ベンチマーク計測の実施と性能評価レポート（結果検証）の作成**
   - HTTP/2 モックサーバーと連携し、計測A・B・Cを4プリセットで実行する。
-  - 得られた実測結果（Markdownテーブル）を [`docs/architectures/benchmark.md`](architectures/benchmark.md) に記録する。
+  - 得られた実測結果（Markdownテーブル）および技術分析を [`docs/references/benchmark-results.md`](references/benchmark-results.md) に記録する。
   - 24KiB閾値の妥当性（50KiB未満差分）、多重リクエスト時の劣化抑制、メモリ消費量（RSS）の安定性を分析・評価する。
