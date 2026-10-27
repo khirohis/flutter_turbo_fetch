@@ -11,9 +11,9 @@
    - **`ResponseType.bytes` (`Uint8List`)**: ネイティブ層（Android `OkHttp` / iOS `URLSession`）が結合済みの `Uint8List` を 1 チャンクだけ流すため、`BytesBuilder(copy: false)` を用いることで再アロケーション・メモリコピーなしでバッファを取り出してそのまま返却する（`TurboOptions(mapper: ...)` 指定時はバイナリパーサー等のマッパー処理も閾値に応じて Isolate オフロード可能）。
    - **`ResponseType.plain` (`String`)**: Dio 標準の `BackgroundTransformer` は巨大テキストでも Main Isolate で同期 `utf8.decode` を実行してしまうが、`TurboTransformer` では JSON と同様に閾値以上なら Isolate へオフロードする。
    - **`ResponseType.json` (`dynamic`)**: `utf8.decoder.fuse(json.decoder)` により中間 `String` を作らずバイト列から直接オブジェクトツリーを生成する。
-   - **`TurboOptions(mapper: ...)` によるオブジェクトマッピング**: デコード結果（`ResponseBody` / `Uint8List` / `String` / JSON オブジェクト）を引数として受け取り、任意のドメインモデルへ変換する。24KB 以上の `bytes` / `plain` / `json` では Worker Isolate 内でマッパー関数まで一気通貫で実行し、完成したモデルインスタンスを `Isolate.exit` で O(1) ゼロコピー返却する。
-2. **閾値分岐（デフォルト 24KB）による Isolate 起動オーバーヘッド回避**
-   - 小さいデータ（〜24KB 未満）では `Isolate.run` の起動コスト（約 0.5〜1.5ms）の方が高くつくため、Main Isolate 上で直接デコード（＋マッピング）する（0.5ms 以下）。
+   - **`TurboOptions(mapper: ...)` によるオブジェクトマッピング**: デコード結果（`ResponseBody` / `Uint8List` / `String` / JSON オブジェクト）を引数として受け取り、任意のドメインモデルへ変換する。24KiB 以上の `bytes` / `plain` / `json` では Worker Isolate 内でマッパー関数まで一気通貫で実行し、完成したモデルインスタンスを `Isolate.exit` で O(1) ゼロコピー返却する。
+2. **閾値分岐（デフォルト 24KiB）による Isolate 起動オーバーヘッド回避**
+   - 小さいデータ（〜24KiB 未満）では `Isolate.run` の起動コスト（約 0.5〜1.5ms）の方が高くつくため、Main Isolate 上で直接デコード（＋マッピング）する（0.5ms 以下）。
 3. **往復 O(1) ゼロコピー (`TransferableTypedData` + `Isolate.run`)**
    - **行き**: `TransferableTypedData.fromList([bytes])` により、Main Isolate から Worker Isolate へ O(1) でメモリ所有権を移譲する。
    - **帰り**: `Isolate.run`（内部で `Isolate.exit` を使用）により、Worker 終了時に共有ヒープ上のポインタ所有権を Main Isolate へ移すだけで返却が完了する（常駐 Isolate の `SendPort.send` で発生する Transitive Copy を回避）。
@@ -53,7 +53,7 @@ class TurboOptions<T> extends Options {
     super.validateStatus,
     super.receiveDataWhenStatusError,
     super.followRedirects,
-    super.maxRedirects,
+    super.maxRedirects, // ※ネイティブ層ではリダイレクト回数制限プロパティを持たないため無視されます
     super.persistentConnection,
     super.requestEncoder,
     super.responseDecoder,
@@ -90,7 +90,7 @@ class TurboTransformer extends BackgroundTransformer {
   /// 同時起動するIsolate数を制限するセマフォ（並列リクエスト時のスレッド飽和を防止）
   final _Semaphore _semaphore;
 
-  /// Isolateへオフロードする閾値（並列通信時は 20KB〜32KB 推奨、デフォルト 24KB）
+  /// Isolateへオフロードする閾値（並列通信時は 20KiB〜32KiB 推奨、デフォルト 24KiB）
   final int isolateThresholdBytes;
 
   /// 同時起動する最大Isolate数

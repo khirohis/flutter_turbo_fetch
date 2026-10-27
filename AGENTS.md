@@ -5,7 +5,7 @@
 `flutter_turbo_fetch` は、Flutter（`package:dio`）向け **ネイティブ層 HTTP/2 一括受信 & ゼロコピー変換対応の Flutter Plugin** です。
 
 - **Android (`OkHttp3`) / iOS (`URLSession`)**: バックグラウンドスレッドで HTTP/2 通信〜チャンク結合までを完結し、完成した `Uint8List` を 1 リクエストにつき 1 回だけ Dart へ返却する（`maxResponseBytes` 指定時は上限超過を検知した時点で処理を中断しエラー返却）。
-- **Dart (`TurboHttpAdapter` + `TurboTransformer` + `TurboOptions`)**: 単一チャンクの `Uint8List` をゼロコピー受領し、Dio 標準の 4 種類（`stream` / `bytes` / `plain` / `json`）および `TurboOptions(mapper: ...)` 指定時のカスタムオブジェクトへ変換する。閾値（24KB）未満は Main Isolate、以上は `TransferableTypedData` + セマフォ付き `Isolate.run`（`Isolate.exit`）で往復ゼロコピー変換する。
+- **Dart (`TurboHttpAdapter` + `TurboTransformer` + `TurboOptions`)**: 単一チャンクの `Uint8List` をゼロコピー受領し、Dio 標準の 4 種類（`stream` / `bytes` / `plain` / `json`）および `TurboOptions(mapper: ...)` 指定時のカスタムオブジェクトへ変換する。閾値（24KiB）未満は Main Isolate、以上は `TransferableTypedData` + セマフォ付き `Isolate.run`（`Isolate.exit`）で往復ゼロコピー変換する。
 
 ---
 
@@ -20,12 +20,13 @@
 
 ## 3. ドキュメント構成（`docs/`）
 
-- **[`docs/roadmap.md`](docs/roadmap.md)**: 全 4 フェーズの開発ステップ一覧と進行チェックリスト。
+- **[`docs/roadmap.md`](docs/roadmap.md)**: 全 5 フェーズの開発ステップ一覧と進行チェックリスト。
 - **`docs/architectures/`**（設計・実装時に参照する仕様定義）:
   - [`architecture.md`](docs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
   - [`native-layer.md`](docs/architectures/native-layer.md): Android / iOS ネイティブ層仕様と通信データモデル。
   - [`dart-layer.md`](docs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
-- **`docs/features/`**: 個別機能の詳細仕様。
+  - [`benchmark.md`](docs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
+- **`docs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。
 - **`docs/references/`**（通常時は参照不要・必要時のみオンデマンド参照）:
   - [`design-rationale.md`](docs/references/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
   - [`turbo-transformer.md`](docs/references/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。

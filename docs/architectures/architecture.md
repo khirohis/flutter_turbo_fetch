@@ -8,7 +8,7 @@
 
 ```text
 [ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler)]
-  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp は初期 16MB ウィンドウ）
+  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp は初期 16MiB ウィンドウ）
   ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時は上限超過を検知した時点で処理を中断しエラー返却）
   └─ 完成した byte[] / Data (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
         │
@@ -17,8 +17,8 @@
   ├─ ResponseBody.fromBytes(bytes) により単一チャンクの Stream<Uint8List> としてラップ
   ├─ ストリーム取得 (ResponseType.stream): 単一チャンク Stream を持つ ResponseBody を O(1) 返却（指定時は mapper 実行）
   ├─ バイト列取得 (ResponseType.bytes, mapper なし): BytesBuilder(copy: false) で Uint8List を O(1) ゼロコピー返却
-  ├─ 小さいデータ（〜24KB 未満）: Main Isolate 上で直接デコード（＋指定時は mapper 実行）
-  └─ 大きいデータ（24KB 以上）: TransferableTypedData (O(1) ゼロコピー) で Isolate.run へ転送
+  ├─ 小さいデータ（〜24KiB 未満）: Main Isolate 上で直接デコード（＋指定時は mapper 実行）
+  └─ 大きいデータ（24KiB 以上）: TransferableTypedData (O(1) ゼロコピー) で Isolate.run へ転送
         │
         ▼ (セマフォで同時起動数を制限: デフォルト max(4, Platform.numberOfProcessors - 2))
 [Dart Worker Isolate (Isolate.run)]

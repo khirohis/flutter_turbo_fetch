@@ -22,7 +22,7 @@ final response = await dio.get<User>(
   options: TurboOptions(
     mapper: (data) => User.fromJson(data as Map<String, dynamic>),
     responseType: ResponseType.json, // デフォルトは ResponseType.json
-    maxResponseBytes: 16 * 1024 * 1024,
+    maxResponseBytes: 16 * 1024 * 1024, // 16MiB
   ),
 );
 final User user = response.data!;
@@ -74,6 +74,6 @@ final User user = response.data!;
   4. **JSON (`ResponseType.json` → `dynamic` または `mapper(dynamic)`)**:
      - `utf8.decoder.fuse(json.decoder)` で中間 `String` を作らずデコード（および指定時は `mapper` 実行）して返却する。
 - **Isolate オフロード制御（`bytes` [mapper 指定時] / `plain` / `json` 共通）**:
-  - **閾値（`isolateThresholdBytes`、デフォルト 24KB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
+  - **閾値（`isolateThresholdBytes`、デフォルト 24KiB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
   - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(4, Platform.numberOfProcessors - 2)` とし、コンストラクタ引数でカスタマイズ可能とする。
 - **リファレンス実装**: [`docs/references/turbo-transformer.md`](../references/turbo-transformer.md) を参照。
