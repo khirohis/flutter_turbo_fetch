@@ -121,3 +121,6 @@ app.*.symbols
 
 # Local mock server certificates
 *.pem
+
+# Visual Studio Code
+.vscode/
