@@ -605,5 +605,154 @@ void main() {
       expect(allowedResponse.statusCode, 404);
       expect(allowedResponse.data, {'error': 'Not Found'});
     });
+
+    test('normalizes single non-iterable response headers and handles null errorMessage fallback', () async {
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) async => TurboHttpResponse(
+          errorCode: 'maxResponseBytesExceeded',
+          errorMessage: null, // null message triggers fallback resolver
+        ),
+      );
+      final dio = _createDio(fakeApi);
+
+      await expectLater(
+        dio.get<dynamic>(
+          'https://example.com/exceeded-null-msg',
+          options: TurboOptions(maxResponseBytes: 8192),
+        ),
+        throwsA(
+          isA<DioException>()
+              .having((e) => e.type, 'type', DioExceptionType.unknown)
+              .having(
+                (e) => e.message,
+                'fallback message',
+                'Response body exceeded maxResponseBytes limit (8192 bytes)',
+              ),
+        ),
+      );
+
+      // Verify single string header normalization
+      final headerFakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) async => TurboHttpResponse(
+          statusCode: 200,
+          headers: <String?, Object?>{
+            'Server': 'TurboServer/1.0', // Non-iterable single string
+          },
+          body: Uint8List(0),
+        ),
+      );
+      final adapter = TurboHttpAdapter(hostApi: headerFakeApi);
+      final responseBody = await adapter.fetch(
+        RequestOptions(path: 'https://example.com'),
+        null,
+        null,
+      );
+      expect(responseBody.headers['server'], <String>['TurboServer/1.0']);
+    });
+
+    test('wraps unexpected hostApi exceptions into DioException (unknown and cancel)', () async {
+      // 1. Uncancelled unexpected exception
+      final throwingApi = FakeTurboFetchHostApi(
+        onExecute: (_) async => throw Exception('Pigeon bridge failure'),
+      );
+      final dio = _createDio(throwingApi);
+
+      await expectLater(
+        dio.get<dynamic>('https://example.com/bridge-error'),
+        throwsA(
+          isA<DioException>()
+              .having((e) => e.type, 'type', DioExceptionType.unknown)
+              .having((e) => e.message, 'message', contains('Pigeon bridge failure')),
+        ),
+      );
+
+      // 2. Cancelled unexpected exception
+      final cancelToken = CancelToken();
+      final cancelCompleter = Completer<TurboHttpResponse>();
+      final cancelThrowingApi = FakeTurboFetchHostApi(
+        onExecute: (_) async {
+          await cancelCompleter.future;
+          throw Exception('Pigeon canceled error');
+        },
+        onCancel: (_) {
+          if (!cancelCompleter.isCompleted) {
+            cancelCompleter.completeError(Exception('Pigeon canceled error'));
+          }
+        },
+      );
+      final cancelDio = _createDio(cancelThrowingApi);
+
+      final cancelFuture = cancelDio.get<dynamic>(
+        'https://example.com/cancel-bridge-error',
+        cancelToken: cancelToken,
+      );
+      Future<void>.delayed(const Duration(milliseconds: 10), () {
+        cancelToken.cancel('User aborted');
+      });
+
+      await expectLater(
+        cancelFuture,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+    });
+
+    test('throws DioExceptionType.cancel when response succeeded but request was cancelled (race condition)', () async {
+      final completer = Completer<TurboHttpResponse>();
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) => completer.future,
+        onCancel: (_) {
+          // Native completed with 200 just as cancel arrived
+          if (!completer.isCompleted) {
+            completer.complete(
+              TurboHttpResponse(
+                statusCode: 200,
+                body: Uint8List.fromList(utf8.encode('{"ok":true}')),
+              ),
+            );
+          }
+        },
+      );
+      final dio = _createDio(fakeApi);
+      final cancelToken = CancelToken();
+
+      final future = dio.get<dynamic>(
+        'https://example.com/race-cancel',
+        cancelToken: cancelToken,
+      );
+      Future<void>.delayed(const Duration(milliseconds: 10), () {
+        cancelToken.cancel('Cancelled during response arrival');
+      });
+
+      await expectLater(
+        future,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+    });
+
+    test('returns bytes directly on Main Isolate when bytes >= isolateThresholdBytes but mapper is null', () async {
+      final transformer = TurboTransformer(isolateThresholdBytes: 1024);
+      final largeBytes = Uint8List(4096)..[0] = 99;
+
+      final result = await transformer.transformResponse(
+        RequestOptions(path: '/large-raw-bytes', responseType: ResponseType.bytes),
+        ResponseBody.fromBytes(largeBytes, 200),
+      );
+
+      expect(result, isA<Uint8List>());
+      expect((result as Uint8List).lengthInBytes, 4096);
+      expect(result[0], 99);
+    });
   });
 }

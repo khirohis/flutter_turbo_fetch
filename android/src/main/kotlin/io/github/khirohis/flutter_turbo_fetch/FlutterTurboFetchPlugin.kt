@@ -37,11 +37,27 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /** FlutterTurboFetchPlugin */
-class FlutterTurboFetchPlugin :
-    FlutterPlugin,
+class FlutterTurboFetchPlugin(
+    handler: Handler? = null
+) : FlutterPlugin,
     TurboFetchHostApi {
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainHandler: Handler? = handler ?: try {
+        val looper = Looper.getMainLooper()
+        if (looper != null) Handler(looper) else null
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun postToMain(action: () -> Unit) {
+        val h = mainHandler
+        if (h != null) {
+            h.post(action)
+        } else {
+            action()
+        }
+    }
+
     private val activeCalls = ConcurrentHashMap<String, Call>()
     private val clientLock = Any()
 
@@ -157,7 +173,7 @@ class FlutterTurboFetchPlugin :
                 errorCode = "connectionError",
                 errorMessage = e.message ?: "Invalid request URL or parameters"
             )
-            mainHandler.post {
+            postToMain {
                 callback(Result.success(errorResponse))
             }
             return
@@ -174,7 +190,7 @@ class FlutterTurboFetchPlugin :
                     errorCode = errorCode,
                     errorMessage = e.message ?: e.javaClass.simpleName
                 )
-                mainHandler.post {
+                postToMain {
                     callback(Result.success(turboResponse))
                 }
             }
@@ -201,7 +217,7 @@ class FlutterTurboFetchPlugin :
                                         errorCode = "maxResponseBytesExceeded",
                                         errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes, contentLength: $contentLength)"
                                     )
-                                    mainHandler.post {
+                                    postToMain {
                                         callback(Result.success(exceededResponse))
                                     }
                                     return
@@ -214,7 +230,7 @@ class FlutterTurboFetchPlugin :
                                         errorCode = "maxResponseBytesExceeded",
                                         errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes)"
                                     )
-                                    mainHandler.post {
+                                    postToMain {
                                         callback(Result.success(exceededResponse))
                                     }
                                     return
@@ -236,7 +252,7 @@ class FlutterTurboFetchPlugin :
                             body = bodyBytes
                         )
                         activeCalls.remove(request.requestId)
-                        mainHandler.post {
+                        postToMain {
                             callback(Result.success(turboResponse))
                         }
                     }
@@ -247,7 +263,7 @@ class FlutterTurboFetchPlugin :
                         errorCode = errorCode,
                         errorMessage = e.message ?: e.javaClass.simpleName
                     )
-                    mainHandler.post {
+                    postToMain {
                         callback(Result.success(turboResponse))
                     }
                 }
@@ -259,7 +275,7 @@ class FlutterTurboFetchPlugin :
         activeCalls.remove(requestId)?.cancel()
     }
 
-    private fun classifyException(
+    internal fun classifyException(
         call: Call,
         e: IOException,
         isSendingBody: Boolean
