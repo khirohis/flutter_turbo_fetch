@@ -87,26 +87,25 @@ class TurboHttpAdapter implements HttpClientAdapter {
     }
 
     _activeRequests[requestId] = doCancel;
-    if (cancelFuture != null) {
-      cancelFuture.whenComplete(doCancel);
-    }
-
-    final turboRequest = TurboHttpRequest(
-      requestId: requestId,
-      url: options.uri.toString(),
-      method: options.method.toUpperCase(),
-      headers: headers,
-      body: requestBody,
-      connectTimeoutMs: options.connectTimeout?.inMilliseconds,
-      receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
-      sendTimeoutMs: options.sendTimeout?.inMilliseconds,
-      followRedirects: options.followRedirects,
-      maxRequestsPerHost: maxRequestsPerHost,
-      allowBadCertificates: allowBadCertificates,
-      maxResponseBytes: maxResponseBytes,
-    );
-
     try {
+      if (cancelFuture != null) {
+        cancelFuture.whenComplete(doCancel);
+      }
+
+      final turboRequest = TurboHttpRequest(
+        requestId: requestId,
+        url: options.uri.toString(),
+        method: options.method.toUpperCase(),
+        headers: headers,
+        body: requestBody,
+        connectTimeoutMs: options.connectTimeout?.inMilliseconds,
+        receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
+        sendTimeoutMs: options.sendTimeout?.inMilliseconds,
+        followRedirects: options.followRedirects,
+        maxRequestsPerHost: maxRequestsPerHost,
+        allowBadCertificates: allowBadCertificates,
+        maxResponseBytes: maxResponseBytes,
+      );
       final TurboHttpResponse response;
       try {
         response = await _hostApi.executeRequest(turboRequest);
