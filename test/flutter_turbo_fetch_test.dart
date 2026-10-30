@@ -180,6 +180,107 @@ void main() {
       );
     });
 
+    test('close(force: false) allows in-flight requests to complete gracefully', () async {
+      final completer = Completer<TurboHttpResponse>();
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) => completer.future,
+      );
+      final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+      final future = adapter.fetch(
+        RequestOptions(path: 'https://example.com/inflight'),
+        null,
+        null,
+      );
+
+      adapter.close(force: false);
+
+      expect(fakeApi.cancelledRequestIds, isEmpty);
+
+      completer.complete(
+        TurboHttpResponse(
+          statusCode: 200,
+          body: Uint8List(0),
+        ),
+      );
+      final response = await future;
+      expect(response.statusCode, 200);
+
+      await expectLater(
+        adapter.fetch(RequestOptions(path: 'https://example.com/next'), null, null),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('close(force: true) cancels in-flight requests via cancelRequest', () async {
+      final completers = <String, Completer<TurboHttpResponse>>{};
+      late FakeTurboFetchHostApi fakeApi;
+      fakeApi = FakeTurboFetchHostApi(
+        onExecute: (req) {
+          final c = Completer<TurboHttpResponse>();
+          completers[req.requestId] = c;
+          return c.future;
+        },
+        onCancel: (id) {
+          final c = completers[id];
+          if (c != null && !c.isCompleted) {
+            c.complete(
+              TurboHttpResponse(
+                errorCode: 'cancel',
+                errorMessage: 'Request cancelled by force close',
+              ),
+            );
+          }
+        },
+      );
+      final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+      final future1 = adapter.fetch(
+        RequestOptions(path: 'https://example.com/1'),
+        null,
+        null,
+      );
+      final future2 = adapter.fetch(
+        RequestOptions(path: 'https://example.com/2'),
+        null,
+        null,
+      );
+
+      expect(fakeApi.requests, hasLength(2));
+      final id1 = fakeApi.requests[0].requestId;
+      final id2 = fakeApi.requests[1].requestId;
+
+      adapter.close(force: true);
+
+      expect(fakeApi.cancelledRequestIds, containsAll(<String>[id1, id2]));
+
+      await expectLater(
+        future1,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+      await expectLater(
+        future2,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+
+      await expectLater(
+        adapter.fetch(RequestOptions(path: 'https://example.com/3'), null, null),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('throws UnsupportedError on desktop platforms when hostApi is not overridden', () async {
       if (Platform.isAndroid || Platform.isIOS) {
         return;
@@ -189,6 +290,36 @@ void main() {
         adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
         throwsA(isA<UnsupportedError>()),
       );
+    });
+
+    test('generates unique requestId using Isolate hashCode and static counter', () async {
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) async => TurboHttpResponse(statusCode: 200),
+      );
+      final adapter1 = TurboHttpAdapter(hostApi: fakeApi);
+      final adapter2 = TurboHttpAdapter(hostApi: fakeApi);
+
+      await adapter1.fetch(RequestOptions(path: 'https://example.com/1'), null, null);
+      await adapter2.fetch(RequestOptions(path: 'https://example.com/2'), null, null);
+      await adapter1.fetch(RequestOptions(path: 'https://example.com/3'), null, null);
+
+      expect(fakeApi.requests, hasLength(3));
+
+      final reqId1 = fakeApi.requests[0].requestId;
+      final reqId2 = fakeApi.requests[1].requestId;
+      final reqId3 = fakeApi.requests[2].requestId;
+
+      final expectedPrefix = 'turbo_${Isolate.current.hashCode}_';
+      expect(reqId1.startsWith(expectedPrefix), isTrue);
+      expect(reqId2.startsWith(expectedPrefix), isTrue);
+      expect(reqId3.startsWith(expectedPrefix), isTrue);
+
+      final counter1 = int.parse(reqId1.substring(expectedPrefix.length));
+      final counter2 = int.parse(reqId2.substring(expectedPrefix.length));
+      final counter3 = int.parse(reqId3.substring(expectedPrefix.length));
+
+      expect(counter2, equals(counter1 + 1));
+      expect(counter3, equals(counter2 + 1));
     });
   });
 
