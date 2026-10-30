@@ -432,6 +432,49 @@ void main() {
       expect(jsonEmptyMapped, 'null_payload');
     });
 
+    test('consolidates multi-chunk streams for bytes, plain, and json', () async {
+      final transformer = TurboTransformer();
+
+      // 1. Multi-chunk bytes
+      final chunk1 = Uint8List.fromList(<int>[1, 2]);
+      final chunk2 = Uint8List.fromList(<int>[3, 4]);
+      final multiChunkBytes = ResponseBody(
+        Stream.fromIterable([chunk1, chunk2]),
+        200,
+      );
+      final bytesResult = await transformer.transformResponse(
+        RequestOptions(path: '/b', responseType: ResponseType.bytes),
+        multiChunkBytes,
+      );
+      expect(bytesResult, Uint8List.fromList(<int>[1, 2, 3, 4]));
+
+      // 2. Multi-chunk plain
+      final chunkText1 = Uint8List.fromList(utf8.encode('hello '));
+      final chunkText2 = Uint8List.fromList(utf8.encode('world'));
+      final multiChunkPlain = ResponseBody(
+        Stream.fromIterable([chunkText1, chunkText2]),
+        200,
+      );
+      final plainResult = await transformer.transformResponse(
+        RequestOptions(path: '/p', responseType: ResponseType.plain),
+        multiChunkPlain,
+      );
+      expect(plainResult, 'hello world');
+
+      // 3. Multi-chunk json
+      final chunkJson1 = Uint8List.fromList(utf8.encode('{"part":'));
+      final chunkJson2 = Uint8List.fromList(utf8.encode('123}'));
+      final multiChunkJson = ResponseBody(
+        Stream.fromIterable([chunkJson1, chunkJson2]),
+        200,
+      );
+      final jsonResult = await transformer.transformResponse(
+        RequestOptions(path: '/j', responseType: ResponseType.json),
+        multiChunkJson,
+      );
+      expect(jsonResult, <String, dynamic>{'part': 123});
+    });
+
     test('offloads bytes (with mapper), plain, and json >= isolateThresholdBytes to Worker Isolate', () async {
       final mainIsolateName = Isolate.current.debugName ?? 'main';
       // Set threshold to 1KB so a 4KB payload triggers Worker Isolate execution
