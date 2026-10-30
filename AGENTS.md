@@ -4,23 +4,50 @@
 
 `flutter_turbo_fetch` は、Flutter（`package:dio`）向け **ネイティブ層 HTTP/2 一括受信 & ゼロコピー変換対応の Flutter Plugin** です。
 
-- **Android (`OkHttp3`) / iOS (`URLSession`)**: バックグラウンドスレッドで HTTP/2 通信〜チャンク結合までを完結し、完成した `Uint8List` を 1 リクエストにつき 1 回だけ Dart へ返却する（`maxResponseBytes` 指定時は上限超過を検知した時点で処理を中断しエラー返却）。
-- **Dart (`TurboHttpAdapter` + `TurboTransformer` + `TurboOptions`)**: 単一チャンクの `Uint8List` をゼロコピー受領し、Dio 標準の 4 種類（`stream` / `bytes` / `plain` / `json`）および `TurboOptions(mapper: ...)` 指定時のカスタムオブジェクトへ変換する。閾値（24KiB）未満は Main Isolate、以上は `TransferableTypedData` + セマフォ付き `Isolate.run`（`Isolate.exit`）で往復ゼロコピー変換する。
+- **ネイティブ層**: HTTP/2 通信およびチャンク結合を OS バックグラウンドで完結させ、完成した単一の生バイト配列（`Uint8List`）を Dart へ返却する。
+- **Dart 層**: 一括受領したバイト配列を、サイズやデータ形式に応じてメインスレッドまたはバックグラウンド Isolate でゼロコピーかつ高速にパース・マッピングする。
 
 ---
 
-## 2. 設計上の絶対原則（アンチパターン防止）
+## 2. 対象プラットフォーム & 技術スタック
 
-1. **ネイティブ側（Kotlin/Swift）で JSON パースを行わない**: 生のバイト配列（`Uint8List`）の一括結合・返却のみを行う。
-2. **Android は `OkHttp`（`com.squareup.okhttp3:okhttp`）を採用する**: `Okio` バッファで一括結合する。
-3. **iOS は `NSURLSessionDataDelegate` を使わず Completion Handler API を使う**: `dataTask(with:completionHandler:)` で一括取得する。
-4. **Dart の Isolate オフロードは「常駐ワーカープール（`SendPort.send`）」ではなく「セマフォ付き `Isolate.run`」を使う**: 行きは `TransferableTypedData`、帰りは `Isolate.exit` による O(1) ゼロコピーとする。
+- **対象プラットフォーム**:
+  - Android: `minSdk = 24`（Android 7.0+）
+  - iOS: `13.0+`（CocoaPods / Swift Package Manager 両対応）
+  - ※ Web / Desktop は非サポート（`UnsupportedError`）
+- **主要技術スタック**:
+  - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
+  - **通信ブリッジ**: `pigeon`（型安全コード生成・`StandardMessageCodec`）
+  - **Android**: Kotlin, `com.squareup.okhttp3:okhttp:4.12.0`（HTTP/2 共有クライアント）
+  - **iOS**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
 
 ---
 
-## 3. ドキュメント構成（`docs/`）
+## 3. コーディング原則（意思決定の優先順位）
 
-- **[`docs/roadmap.md`](docs/roadmap.md)**: 全 5 フェーズの開発ステップ一覧と進行チェックリスト。
+トレードオフが生じた際は、常に以下の優先順位に従って判断すること。
+**【 安全性（Safety） ＞ シンプルさ（KISS） ＞ メモリ効率（Memory） ＞ CPU効率（CPU） 】**
+
+1. **安全性の最優先（Defensive Programming）**:
+   - フェイルセーフ（上限サイズ超過防止・証明書検証厳格化）、厳格な型安全（Pigeon 遵守）、確実なリソース解放（リークゼロ）を徹底する。
+2. **シンプルさの維持（KISS 原則 & 最小驚きの原則）**:
+   - 独自の複雑な仕組みを作らず OS・言語標準に素直に乗せる。Dio 標準の挙動やエラー体系に忠実であり、利用側に驚きを与えない。
+3. **メモリ効率の優先（Avoid Premature Optimization）**:
+   - わずかな CPU サイクル短縮のためにメモリを犠牲にしない。中間バッファの排除とゼロコピーによるメモリフットプリント抑制を優先する。
+
+---
+
+## 4. 設計上の絶対原則（アンチパターン防止）
+
+1. **ネイティブ層でのデータパース禁止**: JSON パース等のデータ加工はネイティブで行わず、生のバイト配列（`Uint8List`）の一括結合・返却に徹する。
+2. **チャンク毎の Dart 転送禁止**: 途中チャンクを細切れに Dart へ送らず、OS 側で受信完了までバッファリングして 1 リクエストにつき 1 回のみ返却する。
+3. **常駐ワーカープールの禁止**: Dart の並列処理では常駐ワーカー（`SendPort` によるディープコピー）を避け、`Isolate.run` によるゼロコピー転送を採用する。
+
+---
+
+## 5. ドキュメント構成（`docs/`）
+
+- **[`docs/roadmap.md`](docs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
 - **`docs/architectures/`**（設計・実装時に参照する仕様定義）:
   - [`architecture.md`](docs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
   - [`native-layer.md`](docs/architectures/native-layer.md): Android / iOS ネイティブ層仕様と通信データモデル。
@@ -34,12 +61,22 @@
 
 ---
 
-## 4. 開発ステップ進行時のルール
+## 6. 開発・リファクタリングの標準サイクル
 
-ユーザーから **「ステップ X-X を進めます」** 等の指示があった場合は、以下の手順で対応すること。
+機能追加やリファクタリングを行う際は、必ず以下の **3ステップのサイクル** を順に回すこと。
+**各ステップの完了時は必ずユーザーのレビューを受け、ユーザーからの合図（承認・進行指示）を待ってから次のステップへ進むこと。勝手に次のステップへ進んではならない。**
 
-1. [`docs/roadmap.md`](docs/roadmap.md) の該当ステップ要件と関連する `docs/architectures/*.md`（必要に応じて `docs/references/*.md`）を確認する。
-2. 該当ステップの設計案提示、確認事項の質問、または実装コード・検証手順の作成を行う。
-3. **実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。**
-4. ステップ完了時は、[`docs/roadmap.md`](docs/roadmap.md) のチェックリストや関連設計書を更新する。
-5. **Flutter / Dart コマンドの実行**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、コマンド実行時はグローバルの `flutter` / `dart` を直接呼ばず、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
+1. **ドキュメント修正（最重要ディスカッション）**:
+   - 時間と労力をかけ、ユーザーとじっくりディスカッションを重ねて設計思想・仕様（`docs/architectures/*.md` 等）を固める。
+   - 仕様・挙動・入出力・エラーハンドリングのドキュメント修正を行い、ユーザーのレビュー・合意を得る。
+2. **テストコード修正**:
+   - 合意されたドキュメント仕様に基づき、テストコード（単体テスト・境界値・異常系）を追加・修正する（この時点ではテストが失敗してもよい）。
+   - テスト修正内容を提示してユーザーのレビューを受け、合図を待つ。
+3. **コード修正**:
+   - テストをパスさせるようにプロダクションコード（Dart / Kotlin / Swift）を修正・実装し、テスト全パスを確認する。
+   - 実装内容とテスト結果を提示し、ユーザーのレビュー OK をもってサイクルを完結させる。
+
+### 開発進行時の共通ルール
+
+- **実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。**
+- **Flutter / Dart コマンドの実行**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、コマンド実行時はグローバルの `flutter` / `dart` を直接呼ばず、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
