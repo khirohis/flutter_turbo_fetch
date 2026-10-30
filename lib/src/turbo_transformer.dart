@@ -39,59 +39,76 @@ class TurboTransformer extends BackgroundTransformer {
   Future transformResponse(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
+  ) {
     final mapper =
         options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
 
-    // ① ストリーム (ResponseType.stream): 単一チャンク Uint8List をラップ済みの ResponseBody を返却
-    if (options.responseType == ResponseType.stream) {
-      return mapper != null ? mapper(responseBody) : responseBody;
+    switch (options.responseType) {
+      case ResponseType.stream:
+        return _transformStream(responseBody, mapper);
+      case ResponseType.bytes:
+        return _transformBytes(responseBody, mapper);
+      case ResponseType.plain:
+        return _transformPlain(responseBody, mapper);
+      case ResponseType.json:
+        return _transformJson(responseBody, mapper);
     }
+  }
 
-    // ストリームからUint8Listを取得（copy: false により単一チャンクならゼロコピーで取り出し可能）
-    final bytesBuilder = BytesBuilder(copy: false);
-    await for (final chunk in responseBody.stream) {
-      bytesBuilder.add(chunk);
+  Future<dynamic> _transformStream(
+    ResponseBody responseBody,
+    dynamic Function(dynamic)? mapper,
+  ) async {
+    return mapper != null ? mapper(responseBody) : responseBody;
+  }
+
+  Future<dynamic> _transformBytes(
+    ResponseBody responseBody,
+    dynamic Function(dynamic)? mapper,
+  ) async {
+    final bytes = await _readBytes(responseBody.stream);
+    if (mapper == null) {
+      return bytes;
     }
-    final Uint8List bytes = bytesBuilder.takeBytes();
-
-    // ② バイト列 (ResponseType.bytes)
-    if (options.responseType == ResponseType.bytes) {
-      if (mapper == null) {
-        return bytes;
-      }
-      if (bytes.lengthInBytes < isolateThresholdBytes) {
-        return mapper(bytes);
-      }
-      return await _semaphore.withResource(() async {
-        final transferable = TransferableTypedData.fromList([bytes]);
-        return await Isolate.run(() {
-          final rawBytes = transferable.materialize().asUint8List();
-          return mapper(rawBytes);
-        });
+    if (bytes.lengthInBytes < isolateThresholdBytes) {
+      return mapper(bytes);
+    }
+    return await _semaphore.withResource(() async {
+      final transferable = TransferableTypedData.fromList([bytes]);
+      return await Isolate.run(() {
+        final rawBytes = transferable.materialize().asUint8List();
+        return mapper(rawBytes);
       });
-    }
+    });
+  }
 
-    // ③ テキスト (ResponseType.plain)
-    if (options.responseType == ResponseType.plain) {
-      if (bytes.isEmpty) {
-        return mapper != null ? mapper('') : '';
-      }
-      if (bytes.lengthInBytes < isolateThresholdBytes) {
-        final decoded = utf8.decode(bytes, allowMalformed: true);
+  Future<dynamic> _transformPlain(
+    ResponseBody responseBody,
+    dynamic Function(dynamic)? mapper,
+  ) async {
+    final bytes = await _readBytes(responseBody.stream);
+    if (bytes.isEmpty) {
+      return mapper != null ? mapper('') : '';
+    }
+    if (bytes.lengthInBytes < isolateThresholdBytes) {
+      final decoded = utf8.decode(bytes, allowMalformed: true);
+      return mapper != null ? mapper(decoded) : decoded;
+    }
+    return await _semaphore.withResource(() async {
+      final transferable = TransferableTypedData.fromList([bytes]);
+      return await Isolate.run(() {
+        final rawBytes = transferable.materialize().asUint8List();
+        final decoded = utf8.decode(rawBytes, allowMalformed: true);
         return mapper != null ? mapper(decoded) : decoded;
-      }
-      return await _semaphore.withResource(() async {
-        final transferable = TransferableTypedData.fromList([bytes]);
-        return await Isolate.run(() {
-          final rawBytes = transferable.materialize().asUint8List();
-          final decoded = utf8.decode(rawBytes, allowMalformed: true);
-          return mapper != null ? mapper(decoded) : decoded;
-        });
       });
-    }
+    });
+  }
 
-    // ④ JSONパースオブジェクト (ResponseType.json)
+  Future<dynamic> _transformJson(
+    ResponseBody responseBody,
+    dynamic Function(dynamic)? mapper,
+  ) async {
+    final bytes = await _readBytes(responseBody.stream);
     if (bytes.isEmpty) {
       return mapper != null ? mapper(null) : null;
     }
@@ -99,7 +116,6 @@ class TurboTransformer extends BackgroundTransformer {
       final decoded = _jsonUtf8Decoder.convert(bytes);
       return mapper != null ? mapper(decoded) : decoded;
     }
-
     return await _semaphore.withResource(() async {
       // 【行き】TransferableTypedData で O(1) ゼロコピー転送
       final transferable = TransferableTypedData.fromList([bytes]);
@@ -112,28 +128,39 @@ class TurboTransformer extends BackgroundTransformer {
       });
     });
   }
+
+  Future<Uint8List> _readBytes(Stream<Uint8List> stream) async {
+    final bytesBuilder = BytesBuilder(copy: false);
+    await for (final chunk in stream) {
+      bytesBuilder.add(chunk);
+    }
+    return bytesBuilder.takeBytes();
+  }
 }
 
 class _Semaphore {
   final int maxConcurrent;
-  int _current = 0;
+  int _permits;
   final _queue = <Completer<void>>[];
 
-  _Semaphore(this.maxConcurrent);
+  _Semaphore(this.maxConcurrent) : _permits = maxConcurrent;
 
   Future<T> withResource<T>(Future<T> Function() action) async {
-    if (_current >= maxConcurrent) {
+    if (_permits > 0) {
+      _permits--;
+    } else {
       final completer = Completer<void>();
       _queue.add(completer);
       await completer.future;
     }
-    _current++;
+
     try {
       return await action();
     } finally {
-      _current--;
       if (_queue.isNotEmpty) {
         _queue.removeAt(0).complete();
+      } else {
+        _permits++;
       }
     }
   }
