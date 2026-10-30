@@ -47,6 +47,7 @@ final User user = response.data!;
   - `hostApi`: Pigeon 生成 API の依存性注入用パラメータ（テスト・モック用）
   - タイムアウト制御（`connectTimeout`, `receiveTimeout`, `sendTimeout`）
   - キャンセル連動（`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す）
+  - `requestId` 生成仕様: ネイティブ層（キャンセル照合等）で使用する一意識別子。フォーマットは `'turbo_${Isolate.current.hashCode}_${++_requestCounter}'`（`_requestCounter` はクラス共通の静的連番）。
   - リダイレクト追従設定（`followRedirects` の真偽値制御。ネイティブ層がリダイレクト上限回数の標準設定プロパティを持たないため、`maxRedirects` による追加の回数制御は行わない）
 - **ライフサイクル制御**:
   - `close({bool force = false})` メソッドをサポートし、クローズ後は新規の `fetch()` 呼び出しに対して `StateError` をスローする。

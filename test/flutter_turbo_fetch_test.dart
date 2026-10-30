@@ -180,6 +180,107 @@ void main() {
       );
     });
 
+    test('close(force: false) allows in-flight requests to complete gracefully', () async {
+      final completer = Completer<TurboHttpResponse>();
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) => completer.future,
+      );
+      final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+      final future = adapter.fetch(
+        RequestOptions(path: 'https://example.com/inflight'),
+        null,
+        null,
+      );
+
+      adapter.close(force: false);
+
+      expect(fakeApi.cancelledRequestIds, isEmpty);
+
+      completer.complete(
+        TurboHttpResponse(
+          statusCode: 200,
+          body: Uint8List(0),
+        ),
+      );
+      final response = await future;
+      expect(response.statusCode, 200);
+
+      await expectLater(
+        adapter.fetch(RequestOptions(path: 'https://example.com/next'), null, null),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('close(force: true) cancels in-flight requests via cancelRequest', () async {
+      final completers = <String, Completer<TurboHttpResponse>>{};
+      late FakeTurboFetchHostApi fakeApi;
+      fakeApi = FakeTurboFetchHostApi(
+        onExecute: (req) {
+          final c = Completer<TurboHttpResponse>();
+          completers[req.requestId] = c;
+          return c.future;
+        },
+        onCancel: (id) {
+          final c = completers[id];
+          if (c != null && !c.isCompleted) {
+            c.complete(
+              TurboHttpResponse(
+                errorCode: 'cancel',
+                errorMessage: 'Request cancelled by force close',
+              ),
+            );
+          }
+        },
+      );
+      final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+      final future1 = adapter.fetch(
+        RequestOptions(path: 'https://example.com/1'),
+        null,
+        null,
+      );
+      final future2 = adapter.fetch(
+        RequestOptions(path: 'https://example.com/2'),
+        null,
+        null,
+      );
+
+      expect(fakeApi.requests, hasLength(2));
+      final id1 = fakeApi.requests[0].requestId;
+      final id2 = fakeApi.requests[1].requestId;
+
+      adapter.close(force: true);
+
+      expect(fakeApi.cancelledRequestIds, containsAll(<String>[id1, id2]));
+
+      await expectLater(
+        future1,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+      await expectLater(
+        future2,
+        throwsA(
+          isA<DioException>().having(
+            (e) => e.type,
+            'type',
+            DioExceptionType.cancel,
+          ),
+        ),
+      );
+
+      await expectLater(
+        adapter.fetch(RequestOptions(path: 'https://example.com/3'), null, null),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('throws UnsupportedError on desktop platforms when hostApi is not overridden', () async {
       if (Platform.isAndroid || Platform.isIOS) {
         return;
@@ -189,6 +290,36 @@ void main() {
         adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
         throwsA(isA<UnsupportedError>()),
       );
+    });
+
+    test('generates unique requestId using Isolate hashCode and static counter', () async {
+      final fakeApi = FakeTurboFetchHostApi(
+        onExecute: (_) async => TurboHttpResponse(statusCode: 200),
+      );
+      final adapter1 = TurboHttpAdapter(hostApi: fakeApi);
+      final adapter2 = TurboHttpAdapter(hostApi: fakeApi);
+
+      await adapter1.fetch(RequestOptions(path: 'https://example.com/1'), null, null);
+      await adapter2.fetch(RequestOptions(path: 'https://example.com/2'), null, null);
+      await adapter1.fetch(RequestOptions(path: 'https://example.com/3'), null, null);
+
+      expect(fakeApi.requests, hasLength(3));
+
+      final reqId1 = fakeApi.requests[0].requestId;
+      final reqId2 = fakeApi.requests[1].requestId;
+      final reqId3 = fakeApi.requests[2].requestId;
+
+      final expectedPrefix = 'turbo_${Isolate.current.hashCode}_';
+      expect(reqId1.startsWith(expectedPrefix), isTrue);
+      expect(reqId2.startsWith(expectedPrefix), isTrue);
+      expect(reqId3.startsWith(expectedPrefix), isTrue);
+
+      final counter1 = int.parse(reqId1.substring(expectedPrefix.length));
+      final counter2 = int.parse(reqId2.substring(expectedPrefix.length));
+      final counter3 = int.parse(reqId3.substring(expectedPrefix.length));
+
+      expect(counter2, equals(counter1 + 1));
+      expect(counter3, equals(counter2 + 1));
     });
   });
 
@@ -299,6 +430,49 @@ void main() {
         ResponseBody.fromBytes(emptyBytes, 204),
       );
       expect(jsonEmptyMapped, 'null_payload');
+    });
+
+    test('consolidates multi-chunk streams for bytes, plain, and json', () async {
+      final transformer = TurboTransformer();
+
+      // 1. Multi-chunk bytes
+      final chunk1 = Uint8List.fromList(<int>[1, 2]);
+      final chunk2 = Uint8List.fromList(<int>[3, 4]);
+      final multiChunkBytes = ResponseBody(
+        Stream.fromIterable([chunk1, chunk2]),
+        200,
+      );
+      final bytesResult = await transformer.transformResponse(
+        RequestOptions(path: '/b', responseType: ResponseType.bytes),
+        multiChunkBytes,
+      );
+      expect(bytesResult, Uint8List.fromList(<int>[1, 2, 3, 4]));
+
+      // 2. Multi-chunk plain
+      final chunkText1 = Uint8List.fromList(utf8.encode('hello '));
+      final chunkText2 = Uint8List.fromList(utf8.encode('world'));
+      final multiChunkPlain = ResponseBody(
+        Stream.fromIterable([chunkText1, chunkText2]),
+        200,
+      );
+      final plainResult = await transformer.transformResponse(
+        RequestOptions(path: '/p', responseType: ResponseType.plain),
+        multiChunkPlain,
+      );
+      expect(plainResult, 'hello world');
+
+      // 3. Multi-chunk json
+      final chunkJson1 = Uint8List.fromList(utf8.encode('{"part":'));
+      final chunkJson2 = Uint8List.fromList(utf8.encode('123}'));
+      final multiChunkJson = ResponseBody(
+        Stream.fromIterable([chunkJson1, chunkJson2]),
+        200,
+      );
+      final jsonResult = await transformer.transformResponse(
+        RequestOptions(path: '/j', responseType: ResponseType.json),
+        multiChunkJson,
+      );
+      expect(jsonResult, <String, dynamic>{'part': 123});
     });
 
     test('offloads bytes (with mapper), plain, and json >= isolateThresholdBytes to Worker Isolate', () async {
