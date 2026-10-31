@@ -17,6 +17,7 @@
 ## 2. シナリオ別実測結果
 
 ### 計測A (5KiB〜45KiB, 3並列, 10周 = 90req)
+
 **検証目的**: 小サイズ通信での応答性と 24KiB 境界（Main Isolate vs Isolate オフロード）の検証。
 
 | アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
@@ -31,6 +32,7 @@
 ---
 
 ### 計測B (10KiB〜100KiB, 5並列, 10周 = 100req)
+
 **検証目的**: 実アプリの標準的なレスポンスサイズ・並列度における総合性能の検証。
 
 | アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
@@ -43,6 +45,7 @@
 ---
 
 ### 計測C (20KiB〜200KiB, 10並列, 10周 = 100req)
+
 **検証目的**: 高多重通信およびセマフォ上限（最大 10 並列）における負荷耐性とメモリ安定性の検証。
 
 | アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
@@ -57,15 +60,18 @@
 ## 3. 技術的分析と評価
 
 ### 3.1 50KiB 未満のパフォーマンス差分（24KiB 閾値の妥当性）
+
 - 計測Aにおいて、`TurboTransformer` の平均パース時間は **14.2 ms**（P95: 44.2 ms）を記録。
 - Dio 標準の `BackgroundTransformer`（① IO: 129.9 ms、② dio_http2: 394.4 ms）と比較して **約 1/9 〜 1/28 の圧倒的な低遅延** を達成した。
 - 24KiB 未満の軽量ペイロードで Main Isolate 同期実行を採用し、24KiB 以上のみゼロコピーで Isolate に逃がすハイブリッド設計により、Isolate 起動オーバーヘッド（1〜2ms）の無駄な累積を完全に排除できていることが実証された。
 
 ### 3.2 多重リクエスト耐性とセマフォ制御
+
 - リクエスト並列度が 3並列（計測A）→ 5並列（計測B）→ 10並列（計測C）とスケールするに従い、Dio 標準 `BackgroundTransformer` は Isolate スレッドの無制限スポーンに伴う CPU コンテキストスイッチとメモリ競合でパース時間が急激に悪化（計測Cでは **1 リクエストあたり 1,156 ms（1秒超）** まで遅延）。
 - これに対し `TurboTransformer` は、論理コア数連動のセマフォ制御（`maxConcurrentIsolates`）により、10並列・最大200KiBの高負荷下でもパース完了待ち時間を **平均 31.6 ms（P95: 66.1 ms）** に完全に抑え込んだ。
 - その結果、Total Wall Time においても 10並列・大容量の計測Cで **2,996 ms**（① IO の 2.4 倍、② dio_http2 の 4.6 倍高速）という最高スループットを発揮した。
 
 ### 3.3 メモリ消費量（RSS）の安定性
+
 - 計測B（標準ワークロード）において、② dio_http2 が +81.4 MiB、① IO が +26.8 MiB のメモリ増分を記録したのに対し、④ TurboFetch の増分はわずか **+2.6 MiB** にとどまった。
 - `Isolate.run` の終了時に `Isolate.exit` でオブジェクトツリーのポインタ所有権のみを渡す O(1) ゼロコピー返却により、中間オブジェクトの不要な複製やヒープ断片化・GC スパイクが劇的に抑制されていることが裏付けられた。
