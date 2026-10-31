@@ -40,32 +40,35 @@ class TurboTransformer extends BackgroundTransformer {
     RequestOptions options,
     ResponseBody responseBody,
   ) {
-    final mapper =
-        options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
-
     switch (options.responseType) {
       case ResponseType.stream:
-        return _transformStream(responseBody, mapper);
+        return _transformStream(options, responseBody);
       case ResponseType.bytes:
-        return _transformBytes(responseBody, mapper);
+        return _transformBytes(options, responseBody);
       case ResponseType.plain:
-        return _transformPlain(responseBody, mapper);
+        return _transformPlain(options, responseBody);
       case ResponseType.json:
-        return _transformJson(responseBody, mapper);
+        return _transformJson(options, responseBody);
     }
   }
 
+  dynamic Function(dynamic)? _extractMapper(RequestOptions options) {
+    return options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
+  }
+
   Future<dynamic> _transformStream(
+    RequestOptions options,
     ResponseBody responseBody,
-    dynamic Function(dynamic)? mapper,
   ) async {
+    final mapper = _extractMapper(options);
     return mapper != null ? mapper(responseBody) : responseBody;
   }
 
   Future<dynamic> _transformBytes(
+    RequestOptions options,
     ResponseBody responseBody,
-    dynamic Function(dynamic)? mapper,
   ) async {
+    final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
     if (mapper == null) {
       return bytes;
@@ -83,9 +86,10 @@ class TurboTransformer extends BackgroundTransformer {
   }
 
   Future<dynamic> _transformPlain(
+    RequestOptions options,
     ResponseBody responseBody,
-    dynamic Function(dynamic)? mapper,
   ) async {
+    final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
     if (bytes.isEmpty) {
       return mapper != null ? mapper('') : '';
@@ -105,9 +109,10 @@ class TurboTransformer extends BackgroundTransformer {
   }
 
   Future<dynamic> _transformJson(
+    RequestOptions options,
     ResponseBody responseBody,
-    dynamic Function(dynamic)? mapper,
   ) async {
+    final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
     if (bytes.isEmpty) {
       return mapper != null ? mapper(null) : null;
