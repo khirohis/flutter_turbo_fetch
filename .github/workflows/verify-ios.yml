@@ -1,0 +1,39 @@
+name: Verify iOS Build
+
+# Trigger configuration:
+# Executed manually from the GitHub Actions web UI on demand to save runner credits.
+on:
+  workflow_dispatch:
+
+  # Optional trigger for release tags (uncomment when needed):
+  # push:
+  #   tags:
+  #     - 'v*'
+
+jobs:
+  build_ios:
+    name: Build iOS Example (Simulator)
+    runs-on: macos-latest # Apple Silicon (M-series) runner
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          cd example
+          flutter pub get
+
+      - name: Build iOS Example
+        run: |
+          cd example
+          # Build for iOS Simulator without code signing to verify Swift / Pigeon / URLSession compilation
+          flutter build iOS --no-codesign --simulator
