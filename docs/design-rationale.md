@@ -1,54 +1,61 @@
-# 設計背景・技術的根拠（Design Rationale）
+# Design Rationale & Technical Justifications (`design-rationale.md`)
 
-本ドキュメントは、`flutter_turbo_fetch` のアーキテクチャ意思決定に至った背景・ボトルネック分析・既存パッケージの評価・各原則の技術的根拠をまとめたエッセンス資料である（通常時の実装では参照不要、設計見直しや Step 0-1 / 0-3 の検討時に参照する）。
-
----
-
-## 1. 解決すべき対象課題と 3 大ボトルネック
-
-Flutter（`package:dio`）において、数十KiB〜数百KiB以上の中〜大容量 JSON データを HTTP/2 並列リクエストした際、以下の 3 つの構造的要因が複合してスループットを低下させる。
-
-1. **Pure Dart 実装（`dio_http2_adapter` / `package:http2`）の限界**
-   - クライアント初期受信ウィンドウおよびコネクション全体の受信ウィンドウが RFC デフォルトの **65,535 bytes（約 64KiB）固定**（コネクションウィンドウは内部隠蔽されており外部から変更不可）のため、並列通信で合計 64KiB を超えると `WINDOW_UPDATE` 待ちの通信ストールが頻発する。
-   - 1 ホスト 1 本の `SecureSocket` に集約されるため BoringSSL の TLS 復号が直列化され、さらに 16KiB 以下の細切れフレーム解析がすべて Main Isolate の単一イベントループを占有する。
-2. **標準ネイティブアダプタ（`native_dio_adapter`: `cronet_http` / `cupertino_http`）のオーバーヘッド**
-   - `package:http` のストリーミングインターフェース（`StreamedResponse`）に準拠しているため、**細切れチャンク単位（16KiB〜32KiB）で Native ⇄ Dart（Main Isolate）間の FFI 通知とメモリコピー・往復待ちが発生**する。
-   - **Android (`cronet_http`)**: 初回通信時に GMS（Google Play 開発者サービス）からの動的ロード遅延が発生するほか、1 チャンクごとに Dart から次の `urlRequest.read(byteBuffer)` を呼ぶ Pull 型ピンポンが発生する。
-   - **iOS (`cupertino_http`)**: `NSURLSessionDataDelegate` を使用しているため、ヘッダ受信時（`didReceiveResponse:`）に Dart の Main Isolate から `ResponseAllow` が返るまでボディ受信が一時停止し、`didReceiveData:` のたびに FFI 通知が飛ぶ。
-3. **JSON パースによる Main Isolate イベントループの阻害（二次被害）**
-   - Dio 標準の `BackgroundTransformer` は、`utf8.decode`（バイト列→巨大な中間 `String` 生成）を Main Isolate で同期実行してから別 Isolate へ渡しており、さらに 50KiB 超で無制限に `compute`（`Isolate.run`）をスポーンするため並列時にスレッド飽和を起こす。
-   - Main Isolate が数ms〜十数msブロックされるだけで、他ストリームのチャンク受領や次チャンク要求が止まり、連鎖的な通信ストール（アプリケーション層の Head-of-Line Blocking）を引き起こす。
+This document outlines the background, bottleneck analyses, evaluation of existing packages, and technical justifications behind the architectural decisions of `flutter_turbo_fetch`.
 
 ---
 
-## 2. `pub.dev` 既存パッケージの評価と採否理由
+## 1. Problem Statement & The Three Fundamental Bottlenecks
 
-| パッケージ | 内部エンジン | チャンク結合場所 | 評価と採否理由 |
+In Flutter applications (`package:dio`), making concurrent HTTP/2 requests for medium-to-large JSON payloads (tens of KiB to hundreds of KiB or more) causes significant throughput degradation and UI stutter due to three compounding structural bottlenecks:
+
+1. **Limitations of Pure Dart Implementations (`dio_http2_adapter` / `package:http2`)**
+   - Both the initial client stream receive window and the connection-level receive window are hardcoded to the RFC default of **65,535 bytes (~64KiB)** (the connection window is hidden internally and cannot be configured). Under concurrent requests exceeding 64KiB in aggregate, communication stalls frequently while awaiting `WINDOW_UPDATE` frames.
+   - All streams multiplex over a single `SecureSocket` per host, serializing BoringSSL TLS decryption. Furthermore, parsing granular frames (typically <= 16KiB) monopolizes the single event loop of the Main Isolate.
+
+2. **Overhead of Standard Native Adapters (`native_dio_adapter`: `cronet_http` / `cupertino_http`)**
+   - Because these adapters adhere to the streaming interface of `package:http` (`StreamedResponse`), they incur **continuous FFI notifications, memory copies, and round-trip ping-pong for every small chunk (16KiB to 32KiB)** between Native and Dart (Main Isolate).
+   - **Android (`cronet_http`)**: Incurs initial dynamic loading latency from Google Play Services (GMS), followed by pull-based ping-pong where Dart must repeatedly invoke `urlRequest.read(byteBuffer)` for each individual chunk.
+   - **iOS (`cupertino_http`)**: Relies on `NSURLSessionDataDelegate`, causing body streaming to pause upon header arrival (`didReceiveResponse:`) until Dart's Main Isolate returns a `ResponseAllow` decision, along with FFI overhead on every `didReceiveData:`.
+
+3. **Main Isolate Event Loop Starvation from JSON Parsing (Secondary Impact)**
+   - Dio's standard `BackgroundTransformer` synchronously executes `utf8.decode` on the Main Isolate (allocating multi-megabyte intermediate `String`s) before handing data off to another Isolate. Moreover, it spawns unconstrained `compute` (`Isolate.run`) instances for payloads over 50KiB, causing thread saturation and context-switch churn under high concurrency.
+   - When the Main Isolate blocks for even a few milliseconds, chunk processing and window update requests for other active network streams freeze, creating cascading application-level Head-of-Line (HoL) blocking.
+
+---
+
+## 2. Evaluation of Existing `pub.dev` Packages
+
+| Package | Underlying Engine | Chunk Concatenation | Evaluation & Decision |
 | :--- | :--- | :--- | :--- |
-| **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart 側**<br>（細切れ往復） | **不採用（比較ベースラインとして使用）**<br>`StreamedResponse` 仕様のためチャンク単位の FFI 往復と iOS ヘッダ受信時の一時停止が解消できない。 |
-| **`ok_http`** | Android: `OkHttp` (`jnigen`) | **Dart 側**<br>（ストリーム読出） | **不採用**<br>これも `package:http` のストリーミング実装であり、一括 `response.body.bytes()` の恩恵を受けられない。 |
-| **`rhttp`** | 全 OS: Rust `reqwest` + `tokio` | **Rust 側で一括結合可** | **不採用（Step 0-1 にて確定）**<br>Rust スレッドで一括バイト結合して FFI 返却する機能（`Body.bytes`）を持つが、Rust バイナリ同梱によるアプリサイズ増加（数 MiB）、OS 標準 TLS セッションキャッシュ・証明書ストア・プロキシ統合の非利用、Rust ビルド依存のコストから不採用。 |
-| **`flutter_turbo_fetch`**<br>（本プラグイン） | **Android: `OkHttp`**<br>**iOS: `URLSession.dataTask(with:completionHandler:)`** | **各 OS ネイティブ側で一括結合** | **本命アーキテクチャ**<br>OS 標準/定番の軽量スタックを用い、チャンク結合までをネイティブのバックグラウンドスレッドで完結させ、完成した `Uint8List` を 1 回だけ Dart へ渡す。 |
+| **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart side**<br>(Fragmented chunk ping-pong) | **Not Adopted (Used as baseline)**<br>Adherence to `StreamedResponse` causes per-chunk FFI round-trips and iOS header-pause latency that cannot be bypassed. |
+| **`ok_http`** | Android: `OkHttp` (`jnigen`) | **Dart side**<br>(Stream consumption) | **Not Adopted**<br>Constrained by the streaming model of `package:http`, missing out on the efficiency of batch native aggregation (`response.body.bytes()`). |
+| **`rhttp`** | All platforms: Rust `reqwest` + `tokio` | **Rust side batch concatenation** | **Not Adopted**<br>While offering batch byte assembly in Rust (`Body.bytes`), bundling static Rust binaries inflates app size by several MiB, bypasses platform TLS session caches and system certificate/proxy integration, and introduces Rust toolchain dependencies. |
+| **`flutter_turbo_fetch`**<br>(This plugin) | **Android: `OkHttp`**<br>**iOS: `URLSession.dataTask(with:completionHandler:)`** | **OS Native Background Batch Reception** | **Adopted Architecture**<br>Leverages platform-standard, lightweight network stacks. Completes chunk assembly entirely in OS background memory and delivers a single, unified `Uint8List` to Dart via Pigeon in one trip. |
 
 ---
 
-## 3. 設計 4 原則の技術的根拠（なぜアンチパターンなのか）
+## 3. Technical Foundations of the Core Design Principles
 
-1. **なぜネイティブ側で JSON パースまで行わないのか**
-   - ネイティブ側（Kotlin/Swift）で JSON パースしても Dart ヒープへ直接 Map/List オブジェクトを渡すことはできず、「ネイティブでの再シリアライズ（Codec エンコード）＋Dart でのデシリアライズ」の二重コストが発生するため。ネイティブ側は「生のバイト配列（`Uint8List`）の一括結合・返却」に徹するのが最速となる。
-2. **なぜ Android エンジンは Cronet ではなく `OkHttp` なのか**
-   - Cronet のような GMS 動的ロード遅延がなく、HTTP/2 初期ウィンドウがデフォルトで `16MiB` に拡張されており、`Okio` のセグメントプールを用いた `response.body.bytes()` の 1 行で高速なチャンク結合が完結するため（HTTP/3 QUIC が必須要件の場合のみ Cronet カスタムを検討）。
-3. **なぜ iOS エンジンは `NSURLSessionDataDelegate` を使わないのか**
-   - デリゲート方式では `didReceiveResponse:` / `didReceiveData:` のたびにスレッド間・言語間の通知コストが発生するため。`dataTask(with:completionHandler:)` を使用すれば、ヘッダ処理からチャンク結合までを iOS の CFNetwork 層（C/C++ バックグラウンドスレッド）内部で完結でき、`URLSessionDataTask` によるリクエスト単位のキャンセル制御も直接行える。
-4. **なぜ常駐ワーカープール（`SendPort.send`）ではなく「セマフォ付き `Isolate.run`」なのか**
-   - 常駐ワーカーが生き続けると、戻り値返却時の `SendPort.send(result)` で共有ヒープ内のオブジェクトツリー全体のディープコピー（Transitive Copy: パース時間の 25〜40% 相当のオーバーヘッド）が発生するため。`Isolate.run`（内部で `Isolate.exit` を使用）であれば、ワーカー終了に伴い共有ヒープのポインタ所有権を移すだけの **O(1) ゼロコピー（数μs）** で Main Isolate へ返却できる。
+### 3.1 Why not parse JSON in the native layer?
+Parsing JSON in native code (Kotlin / Swift) cannot directly allocate Dart heap objects (`Map` / `List`). Doing so would require **double serialization** (native serialization / encoding into binary codecs + Dart deserialization), which is slower than passing raw bytes. The native layer achieves maximum performance by focusing strictly on **batch assembly and zero-copy return of raw byte arrays (`Uint8List`)**.
+
+### 3.2 Why OkHttp instead of Cronet on Android?
+`OkHttp3` avoids the dynamic GMS loading delays inherent to Cronet, defaults its HTTP/2 initial window size to an expanded **16MiB**, and completes chunk assembly in native memory with optimal speed using `Okio`'s shared segment pool via `response.body.bytes()`. (Cronet is only considered when HTTP/3 QUIC support is a strict business requirement).
+
+### 3.3 Why avoid `NSURLSessionDataDelegate` on iOS?
+The delegate pattern incurs cross-thread, cross-language signaling overhead for every `didReceiveResponse:` and `didReceiveData:` invocation. By adopting `dataTask(with:completionHandler:)`, header negotiation through chunk concatenation are handled entirely within Apple's native CFNetwork pipeline (C/C++ background engine), while maintaining direct request cancellation via `URLSessionDataTask`.
+
+### 3.4 Why semaphore-governed `Isolate.run` instead of persistent worker pools (`SendPort.send`)?
+Persistent worker pools require returning results via `SendPort.send(result)`, which performs a deep copy (**Transitive Copy**) of the entire decoded object graph across isolated heaps (consuming 25% to 40% of total parsing time). In contrast, `Isolate.run` leverages `Isolate.exit` upon worker termination, transferring memory ownership of the object graph to the Main Isolate in **$O(1)$ zero-copy (a few microseconds)**.
 
 ---
 
-## 4. Dart ⇄ ネイティブ通信ブリッジ方式の比較背景（Step 0-3 にて案Aに確定）
+## 4. Evaluation of Dart ⇄ Native Communication Bridges
 
-- **案A（採用）: Pigeon (`StandardMessageCodec` + 型安全コード生成)**
-  - Android の `byte[]` / iOS の `FlutterStandardTypedData(bytes: Data)` として 1 回返却する。
-  - チャンク毎ではなく **1 リクエストにつき 1 往復のみ** であるため、Channel のシリアライズ/メモリコピー（100KiB で約 0.02〜0.05ms）のオーバーヘッドは極小であり、バックグラウンドスレッドからのコールバック返却・スレッド安全性・型安全な保守性に優れる。
-- **案B（不採用）: FFI / JNI (`jnigen` / `ffigen`)**
-  - メモリコピー回数をさらに 1 回削減できる可能性があるが、非同期コールバックのライフサイクル管理や GC 連動（Finalizer）、スレッド制御の複雑性が大幅に増すため見送り。
+### Option A: Pigeon (`StandardMessageCodec` + Type-Safe Code Generation) — **Adopted**
+- Returns completed byte arrays as `byte[]` on Android and `FlutterStandardTypedData(bytes: Data)` on iOS in a single IPC exchange.
+- Because data is transferred **once per request** rather than once per chunk, Channel serialization and copy overhead (~0.02ms to 0.05ms for 100KiB) is negligible.
+- Provides superior thread safety, asynchronous background callback support, and compile-time type safety.
+
+### Option B: Raw FFI / JNI (`jnigen` / `ffigen`) — **Not Adopted**
+- While theoretically eliminating one memory copy, it significantly increases implementation complexity regarding asynchronous callback lifecycles, garbage collection integration (`Finalizer`), and thread synchronization without meaningful real-world performance gains for batch transfers.

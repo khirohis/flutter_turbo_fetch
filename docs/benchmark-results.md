@@ -1,41 +1,41 @@
-# ベンチマーク実測結果・性能検証レポート（`benchmark-results.md`）
+# Benchmark Performance Evaluation Report (`benchmark-results.md`)
 
-本ドキュメントは、[`specs/architectures/benchmark.md`](../specs/architectures/benchmark.md) で定義された計測仕様に基づき、Android 実機・エミュレータ環境で実行されたパフォーマンス比較ベンチマークの実測結果および技術的分析・評価を記録した資料である。
+This document records the empirical performance measurement results, technical analysis, and architectural evaluations conducted on Android emulator and physical device environments, based on the benchmark specifications defined in [`specs/architectures/benchmark.md`](../specs/architectures/benchmark.md).
 
 ---
 
-## 1. 計測環境
+## 1. Measurement Environment
 
-- **端末 / OS**: Android 16 (API 36) x86_64 エミュレータ (`emulator-5554`)
+- **Device / OS**: Android 16 (API 36) x86_64 Emulator (`emulator-5554`)
 - **Flutter / Dart SDK**: Flutter 3.47.8 / Dart 3.13.7 (FVM)
-- **モックサーバー**: Node.js v26.12.1 内蔵 HTTP/2 TLS サーバー (`http2.createSecureServer`)
-- **ネットワーク接続**: エミュレータ仮想ループバック (`https://10.0.2.2:8443`)
-- **実行方式**: `example/lib/main.dart`（および `benchmark_runner.dart`）による 4 構成一括連続実行
+- **Mock Server**: Node.js v26.12.1 Built-in HTTP/2 TLS Server (`http2.createSecureServer`)
+- **Network Interface**: Emulator virtual loopback (`https://10.0.2.2:8443`)
+- **Execution Mode**: 4 presets evaluated back-to-back in an automated sweep via `example/lib/main.dart` and `benchmark_runner.dart`
 
 ---
 
-## 2. シナリオ別実測結果
+## 2. Benchmark Scenario Results
 
-### 計測A (5KiB〜45KiB, 3並列, 10周 = 90req)
+### Scenario A: Small Payload Sweeps (5KiB to 45KiB, 3 Concurrent Workers, 10 Rounds = 90 Requests)
 
-**検証目的**: 小サイズ通信での応答性と 24KiB 境界（Main Isolate vs Isolate オフロード）の検証。
+**Validation Objective**: Verify response latency for lightweight payloads and evaluate the behavior around the 24KiB boundary (Main Isolate synchronous execution vs. Isolate offloading).
 
-| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
+| Preset Configuration | Total Wall Time | Net Time (Avg / P95) | Parse Time (Avg / P95) | Jank Frames (%) | Max Frame Duration | Peak RSS (Delta) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | ① IO (HTTP/1.1) | 8,034 ms | 72.0 ms / 110.4 ms | 142.4 ms / 181.0 ms | 115 (37.0%) | 452.6 ms | 403.8 MiB (+35.6 MiB) |
 | ② dio_http2 | 13,548 ms | 92.1 ms / 92.1 ms | 274.5 ms / 274.5 ms | 280 (42.6%) | 131.8 ms | 425.3 MiB (+25.8 MiB) |
 | ③ native_dio* | *(2,192 ms)* | *0.0 ms / 0.0 ms* | *0.0 ms / 0.0 ms* | *43 (72.9%)* | *427.0 ms* | *472.8 MiB (+72.1 MiB)* |
 | **④ TurboFetch** | **3,328 ms** | **66.1 ms / 79.8 ms** | **15.4 ms / 40.3 ms** | **96 (92.3%)** | **46.4 ms** | **453.5 MiB (+1.1 MiB)** |
 
-*(※③ native_dio は Android Cronet の仕様上、自己署名証明書の無効化が非サポートのため、ローカル検証環境では全リクエストが SSL 例外で即座に中断)*
+*(※Note: ③ native_dio does not support disabling self-signed certificate validation due to Android Cronet limitations, causing all requests to immediately abort with SSL exceptions in this local test environment).*
 
 ---
 
-### 計測B (10KiB〜100KiB, 5並列, 10周 = 100req)
+### Scenario B: Standard Payload Sweeps (10KiB to 100KiB, 5 Concurrent Workers, 10 Rounds = 100 Requests)
 
-**検証目的**: 実アプリの標準的なレスポンスサイズ・並列度における総合性能の検証。
+**Validation Objective**: Evaluate comprehensive throughput and memory efficiency under typical real-world API response sizes and standard concurrency.
 
-| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
+| Preset Configuration | Total Wall Time | Net Time (Avg / P95) | Parse Time (Avg / P95) | Jank Frames (%) | Max Frame Duration | Peak RSS (Delta) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | ① IO (HTTP/1.1) | 6,282 ms | 87.3 ms / 144.8 ms | 182.0 ms / 218.9 ms | 87 (36.0%) | 53.9 ms | 470.3 MiB (+30.4 MiB) |
 | ② dio_http2 | 14,255 ms | 80.5 ms / 80.5 ms | 461.8 ms / 461.8 ms | 172 (23.2%) | 45.2 ms | 525.4 MiB (+78.7 MiB) |
@@ -44,11 +44,11 @@
 
 ---
 
-### 計測C (20KiB〜200KiB, 10並列, 10周 = 100req)
+### Scenario C: High-Concurrency Heavy Sweeps (20KiB to 200KiB, 10 Concurrent Workers, 10 Rounds = 100 Requests)
 
-**検証目的**: 高多重通信およびセマフォ上限（最大 10 並列）における負荷耐性とメモリ安定性の検証。
+**Validation Objective**: Verify load resilience, HTTP/2 multiplexing limits, and memory stability at the semaphore ceiling (up to 10 parallel workers).
 
-| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
+| Preset Configuration | Total Wall Time | Net Time (Avg / P95) | Parse Time (Avg / P95) | Jank Frames (%) | Max Frame Duration | Peak RSS (Delta) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | ① IO (HTTP/1.1) | 6,637 ms | 193.2 ms / 349.8 ms | 419.6 ms / 525.6 ms | 108 (55.1%) | 115.7 ms | 464.5 MiB (+17.4 MiB) |
 | ② dio_http2 | 13,161 ms | 51.2 ms / 51.2 ms | 1,254.8 ms / 1,254.8 ms | 106 (15.5%) | 38.9 ms | 487.4 MiB (+22.8 MiB) |
@@ -57,81 +57,86 @@
 
 ---
 
-## 3. 技術的分析と精査
+## 3. Technical Analysis & In-Depth Scrutiny
 
-### 3.1 表面メトリクスの補正と解読
+### 3.1 Resolving Apparent Anomalies in Surface Metrics
 
-#### A. 「Jank Frames (%)」の見かけ上の逆転現象と Max Frame Duration の真実
-表面的には、TurboFetch の Jank 発生率が 85.2% 〜 92.3% と極めて高く見え、dio_http2（15.5% 〜 42.6%）の方が UI スムーズネスに優れているかのような逆転が生じている。しかし、これは **「分母（総描画フレーム数）の歪み」と「超短時間でのイベント高密度集中」** による見かけ上の統計アーティファクトである。
+#### A. The "Jank Frames (%)" Denominator Paradox vs. True Worst-Case Frame Duration
+On the surface, TurboFetch appears to exhibit high jank rates (85.2% to 92.3%), whereas dio_http2 reports seemingly superior UI smoothness (15.5% to 42.6%). However, this is a statistical artifact caused by **an extreme disparity in the denominator (total rendered frames) combined with ultra-dense completion burst events**.
 
-1. **分母（総フレーム数）の極端な格差**:
-   - ② dio_http2 は処理速度が極めて遅く、計測完了に 13〜14 秒を要したため、処理待ちの間にアイドル状態の正常フレーム（16.6ms 以下）が大量に描画された（計測C の総フレーム数は約 684 フレーム）。その結果、Jank 率は `106 / 684 = 15.5%` と希釈された。
-   - ④ TurboFetch はわずか **1.95 秒** で 100 リクエストを完走したため、テスト中に描画できたフレーム数自体が **約 43 フレーム** しかなかった（`39 / 43 = 90.7%`）。
-2. **UI イベントの超高密度集中**:
-   - TurboFetch は **毎秒 50 リクエスト以上** を消化するため、Main Isolate のイベントループには毎秒 50 回の Pigeon IPC メッセージ受信、`onProgress` に伴う `setState()` 画面再描画要求、および 24KiB 未満の同期パースが集中する。このため、実行中の 2 秒弱はイベントループが常に高密度で稼働し、フレーム間隔が 20〜40ms 程度で推移した。
-3. **最悪 UI 停止時間（Max Frame Duration）の比較**:
-   - ユーザー体験を最も損なう「致命的な画面フリーズ」を示す Max Frame Duration において、① IO は **452.6 ms（約 0.5 秒の完全フリーズ）**、② dio_http2 は **131.8 ms** を記録したのに対し、④ TurboFetch は **46.4 ms（わずか 2〜3 フレーム遅延）** と最小値に抑えられている。
+1. **The Denominator Distortion (Total Rendered Frames)**:
+   - ② dio_http2 executed very slowly, taking 13 to 14 seconds to finish each test. During prolonged network stalls, the Flutter engine had ample idle intervals to render hundreds of normal, lightweight 60 FPS frames (in Scenario C, dio_http2 rendered approximately 684 total frames). As a result, its jank percentage was heavily diluted (`106 / 684 = 15.5%`).
+   - In contrast, ④ TurboFetch completed all 100 requests in just **1.95 seconds**. Over this brief burst, the engine only had time to render **43 total frames** (`39 / 43 = 90.7%`).
+2. **Ultra-High Event Density on the Main Isolate**:
+   - TurboFetch completed requests at a rate of **over 50 requests per second**. During this 1.95-second window, the Main Isolate event loop was continuously processing:
+     - Inbound Pigeon binary IPC message deserialization,
+     - Progress update notifications triggering `setState()` UI rebuilds (50+ times per second), and
+     - Synchronous in-memory JSON parsing for payloads under 24KiB.
+   - Consequently, during the active 2 seconds, frame intervals hovered between 20ms and 40ms without idle periods.
+3. **Worst-Case UI Freeze (Max Frame Duration)**:
+   - When assessing critical user experience disruption (true application freezes), ① IO caused massive hangs of **452.6 ms (~0.5 seconds of total UI freeze)**, and ② dio_http2 reached **131.8 ms**.
+   - ④ TurboFetch maintained a maximum frame duration of just **46.4 ms (equivalent to only 2-3 dropped frames)** in Scenario A, demonstrating superior resilience against catastrophic UI freezing.
 
-#### B. 「Net Time」と「Parse Time」の計測境界の非対称性
-計測ラッパー（`benchmark_timing_wrapper.dart`）の仕様上、アダプタ種別によって計測境界に以下の違いが存在する：
+#### B. Asymmetric Measurement Boundaries: Net Time vs. Parse Time
+Due to the lifecycle contracts of `BenchmarkTimingAdapter` and `BenchmarkTimingTransformer`, the recorded timestamps reflect different processing phases across adapters:
 
-- **① IO / ② dio_http2**:
-  - `fetch()` は **レスポンスヘッダを受信した瞬間** に完了する。
-  - そのため、ソケットからのボディストリーム（チャンク受信）の完了待ちは後続の `transformResponse` 内で行われ、**「実通信時間」が Parse Time 側に混入** している（計測C で dio_http2 の Parse Time が 1,254.8 ms に跳ね上がっている主因は、Dart 上での 10 多重ストリーム受信の停滞である）。
-- **④ TurboFetch**:
-  - OS ネイティブ層（OkHttp）がバックグラウンドで全チャンクを受信・結合し、Pigeon を介して単一の `Uint8List` として返却して初めて `fetch()` が完了する。
-  - したがって、**通信＋バッファ結合＋Pigeon 転送がすべて Net Time に計上され、Parse Time は「純粋なメモリ上デコード＋Isolate 処理＋セマフォ待ち」のみ** となる。
+- **① IO / ② dio_http2 (Streaming Model)**:
+  - `HttpClientAdapter.fetch()` resolves as soon as the **initial HTTP response headers** are received.
+  - As a result, streaming response body bytes from the TCP/TLS socket actually occurs downstream inside `Transformer.transformResponse`. **Network transfer latency is therefore accounted for inside Parse Time**. (In Scenario C, dio_http2's Parse Time jumped to 1,254.8 ms primarily because 10 concurrent HTTP/2 streams were bottlenecked reading DATA frames on Dart's single event loop).
+- **④ TurboFetch (Platform Native Batch Model)**:
+  - The OS native layer (OkHttp) buffers and concatenates all network chunks in background memory, delivering a fully assembled `Uint8List` via Pigeon before `fetch()` resolves.
+  - Consequently, **network connection, header exchange, full body download, native concatenation, and Pigeon IPC are all encapsulated within Net Time**. Parse Time reflects strictly **in-memory fused decoding, isolate handoff, and semaphore queuing**.
 
-公平な比較のため、**1 リクエストあたりの合計実効レイテンシ（Net Time + Parse Time）** を比較すると以下の通りとなり、すべての並列度で圧倒的な優位性が確認される：
+To ensure a fair and comprehensive comparison, evaluating the **Effective Total Latency per Request (Net Time + Parse Time)** reveals TurboFetch's decisive architectural advantage across all concurrency levels:
 
-| シナリオ | ① IO (HTTP/1.1) | ② dio_http2 | ④ TurboFetch | 倍率（TurboFetch の優位性） |
+| Scenario | ① IO (HTTP/1.1) | ② dio_http2 | ④ TurboFetch | Speedup Factor |
 | :--- | :---: | :---: | :---: | :---: |
-| **計測A (3並列)** | 214.4 ms | 366.6 ms | **81.5 ms** | **2.6倍 〜 4.5倍 高速** |
-| **計測B (5並列)** | 269.3 ms | 542.3 ms | **75.8 ms** | **3.5倍 〜 7.1倍 高速** |
-| **計測C (10並列)** | 612.8 ms | 1,306.0 ms | **131.0 ms** | **4.7倍 〜 10.0倍 高速** |
+| **Scenario A (3 concurrent)** | 214.4 ms | 366.6 ms | **81.5 ms** | **2.6x to 4.5x faster** |
+| **Scenario B (5 concurrent)** | 269.3 ms | 542.3 ms | **75.8 ms** | **3.5x to 7.1x faster** |
+| **Scenario C (10 concurrent)** | 612.8 ms | 1,306.0 ms | **131.0 ms** | **4.7x to 10.0x faster** |
 
 ---
 
-### 3.2 50KiB 未満のパフォーマンス差分（24KiB 閾値の妥当性）
+### 3.2 Performance Under 50KiB: Validating the 24KiB Isolate Boundary
 
-- 計測Aにおいて、`TurboTransformer` の平均パース時間は **15.4 ms**（P95: 40.3 ms）を記録。
-- 24KiB 未満の軽量ペイロードで Main Isolate 同期実行を採用し、24KiB 以上のみゼロコピーで Isolate に逃がすハイブリッド設計により、Isolate 起動オーバーヘッド（1〜2ms）の無駄な累積を完全に排除。
-- 合計実効レイテンシでも 81.5 ms と、標準構成（IO: 214.4 ms、dio_http2: 366.6 ms）を大幅に下回る低遅延を達成し、24KiB 閾値設計の妥当性が実証された。
-
----
-
-### 3.3 HTTP/2 コネクション再利用・多重リクエスト耐性と並列スケーラビリティの逆転現象
-
-TurboFetch の Total Wall Time（総所要時間）の推移には、顕著な並列スケーラビリティが現れている：
-
-- **計測A (90req, 5〜45KiB, 3並列)**: **3,328 ms**
-- **計測B (100req, 10〜100KiB, 5並列)**: **2,365 ms**
-- **計測C (100req, 20〜200KiB, 10並列)**: **1,951 ms**
-
-**データサイズが 4 倍以上（最大 200KiB）に肥大化し、リクエスト数も増加しているにもかかわらず、並列度の上昇（3→5→10）に比例して総所要時間が短縮（3.3s → 2.3s → 1.9s）** している。
-
-1. **OkHttp3 コネクションプールの最大活用**:
-   `TurboClientManager` における共有 `ConnectionPool` により、単一 TCP/TLS コネクション上での HTTP/2 マルチプレキシングが最大限に機能。10 並列時もネットワーク待ちの滞留が発生していない。
-2. **論理コア数連動セマフォ（`maxConcurrentIsolates`）の奏功**:
-   Dio 標準 `BackgroundTransformer` は Isolate スレッドの無制限スポーンに伴う CPU コンテキストスイッチとメモリ競合でパース時間が急激に悪化（計測C では 1,254.8 ms まで遅延）した。これに対し `TurboTransformer` はセマフォ制御によりワーカー飽和を防止し、10 並列・最大 200KiB の高負荷下でもパース完了待ち時間を **平均 27.7 ms（P95: 48.8 ms）** に抑え込んだ。
-3. **他アダプタの限界**:
-   ① IO は HTTP/1.1 の接続数制限により 6.3s〜6.6s で頭打ちとなり、② dio_http2 は Dart 単一スレッドでのフレーム処理がボトルネック化して 13s〜14s で完全に破綻した。
+- In Scenario A, `TurboTransformer` achieved an average parse time of **15.4 ms** (P95: 40.3 ms).
+- By executing payloads < 24KiB synchronously on the Main Isolate while offloading payloads >= 24KiB via zero-copy Isolates, it completely eliminates cumulative isolate spawn overhead (1ms to 2ms per request).
+- The resulting effective per-request latency of **81.5 ms** was dramatically lower than standard configurations (IO: 214.4 ms, dio_http2: 366.6 ms), confirming the validity of the hybrid 24KiB threshold.
 
 ---
 
-### 3.4 メモリ消費量（RSS）の安定性と Isolate 同時起動の挙動
+### 3.3 HTTP/2 Multiplexing, Semaphore Throttling, and Inverted Concurrency Scaling
 
-- **計測A / 計測B での圧倒的抑制**:
-  計測A（90リクエスト）において、① IO が +35.6 MiB、② dio_http2 が +25.8 MiB のメモリ増分を記録したのに対し、④ TurboFetch の増分はわずか **+1.1 MiB**。計測B（100リクエスト）でも **+12.8 MiB**（② dio_http2: +78.7 MiB の約 1/6）にとどまった。ネイティブ層での単一バッファ一括返却と `TransferableTypedData` / `Isolate.exit` による所有権移動が絶大な効果を上げている。
-- **計測C での増分（+40.7 MiB）の分析**:
-  計測C では 40KiB 以上のリクエスト（90%）が 24KiB 閾値を超え、Isolate オフロードが実行される。最大 10 並列で `Isolate.run` が同時起動するため、Dart VM が各 Isolate のスタック・ヒープページを一時的に確保し、Delta RSS が +40.7 MiB まで増加した。
-  ただし、ピーク値自体は 491.3 MiB であり、計測B の dio_http2（525.4 MiB）よりも低く、セマフォ制御によってメモリの無制限な暴走は確実に防がれている。
+A key highlight of TurboFetch is its scaling behavior across scenarios:
+
+- **Scenario A (90 requests, 5–45KiB, 3 workers)**: **3,328 ms**
+- **Scenario B (100 requests, 10–100KiB, 5 workers)**: **2,365 ms**
+- **Scenario C (100 requests, 20–200KiB, 10 workers)**: **1,951 ms**
+
+**Even as payload sizes quadrupled (up to 200KiB) and request counts increased, the total wall time decreased (3.3s -> 2.3s -> 1.9s) in direct proportion to worker concurrency (3 -> 5 -> 10).**
+
+1. **Maximized OkHttp3 Connection Pool Multiplexing**:
+   By sharing a single `ConnectionPool` and TLS configuration via `TurboClientManager`, true HTTP/2 multiplexing over a single TCP/TLS connection was achieved without socket contention.
+2. **Semaphore Concurrency Governance (`maxConcurrentIsolates`)**:
+   Under Scenario C, Dio's standard `BackgroundTransformer` spawned unconstrained Isolates, degrading into CPU context switching and memory contention (causing parse latency to exceed 1.25 seconds per request). In contrast, `TurboTransformer` enforced core-aware concurrency limits, capping average parse latency at **27.7 ms (P95: 48.8 ms)** even under 10 parallel workers.
+3. **Bottlenecks in Other Adapters**:
+   ① IO capped out at 6.3s to 6.6s due to HTTP/1.1 connection limits, while ② dio_http2 collapsed at 13s to 14s due to single-threaded Dart HTTP/2 frame processing bottlenecks.
 
 ---
 
-### 3.5 今後の改善および検証課題
+### 3.4 Memory Stability (RSS) and Multi-Isolate Concurrency
 
-1. **進捗通知（UI 再描画）のスロットリング検証**:
-   ベンチマークアプリ側でリクエスト完了毎（秒間 50 回）に `setState()` を呼んでいることが、計測中のフレーム遅延を誘発した一因である。実アプリ運用に即した進捗スロットリング（例: 16ms〜33ms 単位の間引き更新）を導入することで、UI フレームへの影響がさらに低減される見込みである。
-2. **実機（ARM64）および実ネットワーク環境での検証**:
-   本計測は x86_64 エミュレータ（仮想ループバック `10.0.2.2`）で実施されたため、ネットワーク遅延（RTT）がほぼゼロであり、CPU・スレッド・IPC のオーバーヘッドが強調された。実機および公衆網／Wi-Fi 環境では、HTTP/2 のマルチプレキシング（TCP ハンドシェイク削減）による Net Time 短縮効果がさらに際立つと予想される。
+- **Suppression in Scenarios A & B**:
+  In Scenario A (90 requests), ① IO recorded a +35.6 MiB heap increase and ② dio_http2 recorded +25.8 MiB, while ④ TurboFetch expanded by only **+1.1 MiB**. In Scenario B (100 requests), TurboFetch grew by just **+12.8 MiB** (compared to dio_http2's +78.7 MiB). Native single-buffer batching and `Isolate.exit` memory ownership transfer effectively eliminate intermediate garbage collection spikes.
+- **Analysis of Scenario C (+40.7 MiB Delta)**:
+  In Scenario C, 90% of payloads exceeded the 24KiB threshold, triggering up to 10 concurrent `Isolate.run` instances. The temporary memory increase reflects the Dart VM allocating separate stack and heap pages for 10 active isolates simultaneously.
+  Nonetheless, the peak RSS remained at 491.3 MiB (lower than dio_http2's 525.4 MiB in Scenario B), proving that semaphore governance effectively caps unbounded memory spikes.
+
+---
+
+### 3.5 Future Optimization and Real-World Evaluation
+
+1. **Progress Notification (UI Rebuild) Throttling**:
+   In the current benchmark harness, calling `setState()` on every single completion (50+ times per second) contributed to frame delays during high-throughput runs. Introducing rate-limited progress updates (e.g., throttling to 30 FPS or 33ms windows) will further reduce Main Isolate contention.
+2. **Physical Device (ARM64) and Real Network Latency (RTT) Testing**:
+   Because these measurements were conducted on an emulator loopback interface (`10.0.2.2`) with negligible network latency, the results spotlight pure CPU, IPC, and threading overhead. In physical network environments (with real-world RTT and packet jitter), the latency reduction from HTTP/2 multiplexing (eliminating duplicate TCP/TLS handshakes) is expected to expand TurboFetch's advantage even further.
