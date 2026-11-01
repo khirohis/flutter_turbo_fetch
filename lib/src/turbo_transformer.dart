@@ -7,17 +7,17 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'turbo_options.dart';
 
-/// UTF-8デコードとJSONデコードを結合した高速デコーダ（中間Stringを生成しない）
+/// Fused UTF-8 and JSON decoder that bypasses intermediate String allocations.
 final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder);
 
 class TurboTransformer extends BackgroundTransformer {
-  /// 同時起動するIsolate数を制限するセマフォ（並列リクエスト時のスレッド飽和を防止）
+  /// Semaphore to constrain concurrent Isolates and prevent OS thread saturation.
   final _Semaphore _semaphore;
 
-  /// Isolateへオフロードする閾値（並列通信時は 20KB〜32KB 推奨、デフォルト 24KB）
+  /// Byte threshold above which parsing is offloaded to a worker Isolate (default: 24KiB).
   final int isolateThresholdBytes;
 
-  /// 同時起動する最大Isolate数
+  /// Maximum number of concurrently running worker Isolates.
   final int maxConcurrentIsolates;
 
   TurboTransformer({
@@ -122,10 +122,10 @@ class TurboTransformer extends BackgroundTransformer {
       return mapper != null ? mapper(decoded) : decoded;
     }
     return await _semaphore.withResource(() async {
-      // 【行き】TransferableTypedData で O(1) ゼロコピー転送
+      // Inbound: O(1) zero-copy transfer of raw byte buffer
       final transferable = TransferableTypedData.fromList([bytes]);
 
-      // 【帰り】Isolate.run は内部で Isolate.exit を呼ぶため、生成されたカスタムオブジェクトも O(1) ゼロコピー返却
+      // Outbound: Isolate.run uses Isolate.exit to transfer parsed object tree in O(1)
       return await Isolate.run(() {
         final rawBytes = transferable.materialize().asUint8List();
         final decoded = _jsonUtf8Decoder.convert(rawBytes);

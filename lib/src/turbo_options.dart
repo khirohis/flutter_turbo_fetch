@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 
 typedef TurboResponseMapper<T> = T Function(dynamic data);
 
-/// TurboTransformer 内部で extra からマッパーを取り出すためのキー
+/// Key used by TurboTransformer to extract the custom response mapper from extra.
 const String turboMapperExtraKey = '_turbo_response_mapper';
 
-/// TurboHttpAdapter 内部で extra から最大レスポンスバイト数を取り出すためのキー
+/// Key used by TurboHttpAdapter to extract the maximum response bytes limit from extra.
 const String turboMaxResponseBytesExtraKey = '_turbo_max_response_bytes';
 
 class TurboOptions<T> extends Options {
