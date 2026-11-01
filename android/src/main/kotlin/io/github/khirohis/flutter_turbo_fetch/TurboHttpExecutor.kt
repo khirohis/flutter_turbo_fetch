@@ -63,8 +63,8 @@ internal open class TurboHttpExecutor(
         val requestClient = clientManager.acquireClient(request)
         val sendPhaseTracker = SendPhaseTracker()
 
-        val okRequest = try {
-            buildOkRequest(request, sendPhaseTracker)
+        val httpRequest = try {
+            buildRequest(request, sendPhaseTracker)
         } catch (e: Exception) {
             val errorResponse = TurboHttpResponse(
                 errorCode = "connectionError",
@@ -74,22 +74,13 @@ internal open class TurboHttpExecutor(
             return
         }
 
-        val call = requestClient.newCall(okRequest)
+        val call = requestClient.newCall(httpRequest)
         activeCalls[request.requestId] = call
 
-        call.enqueue(
-            createCallback(
-                request = request,
-                sendPhaseTracker = sendPhaseTracker,
-                onResult = { response ->
-                    activeCalls.remove(request.requestId)
-                    onResult(response)
-                }
-            )
-        )
+        call.enqueue(createCallback(request, sendPhaseTracker, onResult))
     }
 
-    private fun buildOkRequest(
+    private fun buildRequest(
         request: TurboHttpRequest,
         sendPhaseTracker: SendPhaseTracker
     ): Request {
@@ -123,40 +114,45 @@ internal open class TurboHttpExecutor(
         sendPhaseTracker: SendPhaseTracker,
         onResult: (TurboHttpResponse) -> Unit
     ): Callback = object : Callback {
-        override fun onFailure(call: Call, e: IOException) {
+        private fun complete(response: TurboHttpResponse) {
+            activeCalls.remove(request.requestId)
+            onResult(response)
+        }
+
+        private fun completeWithIoError(call: Call, e: IOException) {
             val errorCode = classifyException(call, e, sendPhaseTracker.isSendingBody)
-            val turboResponse = TurboHttpResponse(
-                errorCode = errorCode,
-                errorMessage = e.message ?: e.javaClass.simpleName
+            complete(
+                TurboHttpResponse(
+                    errorCode = errorCode,
+                    errorMessage = e.message ?: e.javaClass.simpleName
+                )
             )
-            onResult(turboResponse)
+        }
+
+        override fun onFailure(call: Call, e: IOException) {
+            completeWithIoError(call, e)
         }
 
         override fun onResponse(call: Call, response: Response) {
             try {
                 response.use { res ->
-                    val turboResponse = readAndBuildResponse(res, request.maxResponseBytes)
-                    onResult(turboResponse)
+                    complete(buildResponse(res, request.maxResponseBytes))
                 }
             } catch (e: IOException) {
-                val errorCode = classifyException(call, e, sendPhaseTracker.isSendingBody)
-                val turboResponse = TurboHttpResponse(
-                    errorCode = errorCode,
-                    errorMessage = e.message ?: e.javaClass.simpleName
-                )
-                onResult(turboResponse)
+                completeWithIoError(call, e)
             } catch (e: Throwable) {
                 val errorCode = if (call.isCanceled()) "cancel" else "unknown"
-                val turboResponse = TurboHttpResponse(
-                    errorCode = errorCode,
-                    errorMessage = e.message ?: e.javaClass.simpleName
+                complete(
+                    TurboHttpResponse(
+                        errorCode = errorCode,
+                        errorMessage = e.message ?: e.javaClass.simpleName
+                    )
                 )
-                onResult(turboResponse)
             }
         }
     }
 
-    private fun readAndBuildResponse(
+    private fun buildResponse(
         res: Response,
         maxBytes: Long?
     ): TurboHttpResponse {
@@ -245,11 +241,22 @@ internal open class TurboHttpExecutor(
         }
     }
 
+    /**
+     * Tracks whether the request is currently in the body-sending phase so that
+     * [classifyException] can distinguish `sendTimeout` from `receiveTimeout`
+     * (OkHttp throws the same timeout exceptions for both phases).
+     */
     private class SendPhaseTracker {
         @Volatile
         var isSendingBody: Boolean = false
     }
 
+    /**
+     * Wraps a [RequestBody] to mark [SendPhaseTracker.isSendingBody] as `true`
+     * while writing the request payload to the network sink. If an [IOException]
+     * occurs during [writeTo], the flag remains `true` so the failure is classified
+     * as `sendTimeout`.
+     */
     private class TrackingRequestBody(
         private val delegate: RequestBody,
         private val tracker: SendPhaseTracker
@@ -260,13 +267,9 @@ internal open class TurboHttpExecutor(
 
         override fun writeTo(sink: BufferedSink) {
             tracker.isSendingBody = true
-            try {
-                delegate.writeTo(sink)
-                sink.flush()
-                tracker.isSendingBody = false
-            } catch (e: IOException) {
-                throw e
-            }
+            delegate.writeTo(sink)
+            sink.flush()
+            tracker.isSendingBody = false
         }
     }
 }
