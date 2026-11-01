@@ -2,12 +2,8 @@ package io.github.khirohis.flutter_turbo_fetch
 
 import okhttp3.Call
 import okhttp3.Callback
-import okhttp3.ConnectionPool
-import okhttp3.Dispatcher
 import okhttp3.Headers
 import okhttp3.MediaType
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -23,43 +19,25 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.net.UnknownServiceException
-import java.security.SecureRandom
 import java.security.cert.CertificateException
-import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 /**
- * OkHttp communication and resource management layer responsible for shared client pooling,
- * in-flight call tracking, defensive request building, one-shot response body buffering,
- * and error classification.
+ * OkHttp request execution and in-flight call management layer responsible for
+ * defensive request building, one-shot response body buffering, and error classification.
  */
 internal open class TurboHttpExecutor(
-    private val clientFactory: (Dispatcher) -> OkHttpClient = ::createDefaultBaseClient
+    private val clientManager: TurboClientManager = TurboClientManager()
 ) {
-    constructor(baseClient: OkHttpClient) : this({ baseClient })
-
     private val activeCalls = ConcurrentHashMap<String, Call>()
-    private val clientLock = Any()
-
-    private var dispatcher: Dispatcher = createDispatcher()
-    private var baseClient: OkHttpClient = clientFactory(dispatcher)
 
     // -------------------------------------------------------------------------
-    // Lifecycle & Client Management
+    // Lifecycle & Call Management
     // -------------------------------------------------------------------------
 
     open fun ensureReady() {
-        synchronized(clientLock) {
-            if (dispatcher.executorService.isShutdown) {
-                dispatcher = createDispatcher()
-                baseClient = clientFactory(dispatcher)
-            }
-        }
+        clientManager.ensureReady()
     }
 
     open fun shutdown() {
@@ -67,32 +45,11 @@ internal open class TurboHttpExecutor(
             call.cancel()
         }
         activeCalls.clear()
-        synchronized(clientLock) {
-            dispatcher.executorService.shutdown()
-            baseClient.connectionPool.evictAll()
-        }
+        clientManager.shutdown()
     }
 
     open fun cancel(requestId: String) {
         activeCalls.remove(requestId)?.cancel()
-    }
-
-    internal fun ensureClient(requestedPerHost: Int): OkHttpClient {
-        synchronized(clientLock) {
-            if (dispatcher.executorService.isShutdown) {
-                dispatcher = createDispatcher()
-                baseClient = clientFactory(dispatcher)
-            }
-            if (requestedPerHost > dispatcher.maxRequests) {
-                dispatcher.maxRequests = requestedPerHost
-            } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
-                dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
-            }
-            if (dispatcher.maxRequestsPerHost != requestedPerHost) {
-                dispatcher.maxRequestsPerHost = requestedPerHost
-            }
-            return baseClient
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -103,9 +60,7 @@ internal open class TurboHttpExecutor(
         request: TurboHttpRequest,
         onResult: (TurboHttpResponse) -> Unit
     ) {
-        val requestedPerHost = request.maxRequestsPerHost.toInt().coerceAtLeast(1)
-        val sharedClient = ensureClient(requestedPerHost)
-        val requestClient = buildRequestClient(sharedClient, request)
+        val requestClient = clientManager.acquireClient(request)
         val sendPhaseTracker = SendPhaseTracker()
 
         val okRequest = try {
@@ -132,31 +87,6 @@ internal open class TurboHttpExecutor(
                 }
             )
         )
-    }
-
-    private fun buildRequestClient(
-        sharedClient: OkHttpClient,
-        request: TurboHttpRequest
-    ): OkHttpClient {
-        val clientBuilder = sharedClient.newBuilder()
-            .followRedirects(request.followRedirects)
-            .followSslRedirects(request.followRedirects)
-
-        request.connectTimeoutMs?.let {
-            clientBuilder.connectTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-        }
-        request.receiveTimeoutMs?.let {
-            clientBuilder.readTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-        }
-        request.sendTimeoutMs?.let {
-            clientBuilder.writeTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-        }
-
-        if (request.allowBadCertificates) {
-            configureInsecureTls(clientBuilder)
-        }
-
-        return clientBuilder.build()
     }
 
     private fun buildOkRequest(
@@ -274,7 +204,7 @@ internal open class TurboHttpExecutor(
     }
 
     // -------------------------------------------------------------------------
-    // Error Classification & TLS Helpers
+    // Error Classification & Tracking Helpers
     // -------------------------------------------------------------------------
 
     internal fun classifyException(
@@ -315,21 +245,6 @@ internal open class TurboHttpExecutor(
         }
     }
 
-    private fun configureInsecureTls(builder: OkHttpClient.Builder) {
-        val trustAllCerts = arrayOf<TrustManager>(
-            object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            }
-        )
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, trustAllCerts, SecureRandom())
-        val trustManager = trustAllCerts[0] as X509TrustManager
-        builder.sslSocketFactory(sslContext.socketFactory, trustManager)
-        builder.hostnameVerifier { _, _ -> true }
-    }
-
     private class SendPhaseTracker {
         @Volatile
         var isSendingBody: Boolean = false
@@ -353,22 +268,5 @@ internal open class TurboHttpExecutor(
                 throw e
             }
         }
-    }
-
-    companion object {
-        private const val DEFAULT_MAX_REQUESTS = 64
-        private const val DEFAULT_MAX_REQUESTS_PER_HOST = 32
-
-        private fun createDispatcher(): Dispatcher = Dispatcher().apply {
-            maxRequests = DEFAULT_MAX_REQUESTS
-            maxRequestsPerHost = DEFAULT_MAX_REQUESTS_PER_HOST
-        }
-
-        private fun createDefaultBaseClient(targetDispatcher: Dispatcher): OkHttpClient =
-            OkHttpClient.Builder()
-                .dispatcher(targetDispatcher)
-                .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-                .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-                .build()
     }
 }

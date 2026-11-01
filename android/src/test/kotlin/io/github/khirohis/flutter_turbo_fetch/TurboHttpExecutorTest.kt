@@ -27,7 +27,6 @@ import javax.net.ssl.SSLException
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -71,7 +70,7 @@ internal class TurboHttpExecutorTest {
         val client = OkHttpClient.Builder()
             .addInterceptor(interceptor)
             .build()
-        return TurboHttpExecutor(client)
+        return TurboHttpExecutor(TurboClientManager(client))
     }
 
     private fun executeSync(
@@ -89,39 +88,6 @@ internal class TurboHttpExecutorTest {
         )
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for TurboHttpExecutor.execute")
         return assertNotNull(resultRef.get())
-    }
-
-    @Test
-    fun ensureClient_scalesDispatcherLimitsDynamically() {
-        val executor = TurboHttpExecutor()
-
-        // Default scale (requestedPerHost = 32 -> maxRequests = 64, maxRequestsPerHost = 32)
-        val defaultClient = executor.ensureClient(32)
-        assertEquals(64, defaultClient.dispatcher.maxRequests)
-        assertEquals(32, defaultClient.dispatcher.maxRequestsPerHost)
-
-        // Scale up above DEFAULT_MAX_REQUESTS (requestedPerHost = 100 -> maxRequests = 100, maxRequestsPerHost = 100)
-        val scaledUpClient = executor.ensureClient(100)
-        assertEquals(100, scaledUpClient.dispatcher.maxRequests)
-        assertEquals(100, scaledUpClient.dispatcher.maxRequestsPerHost)
-
-        // Scale back down when requestedPerHost <= 64 (requestedPerHost = 16 -> maxRequests = 64, maxRequestsPerHost = 16)
-        val scaledDownClient = executor.ensureClient(16)
-        assertEquals(64, scaledDownClient.dispatcher.maxRequests)
-        assertEquals(16, scaledDownClient.dispatcher.maxRequestsPerHost)
-    }
-
-    @Test
-    fun ensureClient_andEnsureReady_recoverAfterShutdown() {
-        val executor = TurboHttpExecutor()
-        val initialClient = executor.ensureClient(32)
-        executor.shutdown()
-        assertTrue(initialClient.dispatcher.executorService.isShutdown)
-
-        executor.ensureReady()
-        val recoveredClient = executor.ensureClient(48)
-        assertFalse(recoveredClient.dispatcher.executorService.isShutdown)
-        assertEquals(48, recoveredClient.dispatcher.maxRequestsPerHost)
     }
 
     @Test
