@@ -55,8 +55,8 @@ flutter_turbo_fetch/
 │   └── messages.dart                      # Pigeon スキーマ定義（@HostApi）
 ├── android/
 │   └── src/main/kotlin/io/github/khirohis/flutter_turbo_fetch/
-│       ├── FlutterTurboFetchPlugin.kt     # Android FlutterPlugin + 通信マネージメント層
-│       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信実行・エラー分類層
+│       ├── FlutterTurboFetchPlugin.kt     # Android FlutterPlugin インターフェース層
+│       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信・リソース管理層
 │       └── Messages.g.kt                  # Pigeon 自動生成コード（Kotlin 側）
 ├── ios/
 │   ├── flutter_turbo_fetch.podspec        # CocoaPods 定義（iOS 13.0+）
