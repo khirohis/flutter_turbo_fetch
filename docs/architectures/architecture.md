@@ -8,7 +8,7 @@
 
 ```text
 [ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler)]
-  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp は初期 16MiB ウィンドウ）
+  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp デフォルト 16MiB ウィンドウ）
   ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時は上限超過を検知した時点で処理を中断しエラー返却）
   └─ 完成した byte[] / Data (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
         │
@@ -33,8 +33,8 @@
 
 | レイヤー | 担当コンポーネント | 入力 | 出力 | 禁止事項 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Android 通信層** | `OkHttp3` (`Call.enqueue`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
-| **iOS 通信層** | `URLSession` (`dataTask(with:completionHandler:)`) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
+| **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboClientManager` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
+| **iOS 通信層** | `FlutterTurboFetchPlugin` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
 | **Dart Adapter 層** | `TurboHttpAdapter` (`HttpClientAdapter`) | `RequestOptions`, `Stream<Uint8List>?` | `ResponseBody.fromBytes(Uint8List)`（単一チャンクストリーム） | チャンク分割送信・別アダプタへの不要なフォールバック |
 | **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseBody` (`stream`) / `Uint8List` (`bytes`) / `String` (`plain`) / JSON (`json`) / `mapper` 変換後オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
 
@@ -55,7 +55,9 @@ flutter_turbo_fetch/
 │   └── messages.dart                      # Pigeon スキーマ定義（@HostApi）
 ├── android/
 │   └── src/main/kotlin/io/github/khirohis/flutter_turbo_fetch/
-│       ├── FlutterTurboFetchPlugin.kt     # Android FlutterPlugin + OkHttp3 実装
+│       ├── FlutterTurboFetchPlugin.kt     # Android FlutterPlugin インターフェース層
+│       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信実行・Call 管理層
+│       ├── TurboClientManager.kt          # Android OkHttp3 クライアント・接続管理層
 │       └── Messages.g.kt                  # Pigeon 自動生成コード（Kotlin 側）
 ├── ios/
 │   ├── flutter_turbo_fetch.podspec        # CocoaPods 定義（iOS 13.0+）

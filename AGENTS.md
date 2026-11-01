@@ -50,7 +50,9 @@
 - **[`docs/roadmap.md`](docs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
 - **`docs/architectures/`**（設計・実装時に参照する仕様定義）:
   - [`architecture.md`](docs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
-  - [`native-layer.md`](docs/architectures/native-layer.md): Android / iOS ネイティブ層仕様と通信データモデル。
+  - [`native-layer.md`](docs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
+  - [`android-native-layer.md`](docs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
+  - [`ios-native-layer.md`](docs/architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）。
   - [`dart-layer.md`](docs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
   - [`benchmark.md`](docs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
 - **`docs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。

@@ -1,25 +1,30 @@
 package io.github.khirohis.flutter_turbo_fetch
 
-import okhttp3.Call
-import java.io.IOException
-import java.io.InterruptedIOException
-import java.net.ConnectException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
-import javax.net.ssl.SSLException
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 internal class FlutterTurboFetchPluginTest {
-    private fun createDummyCall(canceled: Boolean = false): Call {
-        return java.lang.reflect.Proxy.newProxyInstance(
-            Call::class.java.classLoader,
-            arrayOf(Call::class.java)
-        ) { _, method, _ ->
-            if (method.name == "isCanceled") canceled
-            else null
-        } as Call
+    private fun createRequest(
+        requestId: String = "req-1",
+        maxRequestsPerHost: Long = 32L
+    ): TurboHttpRequest {
+        return TurboHttpRequest(
+            requestId = requestId,
+            url = "https://example.com/data",
+            method = "GET",
+            headers = emptyMap(),
+            body = null,
+            connectTimeoutMs = 5000L,
+            receiveTimeoutMs = 5000L,
+            sendTimeoutMs = 5000L,
+            followRedirects = true,
+            maxRequestsPerHost = maxRequestsPerHost,
+            allowBadCertificates = false,
+            maxResponseBytes = null
+        )
     }
 
     @Test
@@ -29,55 +34,43 @@ internal class FlutterTurboFetchPluginTest {
     }
 
     @Test
-    fun classifyException_classifiesCanceledCall() {
-        val plugin = FlutterTurboFetchPlugin()
-        val call = createDummyCall(canceled = true)
-        val result = plugin.classifyException(call, IOException("Generic"), isSendingBody = false)
-        assertEquals("cancel", result)
-    }
+    fun executeRequest_andCancelRequest_delegateToExecutor() {
+        val capturedRequest = AtomicReference<TurboHttpRequest?>()
+        val capturedOnResult = AtomicReference<(TurboHttpResponse) -> Unit>()
+        val canceledRequestId = AtomicReference<String?>()
 
-    @Test
-    fun classifyException_classifiesTimeoutsCorrectly() {
-        val plugin = FlutterTurboFetchPlugin()
-        val call = createDummyCall(canceled = false)
+        val fakeExecutor = object : TurboHttpExecutor() {
+            override fun execute(
+                request: TurboHttpRequest,
+                onResult: (TurboHttpResponse) -> Unit
+            ) {
+                capturedRequest.set(request)
+                capturedOnResult.set(onResult)
+            }
 
-        // Connect timeout
-        val connectTimeout = SocketTimeoutException("failed to connect")
-        assertEquals("connectionTimeout", plugin.classifyException(call, connectTimeout, isSendingBody = false))
+            override fun cancel(requestId: String) {
+                canceledRequestId.set(requestId)
+            }
+        }
 
-        // Send timeout
-        val sendTimeout = SocketTimeoutException("write timed out")
-        assertEquals("sendTimeout", plugin.classifyException(call, sendTimeout, isSendingBody = true))
+        val plugin = FlutterTurboFetchPlugin(executor = fakeExecutor)
+        val receivedResponse = AtomicReference<TurboHttpResponse?>()
 
-        // Receive timeout
-        val receiveTimeout = SocketTimeoutException("timeout reading from source")
-        assertEquals("receiveTimeout", plugin.classifyException(call, receiveTimeout, isSendingBody = false))
+        val request = createRequest(requestId = "req-cancel-test")
+        plugin.executeRequest(request) { result ->
+            receivedResponse.set(result.getOrNull())
+        }
 
-        // InterruptedIOException timeout
-        val interruptedTimeout = InterruptedIOException("timeout")
-        assertEquals("sendTimeout", plugin.classifyException(call, interruptedTimeout, isSendingBody = true))
-        assertEquals("receiveTimeout", plugin.classifyException(call, interruptedTimeout, isSendingBody = false))
+        assertEquals("req-cancel-test", capturedRequest.get()?.requestId)
+        assertNull(receivedResponse.get())
 
-        // InterruptedIOException cancel
-        val interruptedCancel = InterruptedIOException("thread interrupted")
-        assertEquals("cancel", plugin.classifyException(call, interruptedCancel, isSendingBody = false))
-    }
+        // cancelRequest delegates to executor.cancel(requestId)
+        plugin.cancelRequest("req-cancel-test")
+        assertEquals("req-cancel-test", canceledRequestId.get())
 
-    @Test
-    fun classifyException_classifiesCertificateAndConnectionErrors() {
-        val plugin = FlutterTurboFetchPlugin()
-        val call = createDummyCall(canceled = false)
-
-        val sslException = SSLException("Handshake failed")
-        assertEquals("badCertificate", plugin.classifyException(call, sslException, isSendingBody = false))
-
-        val unknownHost = UnknownHostException("example.invalid")
-        assertEquals("connectionError", plugin.classifyException(call, unknownHost, isSendingBody = false))
-
-        val connectException = ConnectException("Connection refused")
-        assertEquals("connectionError", plugin.classifyException(call, connectException, isSendingBody = false))
-
-        val genericIo = IOException("Unexpected EOF")
-        assertEquals("unknown", plugin.classifyException(call, genericIo, isSendingBody = false))
+        // When executor finishes and invokes onResult, callback receives the response
+        val expectedResponse = TurboHttpResponse(errorCode = "cancel", errorMessage = "Canceled")
+        capturedOnResult.get().invoke(expectedResponse)
+        assertEquals("cancel", receivedResponse.get()?.errorCode)
     }
 }
