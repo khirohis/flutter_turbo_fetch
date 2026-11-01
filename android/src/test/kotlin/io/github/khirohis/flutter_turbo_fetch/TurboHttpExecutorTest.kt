@@ -22,7 +22,6 @@ import java.net.UnknownServiceException
 import java.security.cert.CertificateException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLException
 import kotlin.test.Test
@@ -45,6 +44,7 @@ internal class TurboHttpExecutorTest {
     }
 
     private fun createRequest(
+        requestId: String = "test-req",
         url: String = "https://example.com/api",
         method: String = "GET",
         headers: Map<String?, String?> = emptyMap(),
@@ -52,7 +52,7 @@ internal class TurboHttpExecutorTest {
         maxResponseBytes: Long? = null
     ): TurboHttpRequest {
         return TurboHttpRequest(
-            requestId = "test-req",
+            requestId = requestId,
             url = url,
             method = method,
             headers = headers,
@@ -67,26 +67,21 @@ internal class TurboHttpExecutorTest {
         )
     }
 
-    private fun createInterceptedClient(interceptor: Interceptor): OkHttpClient {
-        return OkHttpClient.Builder()
+    private fun createInterceptedExecutor(interceptor: Interceptor): TurboHttpExecutor {
+        val client = OkHttpClient.Builder()
             .addInterceptor(interceptor)
             .build()
+        return TurboHttpExecutor(client)
     }
 
     private fun executeSync(
         executor: TurboHttpExecutor,
-        client: OkHttpClient,
-        request: TurboHttpRequest,
-        onCallCreatedCallback: ((Call) -> Unit)? = null
+        request: TurboHttpRequest
     ): TurboHttpResponse {
         val latch = CountDownLatch(1)
         val resultRef = AtomicReference<TurboHttpResponse>()
         executor.execute(
-            client = client,
             request = request,
-            onCallCreated = { call ->
-                onCallCreatedCallback?.invoke(call)
-            },
             onResult = { response ->
                 resultRef.set(response)
                 latch.countDown()
@@ -94,6 +89,39 @@ internal class TurboHttpExecutorTest {
         )
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for TurboHttpExecutor.execute")
         return assertNotNull(resultRef.get())
+    }
+
+    @Test
+    fun ensureClient_scalesDispatcherLimitsDynamically() {
+        val executor = TurboHttpExecutor()
+
+        // Default scale (requestedPerHost = 32 -> maxRequests = 64, maxRequestsPerHost = 32)
+        val defaultClient = executor.ensureClient(32)
+        assertEquals(64, defaultClient.dispatcher.maxRequests)
+        assertEquals(32, defaultClient.dispatcher.maxRequestsPerHost)
+
+        // Scale up above DEFAULT_MAX_REQUESTS (requestedPerHost = 100 -> maxRequests = 100, maxRequestsPerHost = 100)
+        val scaledUpClient = executor.ensureClient(100)
+        assertEquals(100, scaledUpClient.dispatcher.maxRequests)
+        assertEquals(100, scaledUpClient.dispatcher.maxRequestsPerHost)
+
+        // Scale back down when requestedPerHost <= 64 (requestedPerHost = 16 -> maxRequests = 64, maxRequestsPerHost = 16)
+        val scaledDownClient = executor.ensureClient(16)
+        assertEquals(64, scaledDownClient.dispatcher.maxRequests)
+        assertEquals(16, scaledDownClient.dispatcher.maxRequestsPerHost)
+    }
+
+    @Test
+    fun ensureClient_andEnsureReady_recoverAfterShutdown() {
+        val executor = TurboHttpExecutor()
+        val initialClient = executor.ensureClient(32)
+        executor.shutdown()
+        assertTrue(initialClient.dispatcher.executorService.isShutdown)
+
+        executor.ensureReady()
+        val recoveredClient = executor.ensureClient(48)
+        assertFalse(recoveredClient.dispatcher.executorService.isShutdown)
+        assertEquals(48, recoveredClient.dispatcher.maxRequestsPerHost)
     }
 
     @Test
@@ -154,17 +182,13 @@ internal class TurboHttpExecutorTest {
     }
 
     @Test
-    fun execute_invalidUrl_returnsConnectionErrorWithoutCreatingCall() {
+    fun execute_invalidUrl_returnsConnectionError() {
         val executor = TurboHttpExecutor()
-        val callCreated = AtomicBoolean(false)
         val response = executeSync(
             executor = executor,
-            client = OkHttpClient(),
-            request = createRequest(url = "http://[::1"),
-            onCallCreatedCallback = { callCreated.set(true) }
+            request = createRequest(url = "http://[::1")
         )
 
-        assertFalse(callCreated.get(), "onCallCreated must not be called when request building fails")
         assertEquals("connectionError", response.errorCode)
         assertNotNull(response.errorMessage)
     }
@@ -172,59 +196,60 @@ internal class TurboHttpExecutorTest {
     @Test
     fun execute_invalidHeaderCharacters_returnsConnectionErrorSafelyWithoutCrash() {
         val executor = TurboHttpExecutor()
-        val callCreated = AtomicBoolean(false)
         val invalidHeaders: Map<String?, String?> = mapOf("X-Invalid\r\nHeader" to "value\r\ninjection")
 
         val response = executeSync(
             executor = executor,
-            client = OkHttpClient(),
-            request = createRequest(headers = invalidHeaders),
-            onCallCreatedCallback = { callCreated.set(true) }
+            request = createRequest(headers = invalidHeaders)
         )
 
-        assertFalse(callCreated.get(), "onCallCreated must not be called when headers are invalid")
         assertEquals("connectionError", response.errorCode)
     }
 
     @Test
-    fun execute_invokesOnCallCreatedBeforeOnResult() {
-        val executor = TurboHttpExecutor()
-        val callCreatedBeforeResult = AtomicBoolean(false)
-        val callCreated = AtomicBoolean(false)
+    fun cancel_cancelsInFlightRequest() {
+        val requestStarted = CountDownLatch(1)
+        val allowFinish = CountDownLatch(1)
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
+            requestStarted.countDown()
+            allowFinish.await(5, TimeUnit.SECONDS)
+            if (chain.call().isCanceled()) {
+                throw IOException("Canceled")
+            }
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
                 .code(200)
                 .message("OK")
-                .body("hello".toByteArray().toResponseBody("text/plain".toMediaType()))
+                .body("ok".toByteArray().toResponseBody("text/plain".toMediaType()))
                 .build()
         }
 
-        val latch = CountDownLatch(1)
+        val resultLatch = CountDownLatch(1)
+        val resultRef = AtomicReference<TurboHttpResponse>()
+
         executor.execute(
-            client = client,
-            request = createRequest(),
-            onCallCreated = {
-                callCreated.set(true)
-            },
-            onResult = {
-                callCreatedBeforeResult.set(callCreated.get())
-                latch.countDown()
+            request = createRequest(requestId = "cancel-target"),
+            onResult = { response ->
+                resultRef.set(response)
+                resultLatch.countDown()
             }
         )
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS))
-        assertTrue(callCreatedBeforeResult.get(), "onCallCreated must be executed before onResult")
+        assertTrue(requestStarted.await(5, TimeUnit.SECONDS))
+        executor.cancel("cancel-target")
+        allowFinish.countDown()
+
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS))
+        assertEquals("cancel", resultRef.get()?.errorCode)
     }
 
     @Test
     fun execute_maxResponseBytesNull_returnsFullBodyAndHeaders() {
-        val executor = TurboHttpExecutor()
         val expectedBytes = "turbo-fetch-payload".encodeToByteArray()
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -236,7 +261,7 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest(maxResponseBytes = null))
+        val response = executeSync(executor, createRequest(maxResponseBytes = null))
         assertNull(response.errorCode)
         assertEquals(201L, response.statusCode)
         assertEquals("Created", response.statusMessage)
@@ -246,10 +271,9 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun execute_maxResponseBytesExceededByContentLength_returnsExceededError() {
-        val executor = TurboHttpExecutor()
         val payload = ByteArray(100) { 1 }
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -259,14 +283,13 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest(maxResponseBytes = 50L))
+        val response = executeSync(executor, createRequest(maxResponseBytes = 50L))
         assertEquals("maxResponseBytesExceeded", response.errorCode)
         assertNull(response.body)
     }
 
     @Test
     fun execute_maxResponseBytesExceededWhenContentLengthUnknown_returnsExceededError() {
-        val executor = TurboHttpExecutor()
         val payload = ByteArray(64) { 2 }
 
         // Simulate streaming response with unknown contentLength (-1L)
@@ -276,7 +299,7 @@ internal class TurboHttpExecutorTest {
             override fun source(): BufferedSource = Buffer().write(payload)
         }
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -286,17 +309,16 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest(maxResponseBytes = 32L))
+        val response = executeSync(executor, createRequest(maxResponseBytes = 32L))
         assertEquals("maxResponseBytesExceeded", response.errorCode)
         assertNull(response.body)
     }
 
     @Test
     fun execute_maxResponseBytesExactBoundary_succeeds() {
-        val executor = TurboHttpExecutor()
         val payload = ByteArray(32) { 3 }
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -306,14 +328,13 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest(maxResponseBytes = 32L))
+        val response = executeSync(executor, createRequest(maxResponseBytes = 32L))
         assertNull(response.errorCode)
         assertContentEquals(payload, response.body)
     }
 
     @Test
     fun execute_maxResponseBytesLongMaxValue_returnsFullBodyWithoutTruncation() {
-        val executor = TurboHttpExecutor()
         val payload = "full-body-at-long-max-value".encodeToByteArray()
 
         // Use unknown contentLength (-1L) so source reading path is fully exercised
@@ -323,7 +344,7 @@ internal class TurboHttpExecutorTest {
             override fun source(): BufferedSource = Buffer().write(payload)
         }
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -333,15 +354,13 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest(maxResponseBytes = Long.MAX_VALUE))
+        val response = executeSync(executor, createRequest(maxResponseBytes = Long.MAX_VALUE))
         assertNull(response.errorCode)
         assertContentEquals(payload, response.body)
     }
 
     @Test
     fun execute_unexpectedRuntimeExceptionDuringResponseRead_returnsUnknownErrorSafely() {
-        val executor = TurboHttpExecutor()
-
         val failingBody = object : ResponseBody() {
             override fun contentType() = "text/plain".toMediaType()
             override fun contentLength(): Long = 10L
@@ -350,7 +369,7 @@ internal class TurboHttpExecutorTest {
             }
         }
 
-        val client = createInterceptedClient { chain ->
+        val executor = createInterceptedExecutor { chain ->
             Response.Builder()
                 .request(chain.request())
                 .protocol(Protocol.HTTP_2)
@@ -360,9 +379,8 @@ internal class TurboHttpExecutorTest {
                 .build()
         }
 
-        val response = executeSync(executor, client, createRequest())
+        val response = executeSync(executor, createRequest())
         assertEquals("unknown", response.errorCode)
         assertNotNull(response.errorMessage)
     }
 }
-
