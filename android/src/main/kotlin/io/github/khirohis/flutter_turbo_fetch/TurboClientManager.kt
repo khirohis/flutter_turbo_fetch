@@ -7,7 +7,9 @@ import okhttp3.Protocol
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
@@ -18,44 +20,39 @@ import javax.net.ssl.X509TrustManager
 internal open class TurboClientManager(
     private val clientFactory: (Dispatcher) -> OkHttpClient = ::createDefaultBaseClient
 ) {
-    constructor(baseClient: OkHttpClient) : this({ baseClient })
+    constructor(baseClient: OkHttpClient) : this({ targetDispatcher ->
+        baseClient.newBuilder().dispatcher(targetDispatcher).build()
+    })
 
-    private val clientLock = Any()
     private var dispatcher: Dispatcher = createDispatcher()
     private var baseClient: OkHttpClient = clientFactory(dispatcher)
 
+    @Synchronized
     open fun ensureReady() {
-        synchronized(clientLock) {
-            if (dispatcher.executorService.isShutdown) {
-                dispatcher = createDispatcher()
-                baseClient = clientFactory(dispatcher)
-            }
+        if (dispatcher.executorService.isShutdown) {
+            dispatcher = createDispatcher()
+            baseClient = clientFactory(dispatcher)
         }
     }
 
+    @Synchronized
     open fun shutdown() {
-        synchronized(clientLock) {
-            dispatcher.executorService.shutdown()
-            baseClient.connectionPool.evictAll()
-        }
+        dispatcher.executorService.shutdown()
+        baseClient.connectionPool.evictAll()
     }
 
+    @Synchronized
     internal fun ensureClient(requestedPerHost: Int): OkHttpClient {
-        synchronized(clientLock) {
-            if (dispatcher.executorService.isShutdown) {
-                dispatcher = createDispatcher()
-                baseClient = clientFactory(dispatcher)
-            }
-            if (requestedPerHost > dispatcher.maxRequests) {
-                dispatcher.maxRequests = requestedPerHost
-            } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
-                dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
-            }
-            if (dispatcher.maxRequestsPerHost != requestedPerHost) {
-                dispatcher.maxRequestsPerHost = requestedPerHost
-            }
-            return baseClient
+        ensureReady()
+        if (requestedPerHost > dispatcher.maxRequests) {
+            dispatcher.maxRequests = requestedPerHost
+        } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
+            dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
         }
+        if (dispatcher.maxRequestsPerHost != requestedPerHost) {
+            dispatcher.maxRequestsPerHost = requestedPerHost
+        }
+        return baseClient
     }
 
     open fun acquireClient(request: TurboHttpRequest): OkHttpClient {
@@ -67,13 +64,13 @@ internal open class TurboClientManager(
             .followSslRedirects(request.followRedirects)
 
         request.connectTimeoutMs?.let {
-            clientBuilder.connectTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            clientBuilder.connectTimeout(it, TimeUnit.MILLISECONDS)
         }
         request.receiveTimeoutMs?.let {
-            clientBuilder.readTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            clientBuilder.readTimeout(it, TimeUnit.MILLISECONDS)
         }
         request.sendTimeoutMs?.let {
-            clientBuilder.writeTimeout(it.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            clientBuilder.writeTimeout(it, TimeUnit.MILLISECONDS)
         }
 
         if (request.allowBadCertificates) {
@@ -84,23 +81,31 @@ internal open class TurboClientManager(
     }
 
     private fun configureInsecureTls(builder: OkHttpClient.Builder) {
-        val trustAllCerts = arrayOf<TrustManager>(
-            object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            }
-        )
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, trustAllCerts, SecureRandom())
-        val trustManager = trustAllCerts[0] as X509TrustManager
-        builder.sslSocketFactory(sslContext.socketFactory, trustManager)
-        builder.hostnameVerifier { _, _ -> true }
+        builder.sslSocketFactory(insecureSslSocketFactory, insecureTrustManager)
+        builder.hostnameVerifier(insecureHostnameVerifier)
     }
 
     companion object {
         private const val DEFAULT_MAX_REQUESTS = 64
         private const val DEFAULT_MAX_REQUESTS_PER_HOST = 32
+
+        private val insecureTrustManager: X509TrustManager by lazy {
+            object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+        }
+
+        private val insecureSslSocketFactory: SSLSocketFactory by lazy {
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, arrayOf<TrustManager>(insecureTrustManager), SecureRandom())
+            sslContext.socketFactory
+        }
+
+        private val insecureHostnameVerifier: HostnameVerifier by lazy {
+            HostnameVerifier { _, _ -> true }
+        }
 
         private fun createDispatcher(): Dispatcher = Dispatcher().apply {
             maxRequests = DEFAULT_MAX_REQUESTS
@@ -115,4 +120,3 @@ internal open class TurboClientManager(
                 .build()
     }
 }
-

@@ -73,7 +73,7 @@ Flutter Engine / Pigeon との結合層、1 リクエストの通信実行・実
 
 - **役割**: 共有 `OkHttpClient` / `Dispatcher` / `ConnectionPool` の排他制御・動的スケーリング・Shutdown 復帰、およびリクエスト単位の派生クライアント生成（DataSource 的役割）。
 - **保持する状態**:
-  - `dispatcher: Dispatcher`, `baseClient: OkHttpClient`, `clientLock: Any`
+  - `dispatcher: Dispatcher`, `baseClient: OkHttpClient`（排他制御は各操作メソッドの `@Synchronized` で保証）
 - **公開 / 内部インターフェース**:
   - `ensureReady()`: Shutdown 状態からのクライアント復帰
   - `ensureClient(requestedPerHost: Int): OkHttpClient`: 動的スケーリング適用済みの共有ベースクライアント取得

@@ -41,10 +41,9 @@ internal open class TurboHttpExecutor(
     }
 
     open fun shutdown() {
-        for (call in activeCalls.values) {
-            call.cancel()
+        for (requestId in activeCalls.keys) {
+            activeCalls.remove(requestId)?.cancel()
         }
-        activeCalls.clear()
         clientManager.shutdown()
     }
 
@@ -60,11 +59,12 @@ internal open class TurboHttpExecutor(
         request: TurboHttpRequest,
         onResult: (TurboHttpResponse) -> Unit
     ) {
-        val requestClient = clientManager.acquireClient(request)
         val sendPhaseTracker = SendPhaseTracker()
 
-        val httpRequest = try {
-            buildRequest(request, sendPhaseTracker)
+        val call = try {
+            val httpRequest = buildRequest(request, sendPhaseTracker)
+            val requestClient = clientManager.acquireClient(request)
+            requestClient.newCall(httpRequest)
         } catch (e: Exception) {
             val errorResponse = TurboHttpResponse(
                 errorCode = "connectionError",
@@ -74,7 +74,6 @@ internal open class TurboHttpExecutor(
             return
         }
 
-        val call = requestClient.newCall(httpRequest)
         activeCalls[request.requestId] = call
 
         call.enqueue(createCallback(request, sendPhaseTracker, onResult))

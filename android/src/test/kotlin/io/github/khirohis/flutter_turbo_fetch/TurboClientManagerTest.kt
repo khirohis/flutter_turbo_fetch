@@ -1,9 +1,11 @@
 package io.github.khirohis.flutter_turbo_fetch
 
+import okhttp3.OkHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 internal class TurboClientManagerTest {
@@ -84,6 +86,24 @@ internal class TurboClientManagerTest {
         assertFalse(derivedClient.followSslRedirects)
         assertEquals(40, derivedClient.dispatcher.maxRequestsPerHost)
         assertNotNull(derivedClient.x509TrustManager)
+
+        // Verify insecure TLS instances are shared across requests to preserve ConnectionPool reuse
+        val secondDerivedClient = manager.acquireClient(request)
+        assertSame(derivedClient.sslSocketFactory, secondDerivedClient.sslSocketFactory)
+        assertSame(derivedClient.x509TrustManager, secondDerivedClient.x509TrustManager)
+        assertSame(derivedClient.hostnameVerifier, secondDerivedClient.hostnameVerifier)
+    }
+
+    @Test
+    fun secondaryConstructor_withBaseClient_sharesManagedDispatcher() {
+        val customBaseClient = OkHttpClient.Builder().build()
+        val manager = TurboClientManager(customBaseClient)
+
+        val client = manager.ensureClient(48)
+        assertEquals(48, client.dispatcher.maxRequestsPerHost)
+
+        manager.shutdown()
+        assertTrue(client.dispatcher.executorService.isShutdown)
     }
 }
 
