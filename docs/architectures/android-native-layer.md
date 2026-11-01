@@ -45,7 +45,7 @@ Flutter Engine / Pigeon との結合層、1 リクエストの通信実行・実
 
 - **役割**: Flutter Engine / Pigeon とのブリッジおよびメインスレッドへのコールバック返却。OkHttp への直接依存を持たない。
 - **保持する状態**:
-  - `mainHandler: Handler?`
+  - `mainHandler: Handler`
   - `executor: TurboHttpExecutor`
 - **公開 / 内部インターフェース**:
   - `onAttachedToEngine` / `onDetachedFromEngine`

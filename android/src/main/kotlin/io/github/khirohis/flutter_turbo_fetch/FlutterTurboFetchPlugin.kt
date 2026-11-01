@@ -8,28 +8,19 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
  * Flutter plugin interface layer bridging Pigeon HostApi and main-thread callback dispatch.
  */
 class FlutterTurboFetchPlugin internal constructor(
-    handler: Handler? = null,
     private val executor: TurboHttpExecutor = TurboHttpExecutor()
 ) : FlutterPlugin,
     TurboFetchHostApi {
 
-    constructor() : this(null, TurboHttpExecutor())
+    constructor() : this(TurboHttpExecutor())
 
-    constructor(handler: Handler?) : this(handler, TurboHttpExecutor())
-
-    private val mainHandler: Handler? = handler ?: try {
-        val looper = Looper.getMainLooper()
-        if (looper != null) Handler(looper) else null
-    } catch (_: Exception) {
-        null
-    }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun postToMain(action: () -> Unit) {
-        val h = mainHandler
-        if (h != null) {
-            h.post(action)
-        } else {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
             action()
+        } else {
+            mainHandler.post(action)
         }
     }
 

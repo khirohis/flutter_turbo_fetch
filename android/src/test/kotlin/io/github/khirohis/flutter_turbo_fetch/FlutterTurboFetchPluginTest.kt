@@ -53,7 +53,7 @@ internal class FlutterTurboFetchPluginTest {
             }
         }
 
-        val plugin = FlutterTurboFetchPlugin(handler = null, executor = fakeExecutor)
+        val plugin = FlutterTurboFetchPlugin(executor = fakeExecutor)
         val receivedResponse = AtomicReference<TurboHttpResponse?>()
 
         val request = createRequest(requestId = "req-cancel-test")
