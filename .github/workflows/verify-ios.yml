@@ -36,4 +36,4 @@ jobs:
         run: |
           cd example
           # Build for iOS Simulator without code signing to verify Swift / Pigeon / URLSession compilation
-          flutter build iOS --simulator
+          flutter build ios --simulator
