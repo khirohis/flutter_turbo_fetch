@@ -9,7 +9,7 @@
 本パッケージのネイティブ層は、OS バックグラウンドでの HTTP/2 一括受信・チャンク結合、および完成した単一の生バイト配列（`Uint8List`）の一括返却を担当します。
 
 - **共通通信ブリッジ仕様（本ドキュメント）**: Dart ⇄ ネイティブ間の Pigeon データモデルおよび共通エラーコード体系
-- **Android ネイティブ層仕様**: [`android-native-layer.md`](./android-native-layer.md)（OkHttp3、2分割クラス構成、リソース管理）
+- **Android ネイティブ層仕様**: [`android-native-layer.md`](./android-native-layer.md)（OkHttp3、3層クラス構成、リソース管理）
 - **iOS ネイティブ層仕様**: [`ios-native-layer.md`](./ios-native-layer.md)（URLSession、CFNetwork completionHandler 一括受信）
 
 ---

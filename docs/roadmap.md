@@ -24,7 +24,7 @@
 - [x] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
   - HTTP/2 モックサーバー（`example/server/http2_mock_server.mjs`）と 4 プリセット比較ベンチマークアプリ（`example/lib/main.dart`）を実装。
 - [x] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
-  - `FlutterTurboFetchPlugin.kt`（および `TurboHttpExecutor.kt`）にて共有 `OkHttpClient` によるバックグラウンド一括受信・キャンセル・自己署名証明書許可を実装（[`docs/architectures/android-native-layer.md`](architectures/android-native-layer.md)）。
+  - `FlutterTurboFetchPlugin.kt` / `TurboHttpExecutor.kt` / `TurboClientManager.kt` にて共有 `OkHttpClient` によるバックグラウンド一括受信・キャンセル・自己署名証明書許可を実装（[`docs/architectures/android-native-layer.md`](architectures/android-native-layer.md)）。
 - [x] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
   - `FlutterTurboFetchPlugin.swift` にて `URLSession.dataTask(with:completionHandler:)` による一括受信・キャンセル・自己署名証明書許可を実装（[`docs/architectures/ios-native-layer.md`](architectures/ios-native-layer.md)）。
 - [x] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
@@ -39,7 +39,7 @@ PoC で実証したコアパイプラインに対し、実運用で必須とな�
 - [x] **2-1. 通信インターフェース（Pigeon スキーマ）の確定・拡張**
   - [`docs/architectures/native-layer.md`](architectures/native-layer.md) に基づき、リクエスト情報（`maxResponseBytes` 追加等）・レスポンス情報・`cancelRequest(requestId)` のスキーマを確定しコードを再生成する。
 - [x] **2-2. Android Plugin クラス（`FlutterPlugin`）のプロダクション対応**
-  - [`docs/architectures/android-native-layer.md`](architectures/android-native-layer.md) に基づき、`maxResponseBytes` 指定時のサイズ上限チェック（超過時は即座にストリームを切断し `maxResponseBytesExceeded` を返却）、2分割責務構造、および Engine デタッチ時のリソース解放を実装する。
+  - [`docs/architectures/android-native-layer.md`](architectures/android-native-layer.md) に基づき、`maxResponseBytes` 指定時のサイズ上限チェック（超過時は即座にストリームを切断し `maxResponseBytesExceeded` を返却）、3層責務構造、および Engine デタッチ時のリソース解放を実装する。
 - [x] **2-3. iOS Plugin クラス（`FlutterPlugin`）のプロダクション対応**
   - [`docs/architectures/ios-native-layer.md`](architectures/ios-native-layer.md) に基づき、`maxResponseBytes` 指定時のサイズ上限チェック（超過時は `maxResponseBytesExceeded` を返却）および Engine デタッチ時のリソース解放（`invalidateAndCancel()`）を実装する。
 - [x] **2-4. `TurboHttpAdapter`、`TurboTransformer` & `TurboOptions` の API 仕上げ**

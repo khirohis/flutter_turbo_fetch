@@ -12,9 +12,9 @@
 
 ---
 
-## 2. クラス構成 & 責務分割（2分割構成）
+## 2. クラス構成 & 責務分割（3層構成）
 
-Flutter Engine / Pigeon との結合層と、OkHttp 通信・リソース管理層を明確に 2 分割し、関心の分離とテスタビリティ（純粋な Kotlin/JVM 単体テスト）を確保する。
+Flutter Engine / Pigeon との結合層、1 リクエストの通信実行・実行中 `Call` 管理層、および OkHttp クライアント・接続プール管理層を明確に 3 分割し、単一責任の原則（SRP）とテスタビリティ（純粋な Kotlin/JVM 単体テスト）を確保する。
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -25,12 +25,19 @@ Flutter Engine / Pigeon との結合層と、OkHttp 通信・リソース管理�
 └───────────────────────────▲────────────────────────────┘
                             │ 委譲 (OkHttp 依存なし)
 ┌───────────────────────────▼────────────────────────────┐
-│  TurboHttpExecutor (OkHttp 通信・管理層)                │
-│  - 共有クライアント管理 (OkHttpClient / Dispatcher / Pool) │
+│  TurboHttpExecutor (OkHttp 通信実行 & Call 管理層)      │
 │  - 実行中リクエスト管理 (activeCalls: ConcurrentHashMap)  │
-│  - リクエスト単位の派生クライアント・Request 構築        │
+│  - OkHttp Request の安全な構築 (ヘッダー/ボディ)        │
+│  - TrackingRequestBody による送信フェーズ追跡           │
 │  - Call.enqueue による非同期通信・一括受信              │
 │  - OkHttp 例外の共通エラーコード分類 (classifyException) │
+└───────────────────────────▲────────────────────────────┘
+                            │ クライアント取得 (acquireClient)
+┌───────────────────────────▼────────────────────────────┐
+│  TurboClientManager (OkHttp クライアント・接続管理層)   │
+│  - 共有クライアント管理 (OkHttpClient / Dispatcher / Pool) │
+│  - 同時リクエスト数の動的スケーリング & Shutdown 復帰   │
+│  - リクエスト単位の派生クライアント生成 (Timeout / TLS) │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -45,27 +52,37 @@ Flutter Engine / Pigeon との結合層と、OkHttp 通信・リソース管理�
   - `executeRequest(request, callback)` / `cancelRequest(requestId)`
   - `postToMain(action)`
 
-### ② `TurboHttpExecutor`（OkHttp 通信・管理層）
+### ② `TurboHttpExecutor`（OkHttp 通信実行 & Call 管理層）
 
-- **役割**: OkHttp 共有クライアント・実行中 `Call` のライフサイクル管理、および 1 リクエスト単位の通信実行・一括受信・エラー分類。Flutter 依存を一切持たない。
+- **役割**: 実行中 `Call` のライフサイクル管理、および 1 リクエスト単位の通信実行・一括受信・エラー分類。Flutter 依存およびクライアントプール構築の詳細を持たない。
 - **保持する状態**:
-  - `dispatcher: Dispatcher`, `baseClient: OkHttpClient`, `clientLock: Any`
+  - `clientManager: TurboClientManager`
   - `activeCalls: ConcurrentHashMap<String, Call>`
 - **公開 / 内部インターフェース**:
-  - `ensureReady()`: Shutdown 状態からのクライアント復帰
+  - `ensureReady()`: `clientManager.ensureReady()` への委譲
   - `execute(request: TurboHttpRequest, onResult: (TurboHttpResponse) -> Unit)`: 非同期リクエスト実行
   - `cancel(requestId: String)`: 指定リクエストの即時キャンセル
-  - `shutdown()`: 全実行中リクエストのキャンセルおよび Dispatcher / ConnectionPool の解放
-  - `ensureClient(requestedPerHost: Int): OkHttpClient`
+  - `shutdown()`: 全実行中リクエストのキャンセルおよび `clientManager.shutdown()` の実行
   - `classifyException(call: Call, e: IOException, isSendingBody: Boolean): String`
 - **実行・キャンセル順序保証（競合防止）**:
   1. リクエスト構築時（URL やヘッダー不正等）にエラーが発生した場合は、`activeCalls` へ登録せず即座に `onResult(errorResponse)` を同期呼び出しして終了する。
   2. `Call` が正常に生成された場合は、**必ず `call.enqueue(...)` を呼び出す前に同期的に `activeCalls[request.requestId] = call` を登録**し、非同期完了や即時キャンセルより先行することを保証する。
   3. 通信の完了または失敗時は、`activeCalls.remove(request.requestId)` を行った上で必ず 1 回のみ `onResult(response)` を呼び出す。
 
+### ③ `TurboClientManager`（OkHttp クライアント・接続管理層）
+
+- **役割**: 共有 `OkHttpClient` / `Dispatcher` / `ConnectionPool` の排他制御・動的スケーリング・Shutdown 復帰、およびリクエスト単位の派生クライアント生成（DataSource 的役割）。
+- **保持する状態**:
+  - `dispatcher: Dispatcher`, `baseClient: OkHttpClient`, `clientLock: Any`
+- **公開 / 内部インターフェース**:
+  - `ensureReady()`: Shutdown 状態からのクライアント復帰
+  - `ensureClient(requestedPerHost: Int): OkHttpClient`: 動的スケーリング適用済みの共有ベースクライアント取得
+  - `acquireClient(request: TurboHttpRequest): OkHttpClient`: 共有ベースクライアントからリクエスト単位の設定（Timeout / Redirect / Insecure TLS）を適用した派生クライアントを生成して返却
+  - `shutdown()`: `dispatcher.executorService.shutdown()` および `baseClient.connectionPool.evictAll()` の実行
+
 ---
 
-## 3. クライアント管理 & 動的スケーリング（`TurboHttpExecutor`）
+## 3. クライアント管理 & 動的スケーリング（`TurboClientManager`）
 
 - **共有クライアント**:
   - 単一のベース `OkHttpClient` と `Dispatcher`、`ConnectionPool(5, 5, TimeUnit.MINUTES)` を共有し、HTTP/2 コネクションおよびリソースを効率的に再利用する。
@@ -74,14 +91,14 @@ Flutter Engine / Pigeon との結合層と、OkHttp 通信・リソース管理�
   - リクエスト指定値が全体上限 `DEFAULT_MAX_REQUESTS`（64）を超える場合は `maxRequests` も同値へ自動引き上げ、以降のリクエストで指定値が 64 以下に戻った場合は自動的にデフォルト（64）へ引き下げる。
 - **リソース復帰（再アタッチ対応）**:
   - `Dispatcher.executorService.isShutdown` を検知した場合、自動的に Dispatcher およびベースクライアントを再生成して復帰する。
+- **リクエストごとのクライアント派生と不安全 TLS 対応**:
+  - `acquireClient(request)` にて `sharedClient.newBuilder()` を呼び出し、ベースの接続プールや Dispatcher を共有したまま、タイムアウト（connect / read / write）およびリダイレクト設定（`followRedirects` / `followSslRedirects`）をリクエスト単位で適用する。
+  - `allowBadCertificates = true` 時は全信頼の `X509TrustManager` および全ホスト許可の `HostnameVerifier` を注入する。
 
 ---
 
 ## 4. 通信実行・一括受信・エラー分類（`TurboHttpExecutor`）
 
-- **リクエストごとのクライアント派生と不安全 TLS 対応**:
-  - `client.newBuilder()` により、ベースの接続プールや Dispatcher を共有したまま、タイムアウト（connect / read / write）およびリダイレクト設定（`followRedirects` / `followSslRedirects`）をリクエスト単位で適用する。
-  - `allowBadCertificates = true` 時は全信頼の `X509TrustManager` および全ホスト許可の `HostnameVerifier` を注入する。
 - **リクエスト構築の安全性**:
   - 不正なヘッダー名/値（改行文字等）や無効な URL が渡された場合でも、未捕捉例外（クラッシュ）とせず、`try-catch` 内で安全に `connectionError` レスポンスを生成する。
 - **ボディ送信フェーズ監視**:
@@ -115,4 +132,4 @@ Flutter Engine / Pigeon との結合層と、OkHttp 通信・リソース管理�
 - **キャンセル処理**:
   - `cancelRequest(requestId)` 呼び出し時、`executor.cancel(requestId)`（`activeCalls.remove(requestId)?.cancel()`）を即座に実行する。
 - **Engine デタッチ時のクリーンアップ**:
-  - `onDetachedFromEngine` で `executor.shutdown()` を呼び出し、実行中の全 `Call` の一括キャンセル（`cancel()` & `activeCalls.clear()`）、および `dispatcher.executorService.shutdown()` と `baseClient.connectionPool.evictAll()` によるリソース解放を行う。
+  - `onDetachedFromEngine` で `executor.shutdown()` を呼び出し、実行中の全 `Call` の一括キャンセル（`cancel()` & `activeCalls.clear()`）、および `clientManager.shutdown()`（`dispatcher.executorService.shutdown()` と `baseClient.connectionPool.evictAll()`）によるリソース解放を行う。

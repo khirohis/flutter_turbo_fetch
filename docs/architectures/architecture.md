@@ -33,7 +33,7 @@
 
 | レイヤー | 担当コンポーネント | 入力 | 出力 | 禁止事項 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
+| **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboClientManager` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
 | **iOS 通信層** | `FlutterTurboFetchPlugin` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
 | **Dart Adapter 層** | `TurboHttpAdapter` (`HttpClientAdapter`) | `RequestOptions`, `Stream<Uint8List>?` | `ResponseBody.fromBytes(Uint8List)`（単一チャンクストリーム） | チャンク分割送信・別アダプタへの不要なフォールバック |
 | **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseBody` (`stream`) / `Uint8List` (`bytes`) / `String` (`plain`) / JSON (`json`) / `mapper` 変換後オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
@@ -56,7 +56,8 @@ flutter_turbo_fetch/
 ├── android/
 │   └── src/main/kotlin/io/github/khirohis/flutter_turbo_fetch/
 │       ├── FlutterTurboFetchPlugin.kt     # Android FlutterPlugin インターフェース層
-│       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信・リソース管理層
+│       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信実行・Call 管理層
+│       ├── TurboClientManager.kt          # Android OkHttp3 クライアント・接続管理層
 │       └── Messages.g.kt                  # Pigeon 自動生成コード（Kotlin 側）
 ├── ios/
 │   ├── flutter_turbo_fetch.podspec        # CocoaPods 定義（iOS 13.0+）
