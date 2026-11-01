@@ -287,13 +287,13 @@ Compare 4 network client presets (`IOHttpClientAdapter`, `dio_http2_adapter`, `n
 
 ## 📚 Technical Documentation
 
-For detailed design rationale and architectural deep dives, see the [`docs/`](docs/) directory:
+For detailed design rationale, benchmark results, and implementation guides, see the [docs/](docs/) directory:
 
-- [Architecture Overview](docs/architectures/architecture.md): End-to-end pipeline and layer boundaries.
-- [Native Layer Specifications](docs/architectures/native-layer.md): Android `OkHttp3` & iOS `URLSession` completion handler design.
-- [Dart Layer Specifications](docs/architectures/dart-layer.md): `TurboHttpAdapter`, `TurboTransformer`, and `TurboOptions` contracts.
-- [Design Rationale & Bottleneck Analysis](docs/references/design-rationale.md): Technical justifications behind avoiding stream FFI, native JSON parsing, and persistent worker pools.
-- [Development Roadmap](docs/roadmap.md): Milestone progress and completion checklists.
+- [Design Rationale & Bottleneck Analysis](docs/design-rationale.md): Technical justifications behind avoiding stream FFI, native JSON parsing, and persistent worker pools.
+- [Benchmark Results & Performance Analysis](docs/benchmark-results.md): Empirical measurements and frame-timing evaluation on Android devices.
+- [TurboTransformer Implementation Reference](docs/turbo-transformer.md): In-depth guide to zero-copy Isolate transformations and semaphore governance.
+
+For internal development specifications and agent directives (maintained in Japanese), refer to [specs/](specs/).
 
 ---
 

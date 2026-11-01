@@ -1,29 +1,17 @@
-# flutter_turbo_fetch ドキュメント (`docs/`)
+# flutter_turbo_fetch Documentation (`docs/`)
 
-このディレクトリには、`flutter_turbo_fetch` プロジェクトのアーキテクチャ仕様、機能別仕様、および設計背景・リファレンス資料を配置します。
-プロジェクト全体の横断ルールについては、ルートの [`AGENTS.md`](../AGENTS.md) を参照してください。
+This directory contains public-facing technical references, architectural rationales, and benchmark evaluation reports for `flutter_turbo_fetch`.
 
-## ドキュメント一覧
+For quick start, installation, and usage instructions, please refer to the project root [`README.md`](../README.md).  
+For internal specifications and agent instructions (maintained in Japanese), refer to [`../specs/`](../specs/README.md) and [`../AGENTS.md`](../AGENTS.md).
 
-### 開発計画・ロードマップ
+---
 
-- [`roadmap.md`](roadmap.md): 全 5 フェーズ（Phase 0〜Phase 4）の開発ステップ一覧と進行管理チェックリスト
+## Technical Documents
 
-### アーキテクチャ仕様 (`architectures/`) — What / How
-
-- [`architectures/architecture.md`](architectures/architecture.md): 一気通貫パイプライン構造と各層の責務境界
-- [`architectures/native-layer.md`](architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系
-- [`architectures/android-native-layer.md`](architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）
-- [`architectures/ios-native-layer.md`](architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）
-- [`architectures/dart-layer.md`](architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様
-- [`architectures/benchmark.md`](architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト
-
-### 機能別仕様 (`features/`)
-
-- 個別機能の詳細仕様・プロンプトを配置します（現在未使用・将来の拡張用）。
-
-### 設計背景・リファレンス資料 (`references/`) — Why / Reference（オンデマンド参照）
-
-- [`references/design-rationale.md`](references/design-rationale.md): 解決すべき 3 大ボトルネック、`pub.dev` 既存パッケージ評価、設計 4 原則の技術的根拠、通信ブリッジ比較背景
-- [`references/turbo-transformer.md`](references/turbo-transformer.md): `TurboTransformer` & `TurboOptions` の設計解説およびリファレンス実装コード
-- [`references/benchmark-results.md`](references/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析レポート
+- **[Design Rationale (`design-rationale.md`)](design-rationale.md)**:
+  Detailed analysis of the three fundamental bottlenecks in mobile networking, evaluation of existing `pub.dev` packages, and technical justification of the four core design principles.
+- **[Benchmark Results & Analysis (`benchmark-results.md`)](benchmark-results.md)**:
+  Empirical benchmark performance measurements and in-depth latency/frame timing analysis conducted on Android emulators and real devices.
+- **[TurboTransformer Reference (`turbo-transformer.md`)](turbo-transformer.md)**:
+  Architecture and implementation breakdown of zero-copy Isolate transformations, fused decoders, and semaphore concurrency governance.

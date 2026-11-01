@@ -1,6 +1,6 @@
 # 全体アーキテクチャ仕様
 
-> 設計背景・ボトルネック分析・既存パッケージの比較根拠については [`docs/references/design-rationale.md`](../references/design-rationale.md) を参照。
+> 設計背景・ボトルネック分析・既存パッケージの比較根拠については [`docs/design-rationale.md`](../../docs/design-rationale.md) を参照。
 
 ---
 

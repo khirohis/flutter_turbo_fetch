@@ -1,6 +1,6 @@
 # ベンチマーク実測結果・性能検証レポート（`benchmark-results.md`）
 
-本ドキュメントは、[`docs/architectures/benchmark.md`](../architectures/benchmark.md) で定義された計測仕様に基づき、Android 実機・エミュレータ環境で実行されたパフォーマンス比較ベンチマークの実測結果および技術的分析・評価を記録した資料である。
+本ドキュメントは、[`specs/architectures/benchmark.md`](../specs/architectures/benchmark.md) で定義された計測仕様に基づき、Android 実機・エミュレータ環境で実行されたパフォーマンス比較ベンチマークの実測結果および技術的分析・評価を記録した資料である。
 
 ---
 

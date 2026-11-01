@@ -8,7 +8,8 @@ GEMINI.md
 _agents/
 _agent/
 
-# Internal design & architecture documentation
+# Internal design, specifications & architecture documentation
+specs/
 docs/
 
 # FVM configuration & version cache

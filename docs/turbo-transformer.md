@@ -1,6 +1,6 @@
 # TurboTransformer & TurboOptions リファレンス実装・設計解説
 
-本ドキュメントは、[`docs/architectures/dart-layer.md`](../architectures/dart-layer.md) で定義された `TurboTransformer` および `TurboOptions` の設計意図とリファレンス実装を記録した補足資料である（通常時は参照不要、該当機能の実装・改修時のみ参照する）。
+本ドキュメントは、[`specs/architectures/dart-layer.md`](../specs/architectures/dart-layer.md) で定義された `TurboTransformer` および `TurboOptions` の設計意図とリファレンス実装を記録した補足資料である（通常時は参照不要、該当機能の実装・改修時のみ参照する）。
 
 ---
 
