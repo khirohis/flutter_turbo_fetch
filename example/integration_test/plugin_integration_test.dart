@@ -116,23 +116,23 @@ void main() {
 
     // Verify UI components are rendered
     expect(find.text('TurboFetch Benchmark'), findsOneWidget);
-    expect(find.text('1. 接続先モックサーバー設定'), findsOneWidget);
-    expect(find.text('2. 計測シナリオ選択'), findsOneWidget);
-    expect(find.text('3. ベンチマーク実行'), findsOneWidget);
-    expect(find.text('4プリセット一括連続実行 (推奨)'), findsOneWidget);
-    expect(find.text('個別実行'), findsOneWidget);
+    expect(find.text('1. Mock Server Connection'), findsOneWidget);
+    expect(find.text('2. Benchmark Scenario'), findsOneWidget);
+    expect(find.text('3. Run Benchmark'), findsOneWidget);
+    expect(find.text('Run All 4 Presets (Recommended)'), findsOneWidget);
+    expect(find.text('Run Single'), findsOneWidget);
 
     // Verify scenario segments can be switched
-    await tester.tap(find.text('計測B (10〜100KiB)'));
+    await tester.tap(find.text('Scenario B (10-100KiB)'));
     await waitRealTime(const Duration(milliseconds: 300));
-    expect(find.textContaining('実運用標準負荷の総合性能'), findsOneWidget);
+    expect(find.textContaining('General performance under standard production load'), findsOneWidget);
 
-    await tester.tap(find.text('計測C (20〜200KiB)'));
+    await tester.tap(find.text('Scenario C (20-200KiB)'));
     await waitRealTime(const Duration(milliseconds: 300));
-    expect(find.textContaining('高多重・セマフォ上限時の耐性'), findsOneWidget);
+    expect(find.textContaining('Resilience under high concurrency and semaphore limits'), findsOneWidget);
 
-    await tester.tap(find.text('計測A (5〜45KiB)'));
+    await tester.tap(find.text('Scenario A (5-45KiB)'));
     await waitRealTime(const Duration(milliseconds: 300));
-    expect(find.textContaining('24KiB閾値の妥当性評価'), findsOneWidget);
+    expect(find.textContaining('Validation of the 24KiB threshold'), findsOneWidget);
   });
 }

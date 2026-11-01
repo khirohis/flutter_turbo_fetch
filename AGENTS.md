@@ -45,21 +45,28 @@
 
 ---
 
-## 5. ドキュメント構成（`docs/`）
+## 5. ドキュメント構成（`specs/` & `docs/`）
 
-- **[`docs/roadmap.md`](docs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
-- **`docs/architectures/`**（設計・実装時に参照する仕様定義）:
-  - [`architecture.md`](docs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
-  - [`native-layer.md`](docs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
-  - [`android-native-layer.md`](docs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
-  - [`ios-native-layer.md`](docs/architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）。
-  - [`dart-layer.md`](docs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
-  - [`benchmark.md`](docs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
-- **`docs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。
-- **`docs/references/`**（通常時は参照不要・必要時のみオンデマンド参照）:
-  - [`design-rationale.md`](docs/references/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
-  - [`turbo-transformer.md`](docs/references/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
-  - [`benchmark-results.md`](docs/references/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析。
+本プロジェクトでは、「AI・メンテナー向けの作業場（`specs/`）」と「利用者向けの公開リファレンス（`docs/`）」をルートレベルで明確に分離しています。
+
+### 内部仕様・管理（[`specs/`](specs/README.md)）— 日本語正本
+- **[`specs/roadmap.md`](specs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
+- **[`specs/guidelines/`](specs/guidelines/)**（開発ガイドライン・運用規約）:
+  - [`language-policy.md`](specs/guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）。
+- **[`specs/architectures/`](specs/architectures/)**（設計・実装時に参照する仕様定義）:
+  - [`architecture.md`](specs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
+  - [`native-layer.md`](specs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
+  - [`android-native-layer.md`](specs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
+  - [`ios-native-layer.md`](specs/architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）。
+  - [`dart-layer.md`](specs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
+  - [`benchmark.md`](specs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
+- **`specs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。
+
+### 公開リファレンス（[`docs/`](docs/README.md)）— 英語正本
+- **[`docs/`](docs/README.md)**（利用者のための技術解説・ホワイトペーパー）:
+  - [`design-rationale.md`](docs/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
+  - [`turbo-transformer.md`](docs/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
+  - [`benchmark-results.md`](docs/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析。
 
 ---
 
@@ -69,7 +76,7 @@
 **各ステップの完了時は必ずユーザーのレビューを受け、ユーザーからの合図（承認・進行指示）を待ってから次のステップへ進むこと。勝手に次のステップへ進んではならない。**
 
 1. **ドキュメント修正（最重要ディスカッション）**:
-   - 時間と労力をかけ、ユーザーとじっくりディスカッションを重ねて設計思想・仕様（`docs/architectures/*.md` 等）を固める。
+   - 時間と労力をかけ、ユーザーとじっくりディスカッションを重ねて設計思想・仕様（`specs/architectures/*.md` 等）を固める。
    - 仕様・挙動・入出力・エラーハンドリングのドキュメント修正を行い、ユーザーのレビュー・合意を得る。
 2. **テストコード修正**:
    - 合意されたドキュメント仕様に基づき、テストコード（単体テスト・境界値・異常系）を追加・修正する（この時点ではテストが失敗してもよい）。
@@ -82,3 +89,17 @@
 
 - **実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。**
 - **Flutter / Dart コマンドの実行**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、コマンド実行時はグローバルの `flutter` / `dart` を直接呼ばず、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
+
+---
+
+## 7. 言語運用ポリシー（Language & Communication Policy）
+
+プロジェクト成果物の国際化およびユーザーとのコミュニケーション精度を両立するため、[`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) で定義された言語運用ポリシーを厳格に遵守すること。
+
+1. **AI への指示・内部仕様・ユーザー対話（Control & Specs）: 日本語**
+   - ユーザーとのチャット対話、質問、進捗報告、設計ディスカッション、レビュー依頼はすべて **日本語** で行う。
+   - 内部仕様書・設計定義・ロードマップ（`specs/` 配下）は **日本語** を正本として維持する。
+2. **対外向けドキュメント・ソースコード・テスト（Artifacts）: 英語**
+   - パッケージ利用者向けリファレンスドキュメント（`docs/` 配下）は **英語（US English）** で作成・提供する。
+   - ソースコード（クラス名、関数名、Docコメント、インラインコメント）、テストコード、Git コミットメッセージ（Conventional Commits）、公開ドキュメント（ルート `README.md`、`CHANGELOG.md` 等）は **英語（US English）** で統一する。
+   - 詳細な適用範囲や翻訳移行計画は [`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) を参照すること。

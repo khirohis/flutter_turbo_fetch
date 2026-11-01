@@ -1,27 +1,27 @@
 import 'benchmark_models.dart';
 
-/// ベンチマーク結果を Markdown テーブル形式に整形するユーティリティ
+/// Utility for formatting benchmark results into Markdown tables.
 class BenchmarkFormatter {
-  /// 指定シナリオと結果一覧から Markdown テーブル文字列を生成
+  /// Generates a Markdown table string from the scenario and result list.
   static String formatMarkdownTable({
     required BenchmarkScenario scenario,
     required List<BenchmarkScenarioResult> results,
   }) {
     if (results.isEmpty) {
-      return '### ベンチマーク結果: ${scenario.label}\n\n*計測結果がありません*';
+      return '### Benchmark Results: ${scenario.label}\n\n*No benchmark results recorded*';
     }
 
     final buffer = StringBuffer();
-    buffer.writeln('### ベンチマーク結果: ${scenario.label}');
+    buffer.writeln('### Benchmark Results: ${scenario.label}');
     buffer.writeln();
     buffer.writeln(
-      '| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |',
+      '| Adapter Configuration | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |',
     );
     buffer.writeln(
       '| :--- | :---: | :---: | :---: | :---: | :---: | :---: |',
     );
 
-    // 最速 (Total Wall Time 最小かつ成功数 > 0) の結果を特定
+    // Find the fastest result (minimum total wall time with successCount > 0).
     int? minTotalTime;
     for (final r in results) {
       if (r.successCount > 0) {
@@ -59,7 +59,7 @@ class BenchmarkFormatter {
     return buffer.toString();
   }
 
-  /// 整数を3桁カンマ区切りの文字列に変換
+  /// Formats an integer with comma thousands separators.
   static String _formatNumber(int number) {
     final str = number.toString();
     final regExp = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');

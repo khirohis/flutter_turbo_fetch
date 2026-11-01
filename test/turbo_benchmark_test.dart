@@ -191,7 +191,7 @@ void main() {
     for (final w in workloads) {
       final payloadBytes = _generatePayloadBytes(w.sizeKb);
 
-      // ① Dio BackgroundTransformer + Main Isolate model mapping
+      // (1) Dio BackgroundTransformer + Main Isolate model mapping
       final bgMetrics = await _measureWorkload(
         workloadLabel: w.label,
         strategyLabel: '1. Dio BackgroundTransformer + Main Mapper',
@@ -213,7 +213,7 @@ void main() {
       );
       allResults.add(bgMetrics);
 
-      // ② TurboTransformer + Main Isolate model mapping
+      // (2) TurboTransformer + Main Isolate model mapping
       final turboMetrics = await _measureWorkload(
         workloadLabel: w.label,
         strategyLabel: '2. TurboTransformer (Zero-Copy JSON)',
@@ -229,7 +229,7 @@ void main() {
       );
       allResults.add(turboMetrics);
 
-      // ③ TurboTransformer + TurboOptions(mapper) (end-to-end inside Worker Isolate)
+      // (3) TurboTransformer + TurboOptions(mapper) (end-to-end inside Worker Isolate)
       final turboMapperOptions = TurboOptions<BenchmarkPayloadModel>(
         responseType: ResponseType.json,
         mapper: BenchmarkPayloadModel.fromJson,

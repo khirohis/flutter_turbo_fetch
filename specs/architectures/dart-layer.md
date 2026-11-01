@@ -89,4 +89,4 @@ final User user = response.data!;
 - **Isolate オフロード制御（`bytes` [mapper 指定時] / `plain` / `json` 共通）**:
   - **閾値（`isolateThresholdBytes`、デフォルト 24KiB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
   - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(4, Platform.numberOfProcessors - 2)` とし、コンストラクタ引数でカスタマイズ可能とする。
-- **リファレンス実装**: [`docs/references/turbo-transformer.md`](../references/turbo-transformer.md) を参照。
+- **リファレンス実装**: [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。

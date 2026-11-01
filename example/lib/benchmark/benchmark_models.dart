@@ -1,24 +1,24 @@
-/// 比較対象の 4 つのアダプタ構成プリセット
+/// Four adapter configuration presets for comparison.
 enum BenchmarkPreset {
   ioHttp1(
     id: 'io_http1',
-    label: '① IOHttpClientAdapter (HTTP/1.1)',
-    shortName: '① IO (HTTP/1.1)',
+    label: '(1) IOHttpClientAdapter (HTTP/1.1)',
+    shortName: '(1) IO (HTTP/1.1)',
   ),
   dioHttp2(
     id: 'dio_http2',
-    label: '② dio_http2_adapter (Dart HTTP/2)',
-    shortName: '② dio_http2',
+    label: '(2) dio_http2_adapter (Dart HTTP/2)',
+    shortName: '(2) dio_http2',
   ),
   nativeDio(
     id: 'native_dio',
-    label: '③ native_dio_adapter (Stream Bridge)',
-    shortName: '③ native_dio',
+    label: '(3) native_dio_adapter (Stream Bridge)',
+    shortName: '(3) native_dio',
   ),
   turboFetch(
     id: 'turbo_fetch',
-    label: '④ TurboHttpAdapter + TurboTransformer',
-    shortName: '④ TurboFetch',
+    label: '(4) TurboHttpAdapter + TurboTransformer',
+    shortName: '(4) TurboFetch',
   );
 
   const BenchmarkPreset({
@@ -32,31 +32,31 @@ enum BenchmarkPreset {
   final String shortName;
 }
 
-/// 計測シナリオ定義
+/// Benchmark scenario definitions.
 enum BenchmarkScenario {
   scenarioA(
     id: 'scenario_a',
-    label: '計測A (5〜45KiB, 3並列, 10周 = 90req)',
-    shortLabel: '計測A (5〜45KiB)',
-    description: '24KiB閾値の妥当性評価（小サイズ通信での応答性）',
+    label: 'Scenario A (5-45KiB, 3 workers, 10 rounds = 90 req)',
+    shortLabel: 'Scenario A (5-45KiB)',
+    description: 'Validation of the 24KiB threshold (responsiveness for small payloads)',
     sizesKiB: [5, 10, 15, 20, 25, 30, 35, 40, 45],
     concurrency: 3,
     rounds: 10,
   ),
   scenarioB(
     id: 'scenario_b',
-    label: '計測B (10〜100KiB, 5並列, 10周 = 100req)',
-    shortLabel: '計測B (10〜100KiB)',
-    description: '実運用標準負荷の総合性能（標準レスポンスサイズ）',
+    label: 'Scenario B (10-100KiB, 5 workers, 10 rounds = 100 req)',
+    shortLabel: 'Scenario B (10-100KiB)',
+    description: 'General performance under standard production load (typical response sizes)',
     sizesKiB: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
     concurrency: 5,
     rounds: 10,
   ),
   scenarioC(
     id: 'scenario_c',
-    label: '計測C (20〜200KiB, 10並列, 10周 = 100req)',
-    shortLabel: '計測C (20〜200KiB)',
-    description: '高多重・セマフォ上限時の耐性（並列キューイング・メモリ安定性）',
+    label: 'Scenario C (20-200KiB, 10 workers, 10 rounds = 100 req)',
+    shortLabel: 'Scenario C (20-200KiB)',
+    description: 'Resilience under high concurrency and semaphore limits (queueing & memory stability)',
     sizesKiB: [20, 40, 60, 80, 100, 120, 140, 160, 180, 200],
     concurrency: 10,
     rounds: 10,
@@ -83,7 +83,7 @@ enum BenchmarkScenario {
   int get totalRequests => sizesKiB.length * rounds;
 }
 
-/// 1 リクエスト単位の計測結果
+/// Metrics recorded for a single request.
 class SingleRequestMetric {
   const SingleRequestMetric({
     required this.sizeKiB,
@@ -106,7 +106,7 @@ class SingleRequestMetric {
   bool get isSuccess => errorMessage == null && statusCode >= 200 && statusCode < 300;
 }
 
-/// シナリオ実行全体の集計結果
+/// Aggregated results for an entire scenario run.
 class BenchmarkScenarioResult {
   const BenchmarkScenarioResult({
     required this.scenario,
@@ -130,49 +130,49 @@ class BenchmarkScenarioResult {
   final BenchmarkScenario scenario;
   final BenchmarkPreset preset;
 
-  /// 全 10 周完了までの実時間 (ms)
+  /// Total elapsed wall-clock time for all rounds (ms).
   final int totalWallTimeMs;
 
-  /// ネットワーク通信時間の平均値 (ms)
+  /// Average network communication time (ms).
   final double netTimeAvgMs;
 
-  /// ネットワーク通信時間の 95 パーセンタイル (ms)
+  /// 95th percentile (P95) network communication time (ms).
   final double netTimeP95Ms;
 
-  /// JSON パース実効完了待ち時間（セマフォ待ち含む）の平均値 (ms)
+  /// Average JSON parse completion time, including semaphore wait (ms).
   final double parseTimeAvgMs;
 
-  /// JSON パース実効完了待ち時間（セマフォ待ち含む）の 95 パーセンタイル (ms)
+  /// 95th percentile (P95) JSON parse completion time, including semaphore wait (ms).
   final double parseTimeP95Ms;
 
-  /// 計測期間中の総フレーム数
+  /// Total frames rendered during the benchmark.
   final int totalFrames;
 
-  /// 16.6ms を超過したジャンクフレーム数
+  /// Number of jank frames exceeding 16.67ms.
   final int jankFrames;
 
-  /// 最大フレーム所要時間 (ms)
+  /// Maximum frame duration (ms).
   final double maxFrameDurationMs;
 
-  /// 開始前のプロセス RSS (MiB)
+  /// Process RSS before benchmark execution (MiB).
   final double rssBeforeMiB;
 
-  /// 計測中の最大プロセス RSS (MiB)
+  /// Peak process RSS during benchmark execution (MiB).
   final double rssPeakMiB;
 
-  /// メモリ増分 (MiB)
+  /// Memory delta (MiB).
   final double rssDeltaMiB;
 
-  /// 成功リクエスト数
+  /// Total count of successful requests.
   final int successCount;
 
-  /// 失敗リクエスト数
+  /// Total count of failed requests.
   final int failureCount;
 
-  /// リクエスト個別メトリクス一覧
+  /// List of individual request metrics.
   final List<SingleRequestMetric> requestMetrics;
 
-  /// ジャンクフレーム発生率 (%)
+  /// Jank frame occurrence rate (%).
   double get jankRatePercent =>
       totalFrames > 0 ? (jankFrames / totalFrames) * 100.0 : 0.0;
 }

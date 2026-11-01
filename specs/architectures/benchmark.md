@@ -140,4 +140,4 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
 
 本プロンプトおよび仕様に基づいて実施したベンチマークの実行結果、詳細データ、技術的評価レポートは以下を参照のこと。
 
-- 📄 **[ベンチマーク実測結果・性能検証レポート (`docs/references/benchmark-results.md`)](../references/benchmark-results.md)**
+- 📄 **[ベンチマーク実測結果・性能検証レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**

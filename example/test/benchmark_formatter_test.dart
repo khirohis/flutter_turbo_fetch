@@ -50,14 +50,14 @@ void main() {
       );
 
       // Verify header contains scenario label
-      expect(markdown, contains('### ベンチマーク結果: 計測A'));
-      expect(markdown, contains('| アダプタ構成 | Total Time | Net Time (Avg/P95) |'));
+      expect(markdown, contains('### Benchmark Results: Scenario A'));
+      expect(markdown, contains('| Adapter Configuration | Total Time | Net Time (Avg/P95) |'));
 
       // Verify normal row for ioHttp1
-      expect(markdown, contains('| ① IO (HTTP/1.1) | 3,420 ms | 32.1 ms / 58.4 ms |'));
+      expect(markdown, contains('| (1) IO (HTTP/1.1) | 3,420 ms | 32.1 ms / 58.4 ms |'));
 
       // Verify fastest row for turboFetch is bolded
-      expect(markdown, contains('| **④ TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** |'));
+      expect(markdown, contains('| **(4) TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** |'));
       expect(markdown, contains('**74.0 MiB (+6.8 MiB)**'));
     });
 
@@ -66,7 +66,7 @@ void main() {
         scenario: BenchmarkScenario.scenarioB,
         results: [],
       );
-      expect(markdown, contains('*計測結果がありません*'));
+      expect(markdown, contains('*No benchmark results recorded*'));
     });
   });
 }

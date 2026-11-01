@@ -6,7 +6,8 @@ import 'package:dio/dio.dart';
 import 'messages.g.dart';
 import 'turbo_options.dart';
 
-/// ネイティブ層（Android OkHttp3 / iOS URLSession）の一括受信を利用する Dio 用 HttpClientAdapter。
+/// A high-performance Dio [HttpClientAdapter] that leverages platform-native
+/// batch HTTP/2 reception (Android OkHttp3 / iOS URLSession).
 class TurboHttpAdapter implements HttpClientAdapter {
   final TurboFetchHostApi _hostApi;
   final bool _overridePlatformCheck;
@@ -16,12 +17,12 @@ class TurboHttpAdapter implements HttpClientAdapter {
   final _activeRequests = <String, void Function()>{};
   bool _closed = false;
 
-  /// 1ホストあたりの最大同時リクエスト数（デフォルト 32）。
-  /// Android (OkHttp Dispatcher) の maxRequests (64) を超える値が指定された場合、
-  /// ネイティブ側で maxRequests も自動的に同値まで引き上げられる。
+  /// Maximum number of concurrent requests per host (default: 32).
+  /// If a value exceeding Android OkHttp Dispatcher's default maxRequests (64)
+  /// is specified, maxRequests is automatically scaled up to match on the native side.
   final int maxRequestsPerHost;
 
-  /// ローカル検証環境等で自己署名証明書を許可するかどうかのフラグ（デフォルト false）。
+  /// Whether to allow self-signed or invalid certificates for local testing (default: false).
   final bool allowBadCertificates;
 
   TurboHttpAdapter({
@@ -49,7 +50,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
       );
     }
 
-    // リクエストボディの集約（サイズ制限なし）
+    // Aggregate request body stream into a single byte array (unbounded size)
     Uint8List? requestBody;
     if (requestStream != null) {
       final builder = BytesBuilder(copy: false);
@@ -59,7 +60,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
       requestBody = builder.takeBytes();
     }
 
-    // リクエストヘッダの変換
+    // Convert request headers
     final headers = <String?, String?>{};
     options.headers.forEach((key, value) {
       if (value != null) {

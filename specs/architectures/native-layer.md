@@ -1,6 +1,6 @@
 # ネイティブ層（Android / iOS）および通信ブリッジ仕様
 
-> 通信方式（MethodChannel/Pigeon vs FFI）の比較背景については [`docs/references/design-rationale.md`](../references/design-rationale.md) を参照。
+> 通信方式（MethodChannel/Pigeon vs FFI）の比較背景については [`docs/design-rationale.md`](../../docs/design-rationale.md) を参照。
 
 ---
 
@@ -39,6 +39,7 @@
   - `errorCode` / `errorMessage`: エラー発生時の共通エラーコードと詳細メッセージ
 - **キャンセル操作**:
   - `cancelRequest(requestId)`: 実行中のネイティブリクエストを即座に中断する
+  - `cancelAllRequests()`: 実行中の全ネイティブリクエストを一括中断する（エンジン破棄・ホットリスタート対応）
 
 ---
 
