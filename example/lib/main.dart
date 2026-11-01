@@ -96,7 +96,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     final baseUrl = _baseUrlController.text.trim();
     if (baseUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Base URL を入力してください')),
+        const SnackBar(content: Text('Please enter a Base URL')),
       );
       return;
     }
@@ -143,7 +143,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('エラーが発生しました: $e')),
+          SnackBar(content: Text('Error occurred: $e')),
         );
       }
     } finally {
@@ -161,7 +161,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     final results = _currentResults.values.toList();
     if (results.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('コピーする計測結果がありません')),
+        const SnackBar(content: Text('No benchmark results to copy')),
       );
       return;
     }
@@ -173,7 +173,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
 
     Clipboard.setData(ClipboardData(text: markdown));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Markdown をクリップボードにコピーしました')),
+      const SnackBar(content: Text('Markdown copied to clipboard')),
     );
   }
 
@@ -186,7 +186,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
         title: const Text('TurboFetch Benchmark'),
         actions: [
           IconButton(
-            tooltip: 'Markdown をコピー',
+            tooltip: 'Copy Markdown',
             icon: const Icon(Icons.copy_all),
             onPressed: resultsList.isNotEmpty && !_isRunning
                 ? _copyMarkdownToClipboard
@@ -224,7 +224,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '1. 接続先モックサーバー設定',
+              '1. Mock Server Connection',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -235,14 +235,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                 labelText: 'Mock Server Base URL',
                 border: OutlineInputBorder(),
                 isDense: true,
-                helperText: 'HTTP/2 Mock Server (ポート 8443)',
+                helperText: 'HTTP/2 Mock Server (Port 8443)',
               ),
             ),
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('自己署名証明書を許可 (Bad Certificates)'),
-              subtitle: const Text('ローカル検証用 (自作オレオレ証明書を許可)'),
+              title: const Text('Allow Self-Signed Certificates'),
+              subtitle: const Text('For local testing with self-signed TLS'),
               value: _allowBadCertificates,
               onChanged: _isRunning
                   ? null
@@ -263,7 +263,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '2. 計測シナリオ選択',
+              '2. Benchmark Scenario',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -298,7 +298,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '検証目的: ${_selectedScenario.description}',
+                    'Purpose: ${_selectedScenario.description}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -306,7 +306,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '構成: ${_selectedScenario.sizesKiB.join(", ")} KiB 各サイズ順次 × ${_selectedScenario.rounds} 周 (計 ${_selectedScenario.totalRequests} req / 最大 ${_selectedScenario.concurrency} 並列)',
+                    'Workload: ${_selectedScenario.sizesKiB.join(", ")} KiB sequentially x ${_selectedScenario.rounds} rounds (${_selectedScenario.totalRequests} reqs / max ${_selectedScenario.concurrency} workers)',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -330,7 +330,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '3. ベンチマーク実行',
+              '3. Run Benchmark',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -340,7 +340,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               child: FilledButton.icon(
                 icon: const Icon(Icons.play_arrow),
                 label: const Text(
-                  '4プリセット一括連続実行 (推奨)',
+                  'Run All 4 Presets (Recommended)',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: _isRunning ? null : _runAllPresets,
@@ -354,7 +354,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                     initialValue: _selectedPreset,
                     isExpanded: true,
                     decoration: const InputDecoration(
-                      labelText: '個別プリセット',
+                      labelText: 'Single Preset',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -379,7 +379,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                   onPressed: _isRunning
                       ? null
                       : () => _runSinglePreset(_selectedPreset),
-                  child: const Text('個別実行'),
+                  child: const Text('Run Single'),
                 ),
               ],
             ),
@@ -415,11 +415,11 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _currentRunningPreset?.label ?? '計測中...',
+                        _currentRunningPreset?.label ?? 'Running...',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        '進捗: $_progressCompleted / $_progressTotal リクエスト (${(progressVal * 100).toStringAsFixed(1)}%)',
+                        'Progress: $_progressCompleted / $_progressTotal requests (${(progressVal * 100).toStringAsFixed(1)}%)',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ],
@@ -447,12 +447,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  '4. 比較結果サマリー',
+                  '4. Benchmark Results Summary',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.copy, size: 16),
-                  label: const Text('Markdown コピー'),
+                  label: const Text('Copy Markdown'),
                   onPressed: _isRunning ? null : _copyMarkdownToClipboard,
                 ),
               ],
@@ -463,7 +463,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               child: DataTable(
                 columnSpacing: 16,
                 columns: const [
-                  DataColumn(label: Text('構成')),
+                  DataColumn(label: Text('Configuration')),
                   DataColumn(label: Text('Total Time')),
                   DataColumn(label: Text('Net Time (Avg/P95)')),
                   DataColumn(label: Text('Parse Time (Avg/P95)')),

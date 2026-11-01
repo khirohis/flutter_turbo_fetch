@@ -5,6 +5,6 @@ void main() {
   testWidgets('Verify example app renders', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
     expect(find.text('TurboFetch Benchmark'), findsOneWidget);
-    expect(find.text('4プリセット一括連続実行 (推奨)', skipOffstage: false), findsOneWidget);
+    expect(find.text('Run All 4 Presets (Recommended)', skipOffstage: false), findsOneWidget);
   });
 }
