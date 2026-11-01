@@ -8,14 +8,14 @@ class BenchmarkFormatter {
     required List<BenchmarkScenarioResult> results,
   }) {
     if (results.isEmpty) {
-      return '### ベンチマーク結果: ${scenario.label}\n\n*計測結果がありません*';
+      return '### Benchmark Results: ${scenario.label}\n\n*No benchmark results recorded*';
     }
 
     final buffer = StringBuffer();
-    buffer.writeln('### ベンチマーク結果: ${scenario.label}');
+    buffer.writeln('### Benchmark Results: ${scenario.label}');
     buffer.writeln();
     buffer.writeln(
-      '| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |',
+      '| Adapter Configuration | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |',
     );
     buffer.writeln(
       '| :--- | :---: | :---: | :---: | :---: | :---: | :---: |',

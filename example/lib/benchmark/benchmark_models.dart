@@ -2,23 +2,23 @@
 enum BenchmarkPreset {
   ioHttp1(
     id: 'io_http1',
-    label: '① IOHttpClientAdapter (HTTP/1.1)',
-    shortName: '① IO (HTTP/1.1)',
+    label: '(1) IOHttpClientAdapter (HTTP/1.1)',
+    shortName: '(1) IO (HTTP/1.1)',
   ),
   dioHttp2(
     id: 'dio_http2',
-    label: '② dio_http2_adapter (Dart HTTP/2)',
-    shortName: '② dio_http2',
+    label: '(2) dio_http2_adapter (Dart HTTP/2)',
+    shortName: '(2) dio_http2',
   ),
   nativeDio(
     id: 'native_dio',
-    label: '③ native_dio_adapter (Stream Bridge)',
-    shortName: '③ native_dio',
+    label: '(3) native_dio_adapter (Stream Bridge)',
+    shortName: '(3) native_dio',
   ),
   turboFetch(
     id: 'turbo_fetch',
-    label: '④ TurboHttpAdapter + TurboTransformer',
-    shortName: '④ TurboFetch',
+    label: '(4) TurboHttpAdapter + TurboTransformer',
+    shortName: '(4) TurboFetch',
   );
 
   const BenchmarkPreset({
@@ -36,27 +36,27 @@ enum BenchmarkPreset {
 enum BenchmarkScenario {
   scenarioA(
     id: 'scenario_a',
-    label: '計測A (5〜45KiB, 3並列, 10周 = 90req)',
-    shortLabel: '計測A (5〜45KiB)',
-    description: '24KiB閾値の妥当性評価（小サイズ通信での応答性）',
+    label: 'Scenario A (5-45KiB, 3 workers, 10 rounds = 90 req)',
+    shortLabel: 'Scenario A (5-45KiB)',
+    description: 'Validation of the 24KiB threshold (responsiveness for small payloads)',
     sizesKiB: [5, 10, 15, 20, 25, 30, 35, 40, 45],
     concurrency: 3,
     rounds: 10,
   ),
   scenarioB(
     id: 'scenario_b',
-    label: '計測B (10〜100KiB, 5並列, 10周 = 100req)',
-    shortLabel: '計測B (10〜100KiB)',
-    description: '実運用標準負荷の総合性能（標準レスポンスサイズ）',
+    label: 'Scenario B (10-100KiB, 5 workers, 10 rounds = 100 req)',
+    shortLabel: 'Scenario B (10-100KiB)',
+    description: 'General performance under standard production load (typical response sizes)',
     sizesKiB: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
     concurrency: 5,
     rounds: 10,
   ),
   scenarioC(
     id: 'scenario_c',
-    label: '計測C (20〜200KiB, 10並列, 10周 = 100req)',
-    shortLabel: '計測C (20〜200KiB)',
-    description: '高多重・セマフォ上限時の耐性（並列キューイング・メモリ安定性）',
+    label: 'Scenario C (20-200KiB, 10 workers, 10 rounds = 100 req)',
+    shortLabel: 'Scenario C (20-200KiB)',
+    description: 'Resilience under high concurrency and semaphore limits (queueing & memory stability)',
     sizesKiB: [20, 40, 60, 80, 100, 120, 140, 160, 180, 200],
     concurrency: 10,
     rounds: 10,
