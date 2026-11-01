@@ -1,29 +1,35 @@
 # HTTP/2 Benchmark Mock Server
 
-`example/` アプリの並列 HTTP/2 ベンチマーク検証用ローカルサーバーです（外部 npm 依存なし、Node.js 標準の `node:http2` で動作します）。
+A standalone local HTTP/2 server for testing and benchmarking the `example/` app with concurrent requests. Built using standard Node.js `node:http2` without external npm dependencies.
 
-## 1. TLS 証明書（`cert.pem` / `key.pem`）の準備
+---
 
-Android (`OkHttp`) や iOS (`URLSession`) で標準的な HTTP/2 (ALPN `h2`) をネゴシエーションするため、ローカル信頼済みの証明書（[`mkcert`](https://github.com/FiloSottile/mkcert) 推奨）をこのディレクトリに配置してください。
+## 1. TLS Certificate Setup (`cert.pem` / `key.pem`)
+
+To negotiate standard HTTP/2 (ALPN `h2`) on Android (`OkHttp`) and iOS (`URLSession`), place locally trusted TLS certificates (recommended: [`mkcert`](https://github.com/FiloSottile/mkcert)) in this directory:
 
 ```bash
 cd example/server
 mkcert -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 10.0.2.2
 ```
 
-## 2. サーバーの起動
+---
+
+## 2. Starting the Server
 
 ```bash
 node example/server/http2_mock_server.mjs
 ```
 
-## 3. エンドポイント仕様
+---
+
+## 3. Endpoint Specifications
 
 - **`GET /json?sizeKb=100&delayMs=0`**
-  - `sizeKb`: 生成する JSON ペイロードのサイズ（KB 単位、デフォルト `100`）
-  - `delayMs`: 人工的なサーバー応答遅延（ミリ秒、デフォルト `0`）
-  - レスポンスヘッダ `x-http-version` にネゴシエーションされたプロトコル（`2.0` または `1.1`）を返します。
-- **Android エミュレータからのアクセス URL**:
+  - `sizeKb`: Size of the generated JSON payload in KiB (default: `100`).
+  - `delayMs`: Artificial server-side response delay in milliseconds (default: `0`).
+  - Returns the negotiated protocol (`2.0` or `1.1`) in the `x-http-version` response header.
+- **Android Emulator Access URL**:
   - `https://10.0.2.2:8443/json?sizeKb=100`
-- **iOS シミュレータからのアクセス URL**:
+- **iOS Simulator / Host Access URL**:
   - `https://localhost:8443/json?sizeKb=100`

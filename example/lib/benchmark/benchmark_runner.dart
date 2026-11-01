@@ -12,9 +12,9 @@ import 'package:native_dio_adapter/native_dio_adapter.dart';
 import 'benchmark_models.dart';
 import 'benchmark_timing_wrapper.dart';
 
-/// ベンチマーク実行エンジン
+/// Benchmark execution engine.
 class BenchmarkRunner {
-  /// プロセスの現在 RSS (MiB) を取得
+  /// Retrieves the current process RSS (MiB).
   static double currentRssMiB() {
     try {
       return ProcessInfo.currentRss / (1024 * 1024);
@@ -23,7 +23,7 @@ class BenchmarkRunner {
     }
   }
 
-  /// 95 パーセンタイル (P95) を計算
+  /// Calculates the 95th percentile (P95).
   static double calculateP95(List<double> values) {
     if (values.isEmpty) return 0.0;
     final sorted = List<double>.from(values)..sort();
@@ -31,14 +31,14 @@ class BenchmarkRunner {
     return sorted[index.clamp(0, sorted.length - 1)];
   }
 
-  /// 平均値を計算
+  /// Calculates the arithmetic mean.
   static double calculateAvg(List<double> values) {
     if (values.isEmpty) return 0.0;
     final sum = values.fold<double>(0.0, (acc, v) => acc + v);
     return sum / values.length;
   }
 
-  /// 指定プリセットに対応する Dio インスタンスを構築（計測ラッパー付き）
+  /// Builds a Dio instance corresponding to the specified preset with measurement wrappers.
   static Dio createBenchmarkDio({
     required BenchmarkPreset preset,
     required bool allowBadCertificates,
@@ -97,7 +97,7 @@ class BenchmarkRunner {
     return dio;
   }
 
-  /// シナリオを実行し、結果（BenchmarkScenarioResult）を返却する
+  /// Runs a scenario and returns the benchmark results.
   static Future<BenchmarkScenarioResult> runScenario({
     required BenchmarkScenario scenario,
     required BenchmarkPreset preset,
@@ -110,7 +110,7 @@ class BenchmarkRunner {
       allowBadCertificates: allowBadCertificates,
     );
 
-    // フレーム監視の初期化
+    // Initialize frame monitoring.
     int totalFrames = 0;
     int jankFrames = 0;
     double maxFrameDurationMs = 0.0;
@@ -133,7 +133,7 @@ class BenchmarkRunner {
     final scheduler = SchedulerBinding.instance;
     scheduler.addTimingsCallback(onFrameTimings);
 
-    // RSS メモリ監視タイマー（25ms 周期）
+    // Periodic RSS memory monitoring timer (25ms interval).
     final rssBefore = currentRssMiB();
     double rssPeak = rssBefore;
 
@@ -144,7 +144,7 @@ class BenchmarkRunner {
       }
     });
 
-    // タスクリストの生成（全サイズ順次 × rounds）
+    // Generate task list (all sizes sequentially * rounds).
     final tasks = <({int round, int sizeKiB})>[];
     for (int r = 0; r < scenario.rounds; r++) {
       for (final size in scenario.sizesKiB) {
@@ -159,7 +159,7 @@ class BenchmarkRunner {
     final overallStopwatch = Stopwatch()..start();
 
     try {
-      // 並列プールワーカー（最大 scenario.concurrency 多重）
+      // Worker pool with concurrency up to scenario.concurrency.
       int nextTaskIndex = 0;
 
       Future<void> worker() async {
@@ -235,7 +235,7 @@ class BenchmarkRunner {
     final totalWallTimeMs = overallStopwatch.elapsedMilliseconds;
     final rssDelta = math.max(0.0, rssPeak - rssBefore);
 
-    // 成功したリクエストから統計値を算出
+    // Calculate statistics from successful requests.
     final successMetrics = requestMetrics.where((m) => m.isSuccess).toList();
     final netTimes = successMetrics.map((m) => m.netTimeMs).toList();
     final parseTimes = successMetrics.map((m) => m.parseTimeMs).toList();

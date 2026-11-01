@@ -52,7 +52,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
   int _progressCompleted = 0;
   int _progressTotal = 0;
 
-  /// シナリオごとの結果キャッシュ: scenario.id -> Map of preset to BenchmarkScenarioResult
+  /// Result cache by scenario: scenario.id -> Map of preset to BenchmarkScenarioResult
   final Map<String, Map<BenchmarkPreset, BenchmarkScenarioResult>> _resultsByScenario = {};
 
   @override
@@ -79,19 +79,19 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
   Map<BenchmarkPreset, BenchmarkScenarioResult> get _currentResults =>
       _resultsByScenario[_selectedScenario.id] ??= {};
 
-  /// 単一プリセットの実行
+  /// Executes a single preset.
   Future<void> _runSinglePreset(BenchmarkPreset preset) async {
     if (_isRunning) return;
     await _executeBenchmarks([preset]);
   }
 
-  /// 4つのプリセットを一括連続実行
+  /// Executes all four presets sequentially.
   Future<void> _runAllPresets() async {
     if (_isRunning) return;
     await _executeBenchmarks(BenchmarkPreset.values);
   }
 
-  /// 指定プリセット群を順次実行
+  /// Sequentially executes the specified presets.
   Future<void> _executeBenchmarks(List<BenchmarkPreset> presets) async {
     final baseUrl = _baseUrlController.text.trim();
     if (baseUrl.isEmpty) {
@@ -134,7 +134,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
         });
       }
 
-      // 完了時に Markdown をコンソール出力
+      // Print Markdown table to console upon completion.
       final markdown = BenchmarkFormatter.formatMarkdownTable(
         scenario: _selectedScenario,
         results: _currentResults.values.toList(),
@@ -156,7 +156,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     }
   }
 
-  /// 結果 Markdown をクリップボードにコピー
+  /// Copies the resulting Markdown table to the clipboard.
   void _copyMarkdownToClipboard() {
     final results = _currentResults.values.toList();
     if (results.isEmpty) {

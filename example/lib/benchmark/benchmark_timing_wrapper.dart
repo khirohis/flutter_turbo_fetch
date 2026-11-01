@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 const String kBenchmarkNetTimeMicrosKey = '_benchmark_net_time_micros';
 const String kBenchmarkParseTimeMicrosKey = '_benchmark_parse_time_micros';
 
-/// 既存のアダプタをラップし、純粋な通信時間（Net Time）をマイクロ秒精度で計測するアダプタ
+/// Wrapper adapter that measures network transfer latency (Net Time) with microsecond precision.
 class BenchmarkTimingAdapter implements HttpClientAdapter {
   BenchmarkTimingAdapter(this.delegateAdapter);
 
@@ -40,8 +40,8 @@ class BenchmarkTimingAdapter implements HttpClientAdapter {
   }
 }
 
-/// 既存の Transformer をラップし、JSON パース完了待ち時間（Parse Time）を
-/// マイクロ秒精度で計測する Transformer（セマフォ待ち時間も包含）
+/// Wrapper transformer that measures response transformation latency (Parse Time)
+/// with microsecond precision (including any semaphore queue waiting time).
 class BenchmarkTimingTransformer implements Transformer {
   BenchmarkTimingTransformer(this.delegateTransformer);
 
@@ -74,7 +74,7 @@ class BenchmarkTimingTransformer implements Transformer {
   }
 }
 
-/// Response オブジェクトから計測された Net Time (ms) と Parse Time (ms) を抽出する
+/// Extracts measured Net Time (ms) and Parse Time (ms) from a [Response] object.
 ({double netTimeMs, double parseTimeMs}) extractBenchmarkTimings(
   Response<dynamic> response,
 ) {

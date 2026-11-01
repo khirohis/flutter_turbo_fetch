@@ -1,4 +1,4 @@
-/// 比較対象の 4 つのアダプタ構成プリセット
+/// Four adapter configuration presets for comparison.
 enum BenchmarkPreset {
   ioHttp1(
     id: 'io_http1',
@@ -32,7 +32,7 @@ enum BenchmarkPreset {
   final String shortName;
 }
 
-/// 計測シナリオ定義
+/// Benchmark scenario definitions.
 enum BenchmarkScenario {
   scenarioA(
     id: 'scenario_a',
@@ -83,7 +83,7 @@ enum BenchmarkScenario {
   int get totalRequests => sizesKiB.length * rounds;
 }
 
-/// 1 リクエスト単位の計測結果
+/// Metrics recorded for a single request.
 class SingleRequestMetric {
   const SingleRequestMetric({
     required this.sizeKiB,
@@ -106,7 +106,7 @@ class SingleRequestMetric {
   bool get isSuccess => errorMessage == null && statusCode >= 200 && statusCode < 300;
 }
 
-/// シナリオ実行全体の集計結果
+/// Aggregated results for an entire scenario run.
 class BenchmarkScenarioResult {
   const BenchmarkScenarioResult({
     required this.scenario,
@@ -130,49 +130,49 @@ class BenchmarkScenarioResult {
   final BenchmarkScenario scenario;
   final BenchmarkPreset preset;
 
-  /// 全 10 周完了までの実時間 (ms)
+  /// Total elapsed wall-clock time for all rounds (ms).
   final int totalWallTimeMs;
 
-  /// ネットワーク通信時間の平均値 (ms)
+  /// Average network communication time (ms).
   final double netTimeAvgMs;
 
-  /// ネットワーク通信時間の 95 パーセンタイル (ms)
+  /// 95th percentile (P95) network communication time (ms).
   final double netTimeP95Ms;
 
-  /// JSON パース実効完了待ち時間（セマフォ待ち含む）の平均値 (ms)
+  /// Average JSON parse completion time, including semaphore wait (ms).
   final double parseTimeAvgMs;
 
-  /// JSON パース実効完了待ち時間（セマフォ待ち含む）の 95 パーセンタイル (ms)
+  /// 95th percentile (P95) JSON parse completion time, including semaphore wait (ms).
   final double parseTimeP95Ms;
 
-  /// 計測期間中の総フレーム数
+  /// Total frames rendered during the benchmark.
   final int totalFrames;
 
-  /// 16.6ms を超過したジャンクフレーム数
+  /// Number of jank frames exceeding 16.67ms.
   final int jankFrames;
 
-  /// 最大フレーム所要時間 (ms)
+  /// Maximum frame duration (ms).
   final double maxFrameDurationMs;
 
-  /// 開始前のプロセス RSS (MiB)
+  /// Process RSS before benchmark execution (MiB).
   final double rssBeforeMiB;
 
-  /// 計測中の最大プロセス RSS (MiB)
+  /// Peak process RSS during benchmark execution (MiB).
   final double rssPeakMiB;
 
-  /// メモリ増分 (MiB)
+  /// Memory delta (MiB).
   final double rssDeltaMiB;
 
-  /// 成功リクエスト数
+  /// Total count of successful requests.
   final int successCount;
 
-  /// 失敗リクエスト数
+  /// Total count of failed requests.
   final int failureCount;
 
-  /// リクエスト個別メトリクス一覧
+  /// List of individual request metrics.
   final List<SingleRequestMetric> requestMetrics;
 
-  /// ジャンクフレーム発生率 (%)
+  /// Jank frame occurrence rate (%).
   double get jankRatePercent =>
       totalFrames > 0 ? (jankFrames / totalFrames) * 100.0 : 0.0;
 }
