@@ -13,7 +13,7 @@ dio.httpClientAdapter = TurboHttpAdapter(
   allowBadCertificates: false,
 );
 dio.transformer = TurboTransformer(
-  // maxConcurrentIsolates 未指定時は max(4, Platform.numberOfProcessors - 2)
+  // maxConcurrentIsolates 未指定時は max(2, Platform.numberOfProcessors - 2)
 );
 
 // カスタムオブジェクトへのマッピングやリクエスト単位の上限指定を行う場合
@@ -88,5 +88,5 @@ final User user = response.data!;
      - 閾値以上なら Worker Isolate へオフロードして中間 `String` なしでデコード・オブジェクト生成まで完結させて返却する。
 - **Isolate オフロード制御（`bytes` [mapper 指定時] / `plain` / `json` 共通）**:
   - **閾値（`isolateThresholdBytes`、デフォルト 24KiB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
-  - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(4, Platform.numberOfProcessors - 2)` とし、コンストラクタ引数でカスタマイズ可能とする。
+  - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(2, Platform.numberOfProcessors - 2)`（定数 `defaultMinConcurrentIsolates = 2`）とし、2 コア端末（iPhone 6s 等）で最低限のスループットを維持しつつ、4 コア以上の端末では UI/Raster スレッド用に 2 コアを確実に保護する仕様とする（コンストラクタ引数でカスタマイズ可能）。
 - **リファレンス実装**: [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。
