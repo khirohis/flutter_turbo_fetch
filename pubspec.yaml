@@ -1,6 +1,14 @@
 name: flutter_turbo_fetch
 description: "High-performance HTTP/2 batch fetch and zero-copy transform plugin for Dio."
 version: 0.0.1
+repository: https://github.com/khirohis/flutter_turbo_fetch
+issue_tracker: https://github.com/khirohis/flutter_turbo_fetch/issues
+topics:
+  - dio
+  - http2
+  - networking
+  - performance
+  - isolate
 
 environment:
   sdk: ^3.5.0
