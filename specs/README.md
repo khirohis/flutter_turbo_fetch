@@ -14,6 +14,7 @@
 
 ### 2. 開発ガイドライン・運用規約 (`guidelines/`)
 - [`guidelines/language-policy.md`](guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）
+- [`guidelines/branch-strategy.md`](guidelines/branch-strategy.md): ブランチ戦略・リリース運用ガイドライン（GitHub Flow 拡張型、pub.dev リリース手順）
 
 ### 3. アーキテクチャ仕様 (`architectures/`) — What / How
 - [`architectures/architecture.md`](architectures/architecture.md): 一気通貫パイプライン構造と各層の責務境界
