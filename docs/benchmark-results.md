@@ -6,6 +6,12 @@ This document records the empirical performance measurement results, technical a
 
 ## 1. Measurement Environment
 
+> [!NOTE]
+> **Scope & Platform Coverage**:
+> The empirical benchmarks and metrics presented in this document were conducted on an **Android** environment.
+> - **iOS**: The native `URLSession` implementation is functionally complete, but dedicated performance and frame-timing benchmarks on physical iOS hardware are currently pending and will be documented in a future update.
+> - **Desktop (Windows / macOS / Linux)**: Desktop support is not included in the current benchmark suite and is slated for future consideration.
+
 - **Device / OS**: Android 16 (API 36) x86_64 Emulator (`emulator-5554`)
 - **Flutter / Dart SDK**: Flutter 3.47.8 / Dart 3.13.7 (FVM)
 - **Mock Server**: Node.js v26.12.1 Built-in HTTP/2 TLS Server (`http2.createSecureServer`)
