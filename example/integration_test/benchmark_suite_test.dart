@@ -31,9 +31,7 @@ void main() {
         preset: preset,
         baseUrl: baseUrl,
         allowBadCertificates: true,
-        onProgress: (completed, total) {
-          tester.pump(const Duration(milliseconds: 1));
-        },
+        onProgress: null,
       );
 
       results.add(result);

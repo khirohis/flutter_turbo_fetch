@@ -38,7 +38,7 @@
 同一のベンチマークシナリオ・同一のモックサーバーに対して、以下の4構成を公平に比較する。
 
 | プリセット名 | アダプタ層（`HttpClientAdapter`） | トランスフォーマー層（`Transformer`） | 特徴・方式 |
-| :--- | :--- | :--- | :--- |
+| :--- | :--- :--- | :--- | :--- |
 | **① IO (HTTP/1.1)** | `IOHttpClientAdapter` | `BackgroundTransformer` | Dio 標準構成（Dart `dart:io`、都度 `compute`） |
 | **② dio_http2** | `Http2Adapter` | `BackgroundTransformer` | Dart 実装の HTTP/2（`package:http2`、都度 `compute`） |
 | **③ native_dio** | `NativeAdapter` | `BackgroundTransformer` | ネイティブ通信（Cronet / URLSession）、Dart間はチャンクストリーム転送 |
@@ -97,7 +97,25 @@
 
 ---
 
-## 6. 実装プロンプト（Implementation Prompt）
+## 6. 計測実行の前提条件と手順
+
+### 6.1 前提条件
+
+1. **Release ビルド必須**:
+   - 理由: 計測精度の担保（JIT/assert/オーバーヘッド排除）、デバッガ接続待ちによる画面停止防止、マルチ Isolate 起動時のハング防止。
+2. **HTTP/2 モックサーバー常駐**:
+   - 事前に `node example/server/http2_mock_server.mjs` を起動（ポート 8443）しておくこと。
+
+### 6.2 実行手順
+
+- **GUI 実行（推奨）**:
+  `fvm flutter build apk --release` でインストールし、アプリ画面の「Run All 4 Presets」を実行して Markdown 結果をコピー。
+- **CLI 実行**:
+  `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`
+
+---
+
+## 7. 実装プロンプト（Implementation Prompt）
 
 以下は、AIエージェントや開発者が本仕様を `example/` アプリへ実装する際に使用する指示プロンプトである。
 
@@ -136,7 +154,7 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
 
 ---
 
-## 7. 実測結果の参照先
+## 8. 実測結果の参照先
 
 本プロンプトおよび仕様に基づいて実施したベンチマークの実行結果、詳細データ、技術的評価レポートは以下を参照のこと。
 
