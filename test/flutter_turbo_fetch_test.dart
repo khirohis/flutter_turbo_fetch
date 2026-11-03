@@ -326,7 +326,7 @@ void main() {
   group('TurboTransformer & TurboOptions unit tests', () {
     test('defines expected default constants and respects them when omitted', () {
       expect(TurboTransformer.defaultIsolateThresholdBytes, 24 * 1024);
-      expect(TurboTransformer.defaultMinConcurrentIsolates, 4);
+      expect(TurboTransformer.defaultMinConcurrentIsolates, 2);
 
       final defaultTransformer = TurboTransformer();
       expect(

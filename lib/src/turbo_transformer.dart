@@ -15,7 +15,7 @@ class TurboTransformer extends BackgroundTransformer {
   static const int defaultIsolateThresholdBytes = 24 * 1024;
 
   /// Default minimum number of concurrent worker Isolates.
-  static const int defaultMinConcurrentIsolates = 4;
+  static const int defaultMinConcurrentIsolates = 2;
 
   /// Semaphore to constrain concurrent Isolates and prevent OS thread saturation.
   final _Semaphore _semaphore;
