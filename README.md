@@ -31,6 +31,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **macOS / Windows / Linux** | Not Supported | Future Consideration |
 
 > [!NOTE]
+>
 > - **iOS Status**: Native `URLSession` integration is fully implemented, but formal end-to-end performance benchmarking and stress testing have not yet been conducted.
 > - **Web & Desktop Platforms**: Web is not supported due to native OS transport requirements. Support for desktop platforms (Windows, macOS, Linux) is under consideration for future phases, but not planned for near-term releases.
 
@@ -84,7 +85,7 @@ No special permissions are needed for HTTPS endpoints. If testing locally with c
 
 ## 💡 Quick Start
 
-Configure a single `Dio` instance once at application startup. 
+Configure a single `Dio` instance once at application startup.
 
 By passing `mapper` to `TurboOptions<T>`, JSON decoding and domain model instantiation (`.fromJson`) execute **entirely inside a Worker Isolate** for payloads >= 24KB, returning typed objects to the UI thread in $O(1)$:
 
@@ -119,6 +120,7 @@ print('User: ${user.name}');
 ```
 
 > [!TIP]
+>
 > - **In-Isolate Mapper**: To run inside worker Isolates, `mapper` should be a top-level function, `static` method, or pure closure without capturing external mutable state.
 > - **Response Types**: Supports all standard `ResponseType`s (`json`, `plain`, `bytes`, `stream`).
 > - **Defensive Payload Guard**: Terminate oversized responses early with `TurboOptions(maxResponseBytes: 10 * 1024 * 1024)`.
@@ -144,7 +146,7 @@ Controls Isolate dispatching and thread concurrency:
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `isolateThresholdBytes` | `int` | `24 * 1024` (24KB) | Payloads below this threshold are decoded synchronously on the Main Isolate (< 0.5ms). Payloads at or above this threshold are dispatched to Worker Isolates via zero-copy `TransferableTypedData`. |
-| `maxConcurrentIsolates` | `int?` | `max(4, cores - 2)` | Maximum concurrent worker Isolates permitted by the internal semaphore, preventing CPU thread starvation during 10-20x burst requests. |
+| `maxConcurrentIsolates` | `int?` | `max(2, cores - 2)` | Maximum concurrent worker Isolates permitted by the internal semaphore, preventing CPU thread starvation during 10-20x burst requests. |
 
 ---
 

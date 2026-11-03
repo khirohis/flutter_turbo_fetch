@@ -53,6 +53,7 @@
 - **[`specs/roadmap.md`](specs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
 - **[`specs/guidelines/`](specs/guidelines/)**（開発ガイドライン・運用規約）:
   - [`language-policy.md`](specs/guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）。
+  - [`branch-strategy.md`](specs/guidelines/branch-strategy.md): ブランチ戦略・リリース運用ガイドライン（GitHub Flow 拡張型）。
 - **[`specs/architectures/`](specs/architectures/)**（設計・実装時に参照する仕様定義）:
   - [`architecture.md`](specs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
   - [`native-layer.md`](specs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
@@ -88,6 +89,10 @@
 ### 開発進行時の共通ルール
 
 - **実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。**
+- **Git ブランチ運用とリリース規約**: [`specs/guidelines/branch-strategy.md`](specs/guidelines/branch-strategy.md) に厳格に従うこと。
+  - `main` ブランチへの直接コミットは禁止。必ず目的別の作業ブランチ（`feature/*`, `fix/*`, `docs/*`, `chore/*`）またはリリース準備ブランチ（`release/vX.Y.Z`）を作成して作業する。
+  - `main` へのマージは履歴可視化と安全性のため、**必ず `--no-ff`（ノンファストフォワード）** で行うこと。Fast-forward マージは禁止。
+  - リリース時は必ず `release/vX.Y.Z` を経由し、全テスト合格および `fvm dart pub publish --dry-run`（警告 0 件）を確認してから `main` へ `--no-ff` マージし、Git タグ（`vX.Y.Z`）を付与すること。
 - **Flutter / Dart コマンドの実行**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、コマンド実行時はグローバルの `flutter` / `dart` を直接呼ばず、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
 
 ---
