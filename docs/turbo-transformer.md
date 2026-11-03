@@ -154,10 +154,10 @@ class TurboTransformer extends BackgroundTransformer {
     return options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
   }
 
-  dynamic _transformStream(
+  Future<dynamic> _transformStream(
     RequestOptions options,
     ResponseBody responseBody,
-  ) {
+  ) async {
     final mapper = _extractMapper(options);
     return mapper != null ? mapper(responseBody) : responseBody;
   }

@@ -85,51 +85,63 @@ class TurboTransformer extends BackgroundTransformer {
     if (bytes.lengthInBytes < isolateThresholdBytes) {
       return mapper(bytes);
     }
-    return await _semaphore.withResource(() async {
-      final transferable = TransferableTypedData.fromList([bytes]);
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        return mapper(rawBytes);
-      });
-    });
+    return await _offload(bytes, mapper);
   }
 
   Future<dynamic> _transformPlain(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
-    final bytes = await _readBytes(responseBody.stream);
-    if (bytes.isEmpty) {
-      return mapper != null ? mapper('') : '';
-    }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      final decoded = utf8.decode(bytes, allowMalformed: true);
-      return mapper != null ? mapper(decoded) : decoded;
-    }
-    return await _semaphore.withResource(() async {
-      final transferable = TransferableTypedData.fromList([bytes]);
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        final decoded = utf8.decode(rawBytes, allowMalformed: true);
-        return mapper != null ? mapper(decoded) : decoded;
-      });
-    });
+  ) {
+    return _transformPayload(
+      options,
+      responseBody,
+      emptyValue: '',
+      decode: (bytes) => utf8.decode(bytes, allowMalformed: true),
+    );
   }
 
   Future<dynamic> _transformJson(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
+  ) {
+    return _transformPayload(
+      options,
+      responseBody,
+      emptyValue: null,
+      decode: _jsonUtf8Decoder.convert,
+    );
+  }
+
+  /// Common pipeline for decodable payloads (plain text and JSON).
+  Future<dynamic> _transformPayload(
+    RequestOptions options,
+    ResponseBody responseBody, {
+    required dynamic emptyValue,
+    required dynamic Function(Uint8List bytes) decode,
+  }) async {
     final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
+
     if (bytes.isEmpty) {
-      return mapper != null ? mapper(null) : null;
+      return mapper != null ? mapper(emptyValue) : emptyValue;
     }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      final decoded = _jsonUtf8Decoder.convert(bytes);
+
+    dynamic process(Uint8List rawBytes) {
+      final decoded = decode(rawBytes);
       return mapper != null ? mapper(decoded) : decoded;
     }
+
+    if (bytes.lengthInBytes < isolateThresholdBytes) {
+      return process(bytes);
+    }
+    return await _offload(bytes, process);
+  }
+
+  /// Offloads [action] to a worker Isolate using bidirectional O(1) zero-copy transfer.
+  Future<R> _offload<R>(
+    Uint8List bytes,
+    R Function(Uint8List rawBytes) action,
+  ) async {
     return await _semaphore.withResource(() async {
       // Inbound: O(1) zero-copy transfer of raw byte buffer
       final transferable = TransferableTypedData.fromList([bytes]);
@@ -137,8 +149,7 @@ class TurboTransformer extends BackgroundTransformer {
       // Outbound: Isolate.run uses Isolate.exit to transfer parsed object tree in O(1)
       return await Isolate.run(() {
         final rawBytes = transferable.materialize().asUint8List();
-        final decoded = _jsonUtf8Decoder.convert(rawBytes);
-        return mapper != null ? mapper(decoded) : decoded;
+        return action(rawBytes);
       });
     });
   }
