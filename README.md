@@ -37,23 +37,18 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
 ## 📦 Installation
 
-Add `flutter_turbo_fetch` to your `pubspec.yaml` via `git` or local `path`:
+Add `flutter_turbo_fetch` and `dio` to your Flutter project:
+
+```bash
+flutter pub add flutter_turbo_fetch dio
+```
+
+Or add them directly to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
   dio: ^5.4.0
-  flutter_turbo_fetch:
-    git:
-      url: https://github.com/khirohis/flutter_turbo_fetch.git
-      ref: main
-    # or local development:
-    # path: ../flutter_turbo_fetch
-```
-
-Then fetch packages:
-
-```bash
-fvm flutter pub get
+  flutter_turbo_fetch: ^0.0.1
 ```
 
 ---

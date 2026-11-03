@@ -12,6 +12,9 @@ _agent/
 specs/
 docs/
 
+# Code generation schema definitions
+pigeons/
+
 # FVM configuration & version cache
 .fvm/
 .fvmrc
