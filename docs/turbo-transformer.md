@@ -7,6 +7,7 @@ This document provides architectural details, design rationale, and the referenc
 ## 1. Architectural Highlights
 
 ### 1. Full Support for All 4 Dio ResponseTypes + Typed Model Mapping
+
 - **`ResponseType.stream` (`ResponseBody`)**:
   `TurboHttpAdapter` receives and concatenates response bytes in the OS background, wrapping the result in a single-chunk `ResponseBody.fromBytes` (backed by `Stream.value(bytes)`). `TurboTransformer` returns this `ResponseBody` directly in $O(1)$ without falling back to a separate adapter or draining the stream, maintaining 100% type compatibility with Dio.
 - **`ResponseType.bytes` (`Uint8List`)**:
@@ -19,13 +20,16 @@ This document provides architectural details, design rationale, and the referenc
   Accepts decoded data (`ResponseBody`, `Uint8List`, `String`, or parsed JSON) and transforms it into domain models. For payloads >= 24KiB in `bytes`, `plain`, and `json`, the mapper executes entirely within the Worker Isolate, returning the final instantiated model graph to the Main Isolate via `Isolate.exit` in $O(1)$ zero-copy.
 
 ### 2. Threshold-Based Offloading (Default 24KiB)
+
 Spawning an Isolate via `Isolate.run` incurs a baseline overhead of approximately 0.5ms to 1.5ms. For small payloads (< 24KiB), direct decoding on the Main Isolate is faster (< 0.5ms) and avoids unnecessary thread context switches. Payloads >= 24KiB are offloaded to keep the Main UI thread free of frame drops.
 
 ### 3. Bidirectional $O(1)$ Zero-Copy (`TransferableTypedData` + `Isolate.run`)
+
 - **Inbound (Main -> Worker)**: Uses `TransferableTypedData.fromList([bytes])` to transfer memory ownership to the Worker Isolate in $O(1)$ without heap copies.
 - **Outbound (Worker -> Main)**: `Isolate.run` internally invokes `Isolate.exit`, transferring ownership of the parsed Dart object tree back to the Main Isolate in $O(1)$ upon isolate termination. This avoids the transitive deep copies (which typically consume 25% to 40% of parsing time) inherent to persistent worker pools using `SendPort.send`.
 
 ### 4. Semaphore-Governed Concurrency (CPU Core Awareness)
+
 Spawning unconstrained Isolates during bursts of 10 to 20 concurrent network requests saturates OS threads and triggers CPU thrashing. `TurboTransformer` restricts concurrent Isolate execution using a lightweight async `_Semaphore`. The default limit is calculated via `dart:io` as `math.max(TurboTransformer.defaultMinConcurrentIsolates, Platform.numberOfProcessors - 2)` with a baseline of 2 (`defaultMinConcurrentIsolates = 2`), sustaining parser throughput on dual-core hardware (e.g., iPhone 6s) while strictly preserving 2 CPU cores for Flutter's UI and raster threads on devices with 4 or more cores.
 
 ---
@@ -150,10 +154,10 @@ class TurboTransformer extends BackgroundTransformer {
     return options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
   }
 
-  Future<dynamic> _transformStream(
+  dynamic _transformStream(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
+  ) {
     final mapper = _extractMapper(options);
     return mapper != null ? mapper(responseBody) : responseBody;
   }
@@ -170,51 +174,63 @@ class TurboTransformer extends BackgroundTransformer {
     if (bytes.lengthInBytes < isolateThresholdBytes) {
       return mapper(bytes);
     }
-    return await _semaphore.withResource(() async {
-      final transferable = TransferableTypedData.fromList([bytes]);
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        return mapper(rawBytes);
-      });
-    });
+    return await _offload(bytes, mapper);
   }
 
   Future<dynamic> _transformPlain(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
-    final bytes = await _readBytes(responseBody.stream);
-    if (bytes.isEmpty) {
-      return mapper != null ? mapper('') : '';
-    }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      final decoded = utf8.decode(bytes, allowMalformed: true);
-      return mapper != null ? mapper(decoded) : decoded;
-    }
-    return await _semaphore.withResource(() async {
-      final transferable = TransferableTypedData.fromList([bytes]);
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        final decoded = utf8.decode(rawBytes, allowMalformed: true);
-        return mapper != null ? mapper(decoded) : decoded;
-      });
-    });
+  ) {
+    return _transformPayload(
+      options,
+      responseBody,
+      emptyValue: '',
+      decode: (bytes) => utf8.decode(bytes, allowMalformed: true),
+    );
   }
 
   Future<dynamic> _transformJson(
     RequestOptions options,
     ResponseBody responseBody,
-  ) async {
+  ) {
+    return _transformPayload(
+      options,
+      responseBody,
+      emptyValue: null,
+      decode: _jsonUtf8Decoder.convert,
+    );
+  }
+
+  /// Common pipeline for decodable payloads (plain text and JSON).
+  Future<dynamic> _transformPayload(
+    RequestOptions options,
+    ResponseBody responseBody, {
+    required dynamic emptyValue,
+    required dynamic Function(Uint8List bytes) decode,
+  }) async {
     final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
+
     if (bytes.isEmpty) {
-      return mapper != null ? mapper(null) : null;
+      return mapper != null ? mapper(emptyValue) : emptyValue;
     }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      final decoded = _jsonUtf8Decoder.convert(bytes);
+
+    dynamic process(Uint8List rawBytes) {
+      final decoded = decode(rawBytes);
       return mapper != null ? mapper(decoded) : decoded;
     }
+
+    if (bytes.lengthInBytes < isolateThresholdBytes) {
+      return process(bytes);
+    }
+    return await _offload(bytes, process);
+  }
+
+  /// Offloads [action] to a worker Isolate using bidirectional O(1) zero-copy transfer.
+  Future<R> _offload<R>(
+    Uint8List bytes,
+    R Function(Uint8List rawBytes) action,
+  ) async {
     return await _semaphore.withResource(() async {
       // Inbound: O(1) zero-copy transfer of raw byte buffer
       final transferable = TransferableTypedData.fromList([bytes]);
@@ -222,8 +238,7 @@ class TurboTransformer extends BackgroundTransformer {
       // Outbound: Isolate.run uses Isolate.exit to transfer parsed object tree in O(1)
       return await Isolate.run(() {
         final rawBytes = transferable.materialize().asUint8List();
-        final decoded = _jsonUtf8Decoder.convert(rawBytes);
-        return mapper != null ? mapper(decoded) : decoded;
+        return action(rawBytes);
       });
     });
   }
