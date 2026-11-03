@@ -20,7 +20,7 @@
   ├─ 小さいデータ（〜24KiB 未満）: Main Isolate 上で直接デコード（＋指定時は mapper 実行）
   └─ 大きいデータ（24KiB 以上）: TransferableTypedData (O(1) ゼロコピー) で Isolate.run へ転送
         │
-        ▼ (セマフォで同時起動数を制限: デフォルト max(4, Platform.numberOfProcessors - 2))
+        ▼ (セマフォで同時起動数を制限: デフォルト max(2, Platform.numberOfProcessors - 2))
 [Dart Worker Isolate (Isolate.run)]
   ├─ bytes (mapper 指定時): rawBytes / plain: utf8.decode / json: utf8.decoder.fuse(json.decoder)（中間 String 生成なし）
   ├─ TurboOptions(mapper: ...) 指定時: Worker Isolate 内でデコード結果からカスタムオブジェクトまで生成

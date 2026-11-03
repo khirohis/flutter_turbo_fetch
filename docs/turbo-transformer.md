@@ -26,7 +26,7 @@ Spawning an Isolate via `Isolate.run` incurs a baseline overhead of approximatel
 - **Outbound (Worker -> Main)**: `Isolate.run` internally invokes `Isolate.exit`, transferring ownership of the parsed Dart object tree back to the Main Isolate in $O(1)$ upon isolate termination. This avoids the transitive deep copies (which typically consume 25% to 40% of parsing time) inherent to persistent worker pools using `SendPort.send`.
 
 ### 4. Semaphore-Governed Concurrency (CPU Core Awareness)
-Spawning unconstrained Isolates during bursts of 10 to 20 concurrent network requests saturates OS threads and triggers CPU thrashing. `TurboTransformer` restricts concurrent Isolate execution using a lightweight async `_Semaphore`. The default limit is calculated via `dart:io` as `math.max(TurboTransformer.defaultMinConcurrentIsolates, Platform.numberOfProcessors - 2)`, reserving 2 CPU cores for Flutter's UI and raster threads while scaling with hardware capacity.
+Spawning unconstrained Isolates during bursts of 10 to 20 concurrent network requests saturates OS threads and triggers CPU thrashing. `TurboTransformer` restricts concurrent Isolate execution using a lightweight async `_Semaphore`. The default limit is calculated via `dart:io` as `math.max(TurboTransformer.defaultMinConcurrentIsolates, Platform.numberOfProcessors - 2)` with a baseline of 2 (`defaultMinConcurrentIsolates = 2`), sustaining parser throughput on dual-core hardware (e.g., iPhone 6s) while strictly preserving 2 CPU cores for Flutter's UI and raster threads on devices with 4 or more cores.
 
 ---
 
@@ -101,7 +101,7 @@ class TurboTransformer extends BackgroundTransformer {
   static const int defaultIsolateThresholdBytes = 24 * 1024;
 
   /// Default minimum number of concurrent worker Isolates.
-  static const int defaultMinConcurrentIsolates = 4;
+  static const int defaultMinConcurrentIsolates = 2;
 
   final _Semaphore _semaphore;
 
