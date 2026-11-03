@@ -11,23 +11,32 @@ import 'turbo_options.dart';
 final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder);
 
 class TurboTransformer extends BackgroundTransformer {
+  /// Default byte threshold (24KiB) above which parsing is offloaded to a worker Isolate.
+  static const int defaultIsolateThresholdBytes = 24 * 1024;
+
+  /// Default minimum number of concurrent worker Isolates.
+  static const int defaultMinConcurrentIsolates = 4;
+
   /// Semaphore to constrain concurrent Isolates and prevent OS thread saturation.
   final _Semaphore _semaphore;
 
-  /// Byte threshold above which parsing is offloaded to a worker Isolate (default: 24KiB).
+  /// Byte threshold above which parsing is offloaded to a worker Isolate (default: [defaultIsolateThresholdBytes]).
   final int isolateThresholdBytes;
 
   /// Maximum number of concurrently running worker Isolates.
   final int maxConcurrentIsolates;
 
   TurboTransformer({
-    int isolateThresholdBytes = 24 * 1024,
+    int isolateThresholdBytes = defaultIsolateThresholdBytes,
     int? maxConcurrentIsolates,
   }) : this._(
          isolateThresholdBytes: isolateThresholdBytes,
          maxConcurrentIsolates:
              maxConcurrentIsolates ??
-             math.max(4, Platform.numberOfProcessors - 2),
+             math.max(
+               defaultMinConcurrentIsolates,
+               Platform.numberOfProcessors - 2,
+             ),
        );
 
   TurboTransformer._({

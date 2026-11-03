@@ -45,7 +45,7 @@ class _TestUser {
 
 Dio _createDio(
   TurboFetchHostApi hostApi, {
-  int isolateThresholdBytes = 24 * 1024,
+  int isolateThresholdBytes = TurboTransformer.defaultIsolateThresholdBytes,
   int? maxConcurrentIsolates,
 }) {
   final dio = Dio();
@@ -324,6 +324,21 @@ void main() {
   });
 
   group('TurboTransformer & TurboOptions unit tests', () {
+    test('defines expected default constants and respects them when omitted', () {
+      expect(TurboTransformer.defaultIsolateThresholdBytes, 24 * 1024);
+      expect(TurboTransformer.defaultMinConcurrentIsolates, 4);
+
+      final defaultTransformer = TurboTransformer();
+      expect(
+        defaultTransformer.isolateThresholdBytes,
+        TurboTransformer.defaultIsolateThresholdBytes,
+      );
+      final expectedConcurrent = Platform.numberOfProcessors - 2 > TurboTransformer.defaultMinConcurrentIsolates
+          ? Platform.numberOfProcessors - 2
+          : TurboTransformer.defaultMinConcurrentIsolates;
+      expect(defaultTransformer.maxConcurrentIsolates, expectedConcurrent);
+    });
+
     test('supports all 4 ResponseTypes with and without mapper (below threshold)', () async {
       final transformer = TurboTransformer(isolateThresholdBytes: 24 * 1024);
 
