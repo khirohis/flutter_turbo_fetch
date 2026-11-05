@@ -16,12 +16,14 @@ dio.transformer = TurboTransformer(
   // maxConcurrentIsolates 未指定時は max(2, Platform.numberOfProcessors - 2)
 );
 
-// カスタムオブジェクトへのマッピングやリクエスト単位の上限指定を行う場合
+// 後処理フック（mapper）やリクエスト単位の上限指定を行う場合
 final response = await dio.get<User>(
   '/users/1',
   options: TurboOptions(
+    // 1. responseType（一次デコード）: デフォルトは ResponseType.json（Dio 準拠）
+    // 2. mapper（後処理フック）: 一次デコード結果を受け取って任意の変換・追加処理を実行
+    //    （例: JSON パース結果からドメインモデルへの変換）
     mapper: (data) => User.fromJson(data as Map<String, dynamic>),
-    responseType: ResponseType.json, // デフォルトは ResponseType.json
     maxResponseBytes: 16 * 1024 * 1024, // 16MiB
   ),
 );
@@ -63,9 +65,13 @@ final User user = response.data!;
 
 ## 3. `TurboTransformer` & `TurboOptions` の設計仕様
 
-### 3.1 `TurboOptions<T>`（カスタムオブジェクトマッパー・リクエスト単位オプション指定）
+### 3.1 `TurboOptions<T>`（カスタム後処理フック・リクエスト単位オプション指定）
 
-- `Dio` 標準の `Options` を継承し、コンストラクタで `mapper: TurboResponseMapper<T>?`（`typedef TurboResponseMapper<T> = T Function(dynamic data)`）、`maxResponseBytes: int?`、および通常の `Options` パラメータ（`responseType` デフォルト `ResponseType.json` 等）を受け取る。
+- **2段階パイプライン設計（一次デコード ＋ 後処理フック）**:
+  - `responseType`: 受信した生バイト列を Dio 標準の基本データ形式（JSON / バイト列 / 文字列 / ストリーム）へ復元する **一次デコードパイプライン** を決定する。
+  - `mapper`（`typedef TurboResponseMapper<T> = T Function(dynamic data)`）: 一次デコード結果を入力として受け取り、任意の型 `T` への変換や追加処理を実行する **後処理フック（Post-processing Hook）** である（ドメインモデルへの変換、Protobuf/MessagePack などのバイナリデシリアライズ、キャッシュ永続化などの処理を実行可能）。
+  - **Dio デフォルトの継承**: Dio の基底 `Options.responseType` のデフォルト値（`ResponseType.json`）をそのまま継承しているため、`responseType` を省略して `TurboOptions(mapper: ...)` と記述した場合は、自動的に JSON デコード済みのデータ構造（`Map` または `List`）が `mapper` の引数として渡される。
+- `Dio` 標準の `Options` を継承し、コンストラクタで `mapper: TurboResponseMapper<T>?`、`maxResponseBytes: int?`、および通常の `Options` パラメータを受け取る。
 - 内部的には `Options.extra` の予約キーを通じて `TurboHttpAdapter`（`maxResponseBytes`）および `TurboTransformer`（`mapper`）へ設定を引き渡す。
 - **Isolate 転送要件**: 閾値以上のレスポンス（`bytes` [mapper 指定時] / `plain` / `json`）では `mapper` も `Isolate.run`（Worker Isolate）内で実行するため、トップレベル関数、`static` メソッド、または外部のミュータブルな状態をキャプチャしていないクロージャを渡す仕様とする。
 
@@ -87,6 +93,7 @@ final User user = response.data!;
      - 閾値未満なら Main Isolate 上で `utf8.decoder.fuse(json.decoder)` で中間 `String` を作らずデコード（および指定時は `mapper`）を実行する。
      - 閾値以上なら Worker Isolate へオフロードして中間 `String` なしでデコード・オブジェクト生成まで完結させて返却する。
 - **Isolate オフロード制御（`bytes` [mapper 指定時] / `plain` / `json` 共通）**:
+  - **一次デコードと後処理の一気通貫実行**: 閾値以上のペイロードでは、一次デコード（UTF-8/JSON デコード等）と `mapper` フックが同一の Worker Isolate 内で連続実行される。これにより、巨大な JSON ツリーやバイト配列といった中間データを Main Isolate に一切持ち込まず、`mapper` が返した最終成果物のみを `Isolate.exit`（$O(1)$ ゼロコピー）で返却する。
   - **閾値（`isolateThresholdBytes`、デフォルト 24KiB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
   - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(2, Platform.numberOfProcessors - 2)`（定数 `defaultMinConcurrentIsolates = 2`）とし、2 コア端末（iPhone 6s 等）で最低限のスループットを維持しつつ、4 コア以上の端末では UI/Raster スレッド用に 2 コアを確実に保護する仕様とする（コンストラクタ引数でカスタマイズ可能）。
 - **リファレンス実装**: [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。
