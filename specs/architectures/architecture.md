@@ -22,8 +22,8 @@
         │
         ▼ (セマフォで同時起動数を制限: デフォルト max(2, Platform.numberOfProcessors - 2))
 [Dart Worker Isolate (Isolate.run)]
-  ├─ bytes (mapper 指定時): rawBytes / plain: utf8.decode / json: utf8.decoder.fuse(json.decoder)（中間 String 生成なし）
-  ├─ TurboOptions(mapper: ...) 指定時: Worker Isolate 内でデコード結果からカスタムオブジェクトまで生成
+  ├─ 一次デコード (ResponseType に準拠): bytes: rawBytes / plain: utf8.decode / json: utf8.decoder.fuse(json.decoder)（中間 String 生成なし）
+  ├─ 追加フック (TurboOptions(mapper: ...)): デコード結果を入力とし、Worker Isolate 内でオブジェクト生成や追加処理を実行
   └─ Isolate.exit (O(1) ゼロコピー) で Main Isolate へ返却
 ```
 
@@ -36,7 +36,7 @@
 | **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboClientManager` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
 | **iOS 通信層** | `FlutterTurboFetchPlugin` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
 | **Dart Adapter 層** | `TurboHttpAdapter` (`HttpClientAdapter`) | `RequestOptions`, `Stream<Uint8List>?` | `ResponseBody.fromBytes(Uint8List)`（単一チャンクストリーム） | チャンク分割送信・別アダプタへの不要なフォールバック |
-| **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseBody` (`stream`) / `Uint8List` (`bytes`) / `String` (`plain`) / JSON (`json`) / `mapper` 変換後オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
+| **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseType` に応じた一次デコードデータ（`stream`, `bytes`, `plain`, `json`）、または `mapper` フック実行後の変換オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
 
 ---
 

@@ -87,7 +87,7 @@ No special permissions are needed for HTTPS endpoints. If testing locally with c
 
 Configure a single `Dio` instance once at application startup.
 
-By passing `mapper` to `TurboOptions<T>`, JSON decoding and domain model instantiation (`.fromJson`) execute **entirely inside a Worker Isolate** for payloads >= 24KB, returning typed objects to the UI thread in $O(1)$:
+`TurboOptions` inherits Dio's standard `responseType = ResponseType.json` default. By passing `mapper`, JSON decoding and domain model instantiation (`.fromJson`) execute **entirely inside a Worker Isolate** for payloads >= 24KB, returning typed objects to the UI thread in $O(1)$:
 
 ```dart
 import 'package:dio/dio.dart';
@@ -122,7 +122,7 @@ print('User: ${user.name}');
 > [!TIP]
 >
 > - **In-Isolate Mapper**: To run inside worker Isolates, `mapper` should be a top-level function, `static` method, or pure closure without capturing external mutable state.
-> - **Response Types**: Supports all standard `ResponseType`s (`json`, `plain`, `bytes`, `stream`).
+> - **Pipeline Baseline (`ResponseType`)**: `responseType` determines the primary decoded format passed into `mapper`. For example, setting `responseType: ResponseType.bytes` passes raw `Uint8List` bytes into `mapper` for in-isolate binary deserialization (e.g., Protobuf/FlatBuffers).
 > - **Defensive Payload Guard**: Terminate oversized responses early with `TurboOptions(maxResponseBytes: 10 * 1024 * 1024)`.
 > - **Standard Dio Features**: Fully supports Dio's `CancelToken`, `sendTimeout`, and `receiveTimeout`.
 

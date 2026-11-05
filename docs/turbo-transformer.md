@@ -16,8 +16,8 @@ This document provides architectural details, design rationale, and the referenc
   While Dio's standard `BackgroundTransformer` synchronously executes `utf8.decode` on the Main Isolate even for large text responses, `TurboTransformer` offloads text decoding to an Isolate whenever the payload meets or exceeds the threshold.
 - **`ResponseType.json` (`dynamic`)**:
   Fuses UTF-8 decoding and JSON decoding (`utf8.decoder.fuse(json.decoder)`), converting raw bytes directly into the target object graph without intermediate multi-megabyte `String` allocations.
-- **Object Mapping via `TurboOptions(mapper: ...)`**:
-  Accepts decoded data (`ResponseBody`, `Uint8List`, `String`, or parsed JSON) and transforms it into domain models. For payloads >= 24KiB in `bytes`, `plain`, and `json`, the mapper executes entirely within the Worker Isolate, returning the final instantiated model graph to the Main Isolate via `Isolate.exit` in $O(1)$ zero-copy.
+- **Post-Processing & Object Mapping via `TurboOptions(mapper: ...)`**:
+  In `flutter_turbo_fetch`, `ResponseType` dictates the primary decoding baseline (yielding `ResponseBody`, `Uint8List`, `String`, or parsed JSON). The `mapper` callback serves as a post-processing hook that executes directly on this decoded result. It can be utilized for domain model instantiation (e.g., `.fromJson`), binary deserialization (Protobuf/MessagePack), or background processing such as cache persistence. For payloads >= 24KiB in `bytes`, `plain`, and `json`, both the primary decoding and the `mapper` hook execute entirely inside the Worker Isolate, returning the final processed result to the Main Isolate via `Isolate.exit` in $O(1)$ zero-copy.
 
 ### 2. Threshold-Based Offloading (Default 24KiB)
 
