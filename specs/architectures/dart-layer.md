@@ -19,11 +19,8 @@ dio.transformer = TurboTransformer(
 // 後処理フック（mapper）やリクエスト単位の上限指定を行う場合
 final response = await dio.get<User>(
   '/users/1',
-  options: TurboOptions(
-    // 1. responseType（一次デコード）: デフォルトは ResponseType.json（Dio 準拠）
-    // 2. mapper（後処理フック）: 一次デコード結果を受け取って任意の変換・追加処理を実行
-    //    （例: JSON パース結果からドメインモデルへの変換）
-    mapper: (data) => User.fromJson(data as Map<String, dynamic>),
+  options: TurboOptions.json(
+    mapper: (json) => User.fromJson(json as Map<String, dynamic>),
     maxResponseBytes: 16 * 1024 * 1024, // 16MiB
   ),
 );
@@ -71,7 +68,21 @@ final User user = response.data!;
   - `responseType`: 受信した生バイト列を Dio 標準の基本データ形式（JSON / バイト列 / 文字列 / ストリーム）へ復元する **一次デコードパイプライン** を決定する。
   - `mapper`（`typedef TurboResponseMapper<T> = T Function(dynamic data)`）: 一次デコード結果を入力として受け取り、任意の型 `T` への変換や追加処理を実行する **後処理フック（Post-processing Hook）** である（ドメインモデルへの変換、Protobuf/MessagePack などのバイナリデシリアライズ、キャッシュ永続化などの処理を実行可能）。
   - **Dio デフォルトの継承**: Dio の基底 `Options.responseType` のデフォルト値（`ResponseType.json`）をそのまま継承しているため、`responseType` を省略して `TurboOptions(mapper: ...)` と記述した場合は、自動的に JSON デコード済みのデータ構造（`Map` または `List`）が `mapper` の引数として渡される。
-- `Dio` 標準の `Options` を継承し、コンストラクタで `mapper: TurboResponseMapper<T>?`、`maxResponseBytes: int?`、および通常の `Options` パラメータを受け取る。
+- **型安全ファクトリコンストラクタ（一次デコードと後処理入力型の束縛）**:
+  一次デコード形式と `mapper` 入力型を静的に一致させ、`responseType` の手動指定とダウンキャストを不要化する 3 つの名前付きファクトリを提供する。
+  - **`TurboOptions.json`**:
+    - 責務: JSON デコード結果を後処理フックへ引き渡す。
+    - 仕様: 内部で `responseType = ResponseType.json` を固定設定。`mapper` は `T Function(dynamic json)`（`required`）として定義。
+  - **`TurboOptions.bytes`**:
+    - 責務: 生バイト列（バイナリ）を後処理フックへ引き渡す。
+    - 仕様: 内部で `responseType = ResponseType.bytes` を固定設定。`mapper` は `T Function(Uint8List bytes)`（`required`）として厳格に型付け。
+  - **`TurboOptions.plain`**:
+    - 責務: デコード済み文字列（テキスト）を後処理フックへ引き渡す。
+    - 仕様: 内部で `responseType = ResponseType.plain` を固定設定。`mapper` は `T Function(String text)`（`required`）として厳格に型付け。
+  - **共通パラメータの透過性**:
+    - `Dio` の標準 `Options` パラメータ（`method`, `sendTimeout`, `receiveTimeout`, `headers`, `extra`, `maxResponseBytes` 等）は各ファクトリで受け取り、基底コンストラクタへ透過的に転送する。
+- **下位互換性の保証（非破壊的追加）**:
+  - 既存の無名コンストラクタ `TurboOptions({mapper, maxResponseBytes, ...})` はシグネチャ・デフォルト挙動を一切変更せず存続し、柔軟な手動指定や既存コードとの後方互換性を 100% 維持する。
 - 内部的には `Options.extra` の予約キーを通じて `TurboHttpAdapter`（`maxResponseBytes`）および `TurboTransformer`（`mapper`）へ設定を引き渡す。
 - **Isolate 転送要件**: 閾値以上のレスポンス（`bytes` [mapper 指定時] / `plain` / `json`）では `mapper` も `Isolate.run`（Worker Isolate）内で実行するため、トップレベル関数、`static` メソッド、または外部のミュータブルな状態をキャプチャしていないクロージャを渡す仕様とする。
 
