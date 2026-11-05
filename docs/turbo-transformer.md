@@ -39,6 +39,7 @@ Spawning unconstrained Isolates during bursts of 10 to 20 concurrent network req
 ### `lib/src/turbo_options.dart`
 
 ```dart
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 typedef TurboResponseMapper<T> = T Function(dynamic data);
@@ -79,6 +80,132 @@ class TurboOptions<T> extends Options {
           turboMaxResponseBytesExtraKey: maxResponseBytes,
       };
     }
+  }
+
+  /// Factory constructor for JSON payloads.
+  factory TurboOptions.json({
+    required T Function(dynamic json) mapper,
+    int? maxResponseBytes,
+    String? method,
+    Duration? sendTimeout,
+    Duration? receiveTimeout,
+    Map<String, dynamic>? extra,
+    Map<String, dynamic>? headers,
+    bool? preserveHeaderCase,
+    String? contentType,
+    ValidateStatus? validateStatus,
+    bool? receiveDataWhenStatusError,
+    bool? followRedirects,
+    int? maxRedirects,
+    bool? persistentConnection,
+    RequestEncoder? requestEncoder,
+    ResponseDecoder? responseDecoder,
+    ListFormat? listFormat,
+  }) {
+    return TurboOptions<T>(
+      mapper: mapper,
+      maxResponseBytes: maxResponseBytes,
+      method: method,
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+      extra: extra,
+      headers: headers,
+      preserveHeaderCase: preserveHeaderCase,
+      responseType: ResponseType.json,
+      contentType: contentType,
+      validateStatus: validateStatus,
+      receiveDataWhenStatusError: receiveDataWhenStatusError,
+      followRedirects: followRedirects,
+      maxRedirects: maxRedirects,
+      persistentConnection: persistentConnection,
+      requestEncoder: requestEncoder,
+      responseDecoder: responseDecoder,
+      listFormat: listFormat,
+    );
+  }
+
+  /// Factory constructor for raw binary payloads (e.g. Protobuf, MessagePack, FlatBuffers).
+  factory TurboOptions.bytes({
+    required T Function(Uint8List bytes) mapper,
+    int? maxResponseBytes,
+    String? method,
+    Duration? sendTimeout,
+    Duration? receiveTimeout,
+    Map<String, dynamic>? extra,
+    Map<String, dynamic>? headers,
+    bool? preserveHeaderCase,
+    String? contentType,
+    ValidateStatus? validateStatus,
+    bool? receiveDataWhenStatusError,
+    bool? followRedirects,
+    int? maxRedirects,
+    bool? persistentConnection,
+    RequestEncoder? requestEncoder,
+    ResponseDecoder? responseDecoder,
+    ListFormat? listFormat,
+  }) {
+    return TurboOptions<T>(
+      mapper: (dynamic data) => mapper(data as Uint8List),
+      maxResponseBytes: maxResponseBytes,
+      method: method,
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+      extra: extra,
+      headers: headers,
+      preserveHeaderCase: preserveHeaderCase,
+      responseType: ResponseType.bytes,
+      contentType: contentType,
+      validateStatus: validateStatus,
+      receiveDataWhenStatusError: receiveDataWhenStatusError,
+      followRedirects: followRedirects,
+      maxRedirects: maxRedirects,
+      persistentConnection: persistentConnection,
+      requestEncoder: requestEncoder,
+      responseDecoder: responseDecoder,
+      listFormat: listFormat,
+    );
+  }
+
+  /// Factory constructor for plain text payloads (e.g. CSV, YAML, custom text formats).
+  factory TurboOptions.plain({
+    required T Function(String text) mapper,
+    int? maxResponseBytes,
+    String? method,
+    Duration? sendTimeout,
+    Duration? receiveTimeout,
+    Map<String, dynamic>? extra,
+    Map<String, dynamic>? headers,
+    bool? preserveHeaderCase,
+    String? contentType,
+    ValidateStatus? validateStatus,
+    bool? receiveDataWhenStatusError,
+    bool? followRedirects,
+    int? maxRedirects,
+    bool? persistentConnection,
+    RequestEncoder? requestEncoder,
+    ResponseDecoder? responseDecoder,
+    ListFormat? listFormat,
+  }) {
+    return TurboOptions<T>(
+      mapper: (dynamic data) => mapper(data as String),
+      maxResponseBytes: maxResponseBytes,
+      method: method,
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+      extra: extra,
+      headers: headers,
+      preserveHeaderCase: preserveHeaderCase,
+      responseType: ResponseType.plain,
+      contentType: contentType,
+      validateStatus: validateStatus,
+      receiveDataWhenStatusError: receiveDataWhenStatusError,
+      followRedirects: followRedirects,
+      maxRedirects: maxRedirects,
+      persistentConnection: persistentConnection,
+      requestEncoder: requestEncoder,
+      responseDecoder: responseDecoder,
+      listFormat: listFormat,
+    );
   }
 }
 ```

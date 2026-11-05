@@ -110,8 +110,8 @@ class UserModel {
 // 2. Fetch directly as a typed model (parsed in a background Isolate)
 final response = await dio.get<UserModel>(
   'https://api.example.com/users/1',
-  options: TurboOptions<UserModel>(
-    mapper: (data) => UserModel.fromJson(data as Map<String, dynamic>),
+  options: TurboOptions.json<UserModel>(
+    mapper: (json) => UserModel.fromJson(json as Map<String, dynamic>),
   ),
 );
 
@@ -122,7 +122,7 @@ print('User: ${user.name}');
 > [!TIP]
 >
 > - **In-Isolate Mapper**: To run inside worker Isolates, `mapper` should be a top-level function, `static` method, or pure closure without capturing external mutable state.
-> - **Pipeline Baseline (`ResponseType`)**: `responseType` determines the primary decoded format passed into `mapper`. For example, setting `responseType: ResponseType.bytes` passes raw `Uint8List` bytes into `mapper` for in-isolate binary deserialization (e.g., Protobuf/FlatBuffers).
+> - **Typed Factories**: Use `TurboOptions.json`, `TurboOptions.bytes`, or `TurboOptions.plain` to automatically bind `responseType` and type `mapper` parameters (e.g. `Uint8List` for Protobuf/FlatBuffers).
 > - **Defensive Payload Guard**: Terminate oversized responses early with `TurboOptions(maxResponseBytes: 10 * 1024 * 1024)`.
 > - **Standard Dio Features**: Fully supports Dio's `CancelToken`, `sendTimeout`, and `receiveTimeout`.
 
