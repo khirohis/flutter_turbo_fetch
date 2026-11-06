@@ -5,13 +5,13 @@
 
 A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
-`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS `URLSession`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
+`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS `URLSession` / Windows `WinHTTP`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
 
 ---
 
 ## ✨ Features
 
-- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3 & URLSession).
+- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3, URLSession, & WinHTTP).
 - **Non-Blocking UI Thread**: Eliminates jank on large payloads (>= 24KB) through zero-copy `TransferableTypedData` offloading.
 - **In-Worker Model Mapping**: Directly parses and instantiates domain models inside worker Isolates.
 - **Full Dio Compatibility**: Drop-in replacement supporting all 4 standard `ResponseType`s.
@@ -27,13 +27,14 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Dio** | `^5.4.0` | Supported |
 | **Android** | `minSdk = 24` (Android 7.0+) • `okhttp:4.12.0` | Tested & Benchmarked |
 | **iOS** | `iOS 13.0+` • SPM & CocoaPods | Implemented (Benchmarking Pending) |
+| **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Supported |
 | **Web** | Not Supported | Out of Scope |
-| **macOS / Windows / Linux** | Not Supported | Future Consideration |
+| **macOS / Linux** | Not Supported | Future Consideration |
 
 > [!NOTE]
 >
 > - **iOS Status**: Native `URLSession` integration is fully implemented, but formal end-to-end performance benchmarking and stress testing have not yet been conducted.
-> - **Web & Desktop Platforms**: Web is not supported due to native OS transport requirements. Support for desktop platforms (Windows, macOS, Linux) is under consideration for future phases, but not planned for near-term releases.
+> - **Web & Other Desktop Platforms**: Web is not supported due to native OS transport requirements. Support for macOS and Linux is under consideration for future phases.
 
 ---
 
@@ -80,6 +81,10 @@ No special permissions are needed for HTTPS endpoints. If testing locally with c
     <true/>
 </dict>
 ```
+
+### Windows
+
+No additional setup or external libraries are required. The plugin links directly against the Windows OS system component `winhttp.dll`.
 
 ---
 

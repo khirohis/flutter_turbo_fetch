@@ -281,15 +281,21 @@ void main() {
       );
     });
 
-    test('throws UnsupportedError on desktop platforms when hostApi is not overridden', () async {
-      if (Platform.isAndroid || Platform.isIOS) {
-        return;
-      }
+    test('checks platform support (Android, iOS, Windows allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
       final adapter = TurboHttpAdapter();
-      await expectLater(
-        adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
-        throwsA(isA<UnsupportedError>()),
-      );
+      if (Platform.isAndroid || Platform.isIOS || Platform.isWindows) {
+        // Supported platforms pass the platform guard and reach the Pigeon HostApi call
+        // (which throws a DioException in unit tests without an active binary messenger).
+        await expectLater(
+          adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
+          throwsA(isA<DioException>()),
+        );
+      } else {
+        await expectLater(
+          adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
+          throwsA(isA<UnsupportedError>()),
+        );
+      }
     });
 
     test('generates unique requestId using Isolate hashCode and static counter', () async {

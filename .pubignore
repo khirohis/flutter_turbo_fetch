@@ -54,6 +54,12 @@ app.*.symbols
 **/ios/.generated/
 **/ios/Flutter/
 **/ios/Runner/GeneratedPluginRegistrant.*
+**/Flutter/ephemeral/
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+windows/build/
+windows/test/
 
 # Local mock server certificates
 *.pem

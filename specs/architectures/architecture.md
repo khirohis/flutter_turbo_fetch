@@ -7,10 +7,10 @@
 ## 1. 一気通貫パイプライン構造
 
 ```text
-[ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler)]
-  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp デフォルト 16MiB ウィンドウ）
+[ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler) / Windows (WinHTTP)]
+  ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp デフォルト 16MiB ウィンドウ / CFNetwork / WinHTTP SChannel）
   ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時は上限超過を検知した時点で処理を中断しエラー返却）
-  └─ 完成した byte[] / Data (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
+  └─ 完成した byte[] / Data / std::vector<uint8_t> (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
         │
         ▼ (1 回のみのバッファ転送・再シリアライズ不要)
 [Dart Main Isolate (TurboHttpAdapter + TurboTransformer + TurboOptions)]
@@ -35,6 +35,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboClientManager` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
 | **iOS 通信層** | `FlutterTurboFetchPlugin` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
+| **Windows 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboSessionManager` (`WinHTTP`) | リクエスト情報 | 結合済み `std::vector<uint8_t>`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
 | **Dart Adapter 層** | `TurboHttpAdapter` (`HttpClientAdapter`) | `RequestOptions`, `Stream<Uint8List>?` | `ResponseBody.fromBytes(Uint8List)`（単一チャンクストリーム） | チャンク分割送信・別アダプタへの不要なフォールバック |
 | **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseType` に応じた一次デコードデータ（`stream`, `bytes`, `plain`, `json`）、または `mapper` フック実行後の変換オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
 
@@ -66,5 +67,14 @@ flutter_turbo_fetch/
 │       └── Sources/flutter_turbo_fetch/
 │           ├── FlutterTurboFetchPlugin.swift # iOS FlutterPlugin + URLSession 実装
 │           └── Messages.g.swift           # Pigeon 自動生成コード（Swift 側）
+├── windows/
+│   ├── CMakeLists.txt                     # Windows CMake ビルド定義（winhttp リンク）
+│   ├── include/flutter_turbo_fetch/
+│   │   └── flutter_turbo_fetch_plugin_c_api.h # Windows プラグイン公開 C API ヘッダ
+│   ├── flutter_turbo_fetch_plugin_c_api.cpp   # Windows プラグイン登録エントリポイント
+│   ├── flutter_turbo_fetch_plugin.h/.cpp      # Windows FlutterPlugin インターフェース層
+│   ├── turbo_http_executor.h/.cpp             # Windows WinHTTP 通信実行・スレッドプール管理層
+│   ├── turbo_session_manager.h/.cpp           # Windows WinHTTP 共有セッション管理層
+│   └── messages.g.h/.cpp                  # Pigeon 自動生成コード（C++ 側）
 └── example/                               # PoC・ベンチマーク検証アプリ
 ```

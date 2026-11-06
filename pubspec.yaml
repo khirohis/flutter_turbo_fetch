@@ -34,3 +34,5 @@ flutter:
       ios:
         pluginClass: FlutterTurboFetchPlugin
         sharedDarwinSource: false
+      windows:
+        pluginClass: FlutterTurboFetchPluginCApi
