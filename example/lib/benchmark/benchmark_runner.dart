@@ -7,7 +7,6 @@ import 'package:dio/io.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_turbo_fetch/flutter_turbo_fetch.dart';
-import 'package:native_dio_adapter/native_dio_adapter.dart';
 
 import 'benchmark_models.dart';
 import 'benchmark_timing_wrapper.dart';
@@ -78,10 +77,6 @@ class BenchmarkRunner {
             },
           ),
         );
-        rawTransformer = BackgroundTransformer();
-
-      case BenchmarkPreset.nativeDio:
-        rawAdapter = NativeAdapter();
         rawTransformer = BackgroundTransformer();
 
       case BenchmarkPreset.turboFetch:

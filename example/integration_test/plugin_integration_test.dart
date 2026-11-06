@@ -119,7 +119,7 @@ void main() {
     expect(find.text('1. Mock Server Connection'), findsOneWidget);
     expect(find.text('2. Benchmark Scenario'), findsOneWidget);
     expect(find.text('3. Run Benchmark'), findsOneWidget);
-    expect(find.text('Run All 4 Presets (Recommended)'), findsOneWidget);
+    expect(find.text('Run All 3 Presets (Recommended)'), findsOneWidget);
     expect(find.text('Run Single'), findsOneWidget);
 
     // Verify scenario segments can be switched

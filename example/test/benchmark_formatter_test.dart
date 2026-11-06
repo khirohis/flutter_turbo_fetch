@@ -57,7 +57,7 @@ void main() {
       expect(markdown, contains('| (1) IO (HTTP/1.1) | 3,420 ms | 32.1 ms / 58.4 ms |'));
 
       // Verify fastest row for turboFetch is bolded
-      expect(markdown, contains('| **(4) TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** |'));
+      expect(markdown, contains('| **(3) TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** |'));
       expect(markdown, contains('**74.0 MiB (+6.8 MiB)**'));
     });
 

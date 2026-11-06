@@ -103,6 +103,20 @@ void main() {
   });
 
   group('BenchmarkScenario Models', () {
+    test('preset configurations define 3 presets without nativeDio', () {
+      expect(
+        BenchmarkPreset.values,
+        equals([
+          BenchmarkPreset.ioHttp1,
+          BenchmarkPreset.dioHttp2,
+          BenchmarkPreset.turboFetch,
+        ]),
+      );
+      expect(BenchmarkPreset.ioHttp1.shortName, equals('(1) IO (HTTP/1.1)'));
+      expect(BenchmarkPreset.dioHttp2.shortName, equals('(2) dio_http2'));
+      expect(BenchmarkPreset.turboFetch.shortName, equals('(3) TurboFetch'));
+    });
+
     test('scenario configurations match requirements', () {
       expect(BenchmarkScenario.scenarioA.concurrency, equals(3));
       expect(BenchmarkScenario.scenarioA.sizesKiB, equals([5, 10, 15, 20, 25, 30, 35, 40, 45]));
