@@ -105,11 +105,19 @@
    - 理由: 計測精度の担保（JIT/assert/オーバーヘッド排除）、デバッガ接続待ちによる画面停止防止、マルチ Isolate 起動時のハング防止。
 2. **HTTP/2 モックサーバー常駐**:
    - 事前に `node example/server/http2_mock_server.mjs` を起動（ポート 8443）しておくこと。
+   - 接続先ベース URL はターゲットプラットフォームに応じて以下のように解決する（UI 上での手動変更も可）：
+     - **Android エミュレータ**: `https://10.0.2.2:8443`
+     - **Windows / iOS Simulator / macOS / Linux**: `https://localhost:8443`
+     - **Android / iOS 物理実機**: ホストマシンの LAN IP（例: `https://192.168.x.x:8443`）またはポートフォワーディング（`adb reverse tcp:8443 tcp:8443`）
 
 ### 6.2 実行手順
 
 - **GUI 実行（推奨）**:
-  `fvm flutter build apk --release` でインストールし、アプリ画面の「Run All 3 Presets」を実行して Markdown 結果をコピー。
+  対象プラットフォーム向けに Release モードで起動またはビルド＆インストールし、アプリ画面の「Run All 3 Presets」を実行して Markdown 結果をコピーする。
+  - **Android**: `fvm flutter run --release -d <device_id>`（または `fvm flutter build apk --release`）
+  - **Windows**: `fvm flutter run --release -d windows`（または `fvm flutter build windows --release`）
+  - **iOS**: `fvm flutter run --release -d <device_id>`
+  - **macOS / Linux（将来拡張時）**: `fvm flutter run --release -d <macos|linux>`
 - **CLI 実行**:
   `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`
 
@@ -155,6 +163,14 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
 
 ## 8. 実測結果の参照先
 
-本プロンプトおよび仕様に基づいて実施したベンチマークの実行結果、詳細データ、技術的評価レポートは以下を参照のこと。
+本仕様に基づいて実施したベンチマークの実測結果および技術評価レポートは、全プラットフォーム横断の総括ドキュメントと、プラットフォーム別の詳細ドキュメントに分割して管理する。
 
-- 📄 **[ベンチマーク実測結果・性能検証レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**
+- 📊 **[ベンチマーク総括レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**
+  - 全プラットフォーム横断のエグゼクティブサマリー、共通の計測境界仕様（Net Time / Parse Time、Jank 評価基準）、およびアーキテクチャ全体の結論。
+- 📁 **プラットフォーム別詳細レポート (`docs/benchmarks/`)**:
+  - 各 OS 固有の計測環境スペック、シナリオ A / B / C の実測データ（Markdown テーブル）、およびネイティブエンジン固有の技術分析を記録する。
+  - 🤖 **[Android (`docs/benchmarks/android.md`)](../../docs/benchmarks/android.md)** — `OkHttp3` 共有クライアント
+  - 🪟 **[Windows (`docs/benchmarks/windows.md`)](../../docs/benchmarks/windows.md)** — `WinHTTP` + OS Thread Pool
+  - 🍎 **iOS (`docs/benchmarks/ios.md`)** — `URLSession` *(順次追加予定)*
+  - 💻 **macOS (`docs/benchmarks/macos.md`)** *(将来追加予定)*
+  - 🐧 **Linux (`docs/benchmarks/linux.md`)** *(将来追加予定)*

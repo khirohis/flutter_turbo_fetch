@@ -72,7 +72,7 @@
 - **[`docs/`](docs/README.md)**（利用者のための技術解説・ホワイトペーパー）:
   - [`design-rationale.md`](docs/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
   - [`turbo-transformer.md`](docs/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
-  - [`benchmark-results.md`](docs/benchmark-results.md): Android エミュレータ環境におけるパフォーマンス比較ベンチマーク実測結果と技術分析。
+  - [`benchmark-results.md`](docs/benchmark-results.md) & [`docs/benchmarks/`](docs/benchmarks/): 全プラットフォーム横断のパフォーマンス比較ベンチマーク総括と、プラットフォーム別（Android / Windows 等）の実測結果・技術分析。
 
 ---
 
