@@ -10,6 +10,11 @@ import 'package:pigeon/pigeon.dart';
     ),
     swiftOut:
         'ios/flutter_turbo_fetch/Sources/flutter_turbo_fetch/Messages.g.swift',
+    cppHeaderOut: 'windows/messages.g.h',
+    cppSourceOut: 'windows/messages.g.cpp',
+    cppOptions: CppOptions(
+      namespace: 'flutter_turbo_fetch',
+    ),
   ),
 )
 class TurboHttpRequest {
