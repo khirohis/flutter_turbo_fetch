@@ -27,7 +27,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Dio** | `^5.4.0` | Supported |
 | **Android** | `minSdk = 24` (Android 7.0+) • `okhttp:4.12.0` | Tested & Benchmarked |
 | **iOS** | `iOS 13.0+` • SPM & CocoaPods | Implemented (Benchmarking Pending) |
-| **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Supported |
+| **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
 | **Web** | Not Supported | Out of Scope |
 | **macOS / Linux** | Not Supported | Future Consideration |
 
@@ -175,7 +175,7 @@ To run benchmarks locally or view full empirical metrics on physical/emulator ha
 For in-depth architecture and design rationale, see the [docs/](https://github.com/khirohis/flutter_turbo_fetch/tree/main/docs) directory in the GitHub repository:
 
 - [Design Rationale & Bottleneck Analysis](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/design-rationale.md): Technical justifications behind avoiding stream FFI, native JSON parsing, and persistent worker pools.
-- [Benchmark Results & Performance Analysis](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmark-results.md): Empirical measurements and frame-timing evaluation on Android devices.
+- [Benchmark Results & Performance Analysis](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmark-results.md): Cross-platform empirical measurements and frame-timing evaluations on Android and Windows.
 - [TurboTransformer Implementation Reference](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/turbo-transformer.md): In-depth guide to zero-copy Isolate transformations and semaphore governance.
 
 For internal development specifications and agent directives (maintained in Japanese), refer to [specs/](https://github.com/khirohis/flutter_turbo_fetch/tree/main/specs).
