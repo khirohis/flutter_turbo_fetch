@@ -7,7 +7,7 @@
 ## 1. 計測の目的と検証ポイント
 
 1. **実効スループットの比較**:
-   4種類のアダプタ構成において、実用ワークロードにおける全リクエスト完了までの総合時間（Wall Clock Time）を比較する。
+   3種類のアダプタ構成において、実用ワークロードにおける全リクエスト完了までの総合時間（Wall Clock Time）を比較する。
 2. **24KiB 閾値設計の妥当性評価（50KiB未満）**:
    小サイズ通信でのメインスレッド同期デコードと、24KiB超過時のゼロコピー Isolate オフロード（`Isolate.run` + `Isolate.exit`）によるオーバーヘッド相殺・優位性を確認する。
 3. **多重リクエスト耐性とセマフォ制御**:
@@ -33,16 +33,17 @@
 
 ---
 
-## 3. 比較対象プリセット（4つのアダプタ構成）
+## 3. 比較対象プリセット（3つのアダプタ構成）
 
-同一のベンチマークシナリオ・同一のモックサーバーに対して、以下の4構成を公平に比較する。
+同一のベンチマークシナリオ・同一のモックサーバーに対して、以下の3構成を公平に比較する。
 
 | プリセット名 | アダプタ層（`HttpClientAdapter`） | トランスフォーマー層（`Transformer`） | 特徴・方式 |
-| :--- | :--- :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- |
 | **① IO (HTTP/1.1)** | `IOHttpClientAdapter` | `BackgroundTransformer` | Dio 標準構成（Dart `dart:io`、都度 `compute`） |
 | **② dio_http2** | `Http2Adapter` | `BackgroundTransformer` | Dart 実装の HTTP/2（`package:http2`、都度 `compute`） |
-| **③ native_dio** | `NativeAdapter` | `BackgroundTransformer` | ネイティブ通信（Cronet / URLSession）、Dart間はチャンクストリーム転送 |
-| **④ TurboFetch** | **`TurboHttpAdapter`** | **`TurboTransformer`** | **OS ネイティブ一括受信 ＋ 24KiB閾値ゼロコピー変換（本プラグイン）** |
+| **③ TurboFetch** | **`TurboHttpAdapter`** | **`TurboTransformer`** | **OS ネイティブ一括受信 ＋ 24KiB閾値ゼロコピー変換（本プラグイン）** |
+
+> ※ `native_dio_adapter`（`NativeAdapter`）は、ローカル HTTP/2 モックサーバーの自己署名証明書許可（`allowBadCertificates`）に非対応であり（Android Cronet 等の制約により全リクエストが即時 SSL エラーとなる）、また Windows デスクトップ環境ではネイティブ HTTP/2 に対応せず `IOHttpClientAdapter` へフォールバックされるため、比較対象から除外している。
 
 ---
 
@@ -71,7 +72,7 @@
 
 ### 4.2 分離計測の仕組み（共通ラッパー設計）
 
-4つのアダプタすべてで同一基準で分離するため、Dio のインターセプターおよびトランスフォーマーラッパーを用いて以下のように計測する：
+3つのアダプタすべてで同一基準で分離するため、Dio のインターセプターおよびトランスフォーマーラッパーを用いて以下のように計測する：
 
 - **Net Time**: `onRequest`（送信直前）〜 `ResponseBody` がアダプタから返却される瞬間までの経過時間。
 - **Parse Time**: `transformResponse` 呼び出し開始から、デコードおよびマッピングが完了してオブジェクトを返す瞬間までの経過時間（高並列時に Isolate セマフォ上限に達した場合のセマフォ獲得待ち時間を含め、アプリ側から見た実効完了待ち時間として計測する）。
@@ -91,8 +92,7 @@
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | ① IO (HTTP/1.1) | 3,420 ms | 32.1 ms / 58.4 ms | 4.8 ms / 7.2 ms | 12 (15.2%) | 42.1 ms | 85.4 MiB (+18.2 MiB) |
 | ② dio_http2 | 2,850 ms | 26.4 ms / 44.0 ms | 4.9 ms / 7.1 ms | 14 (17.5%) | 48.0 ms | 92.1 MiB (+24.9 MiB) |
-| ③ native_dio | 2,610 ms | 24.2 ms / 38.5 ms | 5.2 ms / 7.8 ms | 10 (12.8%) | 38.4 ms | 88.0 MiB (+20.8 MiB) |
-| **④ TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** | **1.2 ms / 2.1 ms** | **0 (0.0%)** | **8.2 ms** | **74.0 MiB (+6.8 MiB)** |
+| **③ TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** | **1.2 ms / 2.1 ms** | **0 (0.0%)** | **8.2 ms** | **74.0 MiB (+6.8 MiB)** |
 ```
 
 ---
@@ -105,11 +105,19 @@
    - 理由: 計測精度の担保（JIT/assert/オーバーヘッド排除）、デバッガ接続待ちによる画面停止防止、マルチ Isolate 起動時のハング防止。
 2. **HTTP/2 モックサーバー常駐**:
    - 事前に `node example/server/http2_mock_server.mjs` を起動（ポート 8443）しておくこと。
+   - 接続先ベース URL はターゲットプラットフォームに応じて以下のように解決する（UI 上での手動変更も可）：
+     - **Android エミュレータ**: `https://10.0.2.2:8443`
+     - **Windows / iOS Simulator / macOS / Linux**: `https://localhost:8443`
+     - **Android / iOS 物理実機**: ホストマシンの LAN IP（例: `https://192.168.x.x:8443`）またはポートフォワーディング（`adb reverse tcp:8443 tcp:8443`）
 
 ### 6.2 実行手順
 
 - **GUI 実行（推奨）**:
-  `fvm flutter build apk --release` でインストールし、アプリ画面の「Run All 4 Presets」を実行して Markdown 結果をコピー。
+  対象プラットフォーム向けに Release モードで起動またはビルド＆インストールし、アプリ画面の「Run All 3 Presets」を実行して Markdown 結果をコピーする。
+  - **Android**: `fvm flutter run --release -d <device_id>`（または `fvm flutter build apk --release`）
+  - **Windows**: `fvm flutter run --release -d windows`（または `fvm flutter build windows --release`）
+  - **iOS**: `fvm flutter run --release -d <device_id>`
+  - **macOS / Linux（将来拡張時）**: `fvm flutter run --release -d <macos|linux>`
 - **CLI 実行**:
   `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`
 
@@ -131,12 +139,11 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
    - 計測C: 20〜200KiB (20KiB刻み・10段階) × 10周、最大10並列
    ※各シナリオはプールされたワーカーで指定並列数を超えないよう順次キューイング制御すること。
 
-2. 4種のアダプタ構成の比較:
+2. 3種のアダプタ構成の比較:
    - ① IOHttpClientAdapter + BackgroundTransformer
    - ② Http2Adapter + BackgroundTransformer
-   - ③ NativeAdapter + BackgroundTransformer
-   - ④ TurboHttpAdapter + TurboTransformer
-   ※「個別実行」および「4構成一括連続実行」の両方をサポートすること。
+   - ③ TurboHttpAdapter + TurboTransformer
+   ※「個別実行」および「3構成一括連続実行」の両方をサポートすること。
 
 3. 通信時間とパース時間の公平な分離計測:
    - 全プリセット共通で Net Time（通信完了まで）と Parse Time（デコード完了まで）を
@@ -156,6 +163,14 @@ docs/architectures/benchmark.md に基づき、example/lib/main.dart（および
 
 ## 8. 実測結果の参照先
 
-本プロンプトおよび仕様に基づいて実施したベンチマークの実行結果、詳細データ、技術的評価レポートは以下を参照のこと。
+本仕様に基づいて実施したベンチマークの実測結果および技術評価レポートは、全プラットフォーム横断の総括ドキュメントと、プラットフォーム別の詳細ドキュメントに分割して管理する。
 
-- 📄 **[ベンチマーク実測結果・性能検証レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**
+- 📊 **[ベンチマーク総括レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**
+  - 全プラットフォーム横断のエグゼクティブサマリー、共通の計測境界仕様（Net Time / Parse Time、Jank 評価基準）、およびアーキテクチャ全体の結論。
+- 📁 **プラットフォーム別詳細レポート (`docs/benchmarks/`)**:
+  - 各 OS 固有の計測環境スペック、シナリオ A / B / C の実測データ（Markdown テーブル）、およびネイティブエンジン固有の技術分析を記録する。
+  - 🤖 **[Android (`docs/benchmarks/android.md`)](../../docs/benchmarks/android.md)** — `OkHttp3` 共有クライアント
+  - 🪟 **[Windows (`docs/benchmarks/windows.md`)](../../docs/benchmarks/windows.md)** — `WinHTTP` + OS Thread Pool
+  - 🍎 **iOS (`docs/benchmarks/ios.md`)** — `URLSession` *(順次追加予定)*
+  - 💻 **macOS (`docs/benchmarks/macos.md`)** *(将来追加予定)*
+  - 🐧 **Linux (`docs/benchmarks/linux.md`)** *(将来追加予定)*

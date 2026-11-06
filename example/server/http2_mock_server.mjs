@@ -121,7 +121,7 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   server = http2.createServer(handleRequest);
 }
 
-server.listen(port, '0.0.0.0', () => {
+server.listen(port, () => {
   console.log(`Endpoint example: /json?sizeKb=100&delayMs=20`);
   console.log(`Android Emulator URL: https://10.0.2.2:${port}/json?sizeKb=100`);
   console.log(`iOS Simulator URL:    https://localhost:${port}/json?sizeKb=100`);

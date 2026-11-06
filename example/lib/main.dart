@@ -85,7 +85,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     await _executeBenchmarks([preset]);
   }
 
-  /// Executes all four presets sequentially.
+  /// Executes all three presets sequentially.
   Future<void> _runAllPresets() async {
     if (_isRunning) return;
     await _executeBenchmarks(BenchmarkPreset.values);
@@ -340,7 +340,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               child: FilledButton.icon(
                 icon: const Icon(Icons.play_arrow),
                 label: const Text(
-                  'Run All 4 Presets (Recommended)',
+                  'Run All 3 Presets (Recommended)',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: _isRunning ? null : _runAllPresets,

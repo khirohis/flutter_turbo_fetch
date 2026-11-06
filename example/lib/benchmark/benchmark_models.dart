@@ -1,4 +1,4 @@
-/// Four adapter configuration presets for comparison.
+/// Three adapter configuration presets for comparison.
 enum BenchmarkPreset {
   ioHttp1(
     id: 'io_http1',
@@ -10,15 +10,10 @@ enum BenchmarkPreset {
     label: '(2) dio_http2_adapter (Dart HTTP/2)',
     shortName: '(2) dio_http2',
   ),
-  nativeDio(
-    id: 'native_dio',
-    label: '(3) native_dio_adapter (Stream Bridge)',
-    shortName: '(3) native_dio',
-  ),
   turboFetch(
     id: 'turbo_fetch',
-    label: '(4) TurboHttpAdapter + TurboTransformer',
-    shortName: '(4) TurboFetch',
+    label: '(3) TurboHttpAdapter + TurboTransformer',
+    shortName: '(3) TurboFetch',
   );
 
   const BenchmarkPreset({
