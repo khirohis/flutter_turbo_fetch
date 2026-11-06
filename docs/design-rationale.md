@@ -30,7 +30,7 @@ In Flutter applications (`package:dio`), making concurrent HTTP/2 requests for m
 | **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart side**<br>(Fragmented chunk ping-pong) | **Not Adopted (Used as baseline)**<br>Adherence to `StreamedResponse` causes per-chunk FFI round-trips and iOS header-pause latency that cannot be bypassed. |
 | **`ok_http`** | Android: `OkHttp` (`jnigen`) | **Dart side**<br>(Stream consumption) | **Not Adopted**<br>Constrained by the streaming model of `package:http`, missing out on the efficiency of batch native aggregation (`response.body.bytes()`). |
 | **`rhttp`** | All platforms: Rust `reqwest` + `tokio` | **Rust side batch concatenation** | **Not Adopted**<br>While offering batch byte assembly in Rust (`Body.bytes`), bundling static Rust binaries inflates app size by several MiB, bypasses platform TLS session caches and system certificate/proxy integration, and introduces Rust toolchain dependencies. |
-| **`flutter_turbo_fetch`**<br>(This plugin) | **Android: `OkHttp`**<br>**iOS: `URLSession.dataTask(with:completionHandler:)`** | **OS Native Background Batch Reception** | **Adopted Architecture**<br>Leverages platform-standard, lightweight network stacks. Completes chunk assembly entirely in OS background memory and delivers a single, unified `Uint8List` to Dart via Pigeon in one trip. |
+| **`flutter_turbo_fetch`**<br>(This plugin) | **Android: `OkHttp`**<br>**iOS: `URLSession.dataTask(with:completionHandler:)`**<br>**Windows: `WinHTTP` (`winhttp.dll`)** | **OS Native Background Batch Reception** | **Adopted Architecture**<br>Leverages platform-standard, lightweight network stacks. Completes chunk assembly entirely in OS background memory and delivers a single, unified `Uint8List` to Dart via Pigeon in one trip. |
 
 ---
 
@@ -45,7 +45,10 @@ Parsing JSON in native code (Kotlin / Swift) cannot directly allocate Dart heap 
 ### 3.3 Why avoid `NSURLSessionDataDelegate` on iOS?
 The delegate pattern incurs cross-thread, cross-language signaling overhead for every `didReceiveResponse:` and `didReceiveData:` invocation. By adopting `dataTask(with:completionHandler:)`, header negotiation through chunk concatenation are handled entirely within Apple's native CFNetwork pipeline (C/C++ background engine), while maintaining direct request cancellation via `URLSessionDataTask`.
 
-### 3.4 Why semaphore-governed `Isolate.run` instead of persistent worker pools (`SendPort.send`)?
+### 3.4 Why `WinHTTP` (`winhttp.dll`) with OS Thread Pool on Windows?
+Windows provides `WinHTTP` as a system-level C API baked directly into the OS (`winhttp.dll`, zero external binary footprint). Enabling `WINHTTP_PROTOCOL_FLAG_HTTP2` on a shared `HINTERNET` session unlocks kernel-assisted SChannel TLS decryption and HTTP/2 multiplexing across concurrent requests. Running synchronous `WinHTTP` calls inside a bounded Windows Thread Pool (`TP_POOL`) eliminates the complex state-machine and `HANDLE_CLOSING` use-after-free hazards of `WINHTTP_FLAG_ASYNC`, while allowing instant cross-thread cancellation via `WinHttpCloseHandle` and direct native buffer assembly into `std::vector<uint8_t>`.
+
+### 3.5 Why semaphore-governed `Isolate.run` instead of persistent worker pools (`SendPort.send`)?
 Persistent worker pools require returning results via `SendPort.send(result)`, which performs a deep copy (**Transitive Copy**) of the entire decoded object graph across isolated heaps (consuming 25% to 40% of total parsing time). In contrast, `Isolate.run` leverages `Isolate.exit` upon worker termination, transferring memory ownership of the object graph to the Main Isolate in **$O(1)$ zero-copy (a few microseconds)**.
 
 ---
@@ -53,7 +56,7 @@ Persistent worker pools require returning results via `SendPort.send(result)`, w
 ## 4. Evaluation of Dart ⇄ Native Communication Bridges
 
 ### Option A: Pigeon (`StandardMessageCodec` + Type-Safe Code Generation) — **Adopted**
-- Returns completed byte arrays as `byte[]` on Android and `FlutterStandardTypedData(bytes: Data)` on iOS in a single IPC exchange.
+- Returns completed byte arrays as `byte[]` on Android, `FlutterStandardTypedData(bytes: Data)` on iOS, and `std::vector<uint8_t>` on Windows in a single IPC exchange.
 - Because data is transferred **once per request** rather than once per chunk, Channel serialization and copy overhead (~0.02ms to 0.05ms for 100KiB) is negligible.
 - Provides superior thread safety, asynchronous background callback support, and compile-time type safety.
 

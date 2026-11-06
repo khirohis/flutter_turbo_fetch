@@ -14,12 +14,14 @@
 - **対象プラットフォーム**:
   - Android: `minSdk = 24`（Android 7.0+）
   - iOS: `13.0+`（CocoaPods / Swift Package Manager 両対応）
-  - ※ Web / Desktop は非サポート（`UnsupportedError`）
+  - Windows: Windows 10 バージョン 1809（Build 17763）以降（64-bit: x64 / ARM64）
+  - ※ Web / macOS / Linux は非サポート（`UnsupportedError`）
 - **主要技術スタック**:
   - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
   - **通信ブリッジ**: `pigeon`（型安全コード生成・`StandardMessageCodec`）
   - **Android**: Kotlin, `com.squareup.okhttp3:okhttp:4.12.0`（HTTP/2 共有クライアント）
   - **iOS**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
+  - **Windows**: C++17, `WinHTTP`（`winhttp.dll` HTTP/2 共有セッション + OS スレッドプール）
 
 ---
 
@@ -50,6 +52,7 @@
 本プロジェクトでは、「AI・メンテナー向けの作業場（`specs/`）」と「利用者向けの公開リファレンス（`docs/`）」をルートレベルで明確に分離しています。
 
 ### 内部仕様・管理（[`specs/`](specs/README.md)）— 日本語正本
+
 - **[`specs/roadmap.md`](specs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
 - **[`specs/guidelines/`](specs/guidelines/)**（開発ガイドライン・運用規約）:
   - [`language-policy.md`](specs/guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）。
@@ -59,11 +62,13 @@
   - [`native-layer.md`](specs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
   - [`android-native-layer.md`](specs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
   - [`ios-native-layer.md`](specs/architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）。
+  - [`windows-native-layer.md`](specs/architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP / クラス構成）。
   - [`dart-layer.md`](specs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
   - [`benchmark.md`](specs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
 - **`specs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。
 
 ### 公開リファレンス（[`docs/`](docs/README.md)）— 英語正本
+
 - **[`docs/`](docs/README.md)**（利用者のための技術解説・ホワイトペーパー）:
   - [`design-rationale.md`](docs/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
   - [`turbo-transformer.md`](docs/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
