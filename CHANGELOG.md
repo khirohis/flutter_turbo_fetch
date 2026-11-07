@@ -1,3 +1,9 @@
+## 0.0.2
+
+* **Windows Platform Support**: Added native Windows desktop support (x64 / ARM64) powered by WinHTTP with HTTP/2 multiplexing and OS thread pool execution.
+* **Typed `TurboOptions` Factories**: Added `TurboOptions.json`, `TurboOptions.bytes`, and `TurboOptions.plain` factory constructors for compile-time type-safe `mapper` inputs without manual casts.
+* **Documentation & Benchmarks**: Added multi-platform performance benchmark reports (Android & Windows) and refined API documentation.
+
 ## 0.0.1
 
 * Initial release of `flutter_turbo_fetch`.
