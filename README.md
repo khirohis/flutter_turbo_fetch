@@ -5,7 +5,7 @@
 
 A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
-`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS `URLSession` / Windows `WinHTTP`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
+`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS & macOS `URLSession` / Windows `WinHTTP`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
 
 ---
 
@@ -26,15 +26,16 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Dart** | `>= 3.5.0` | Supported |
 | **Dio** | `^5.4.0` | Supported |
 | **Android** | `minSdk = 24` (Android 7.0+) • `okhttp:4.12.0` | Tested & Benchmarked |
-| **iOS** | `iOS 13.0+` • SPM & CocoaPods | Implemented (Benchmarking Pending) |
+| **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
+| **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
 | **Web** | Not Supported | Out of Scope |
-| **macOS / Linux** | Not Supported | Future Consideration |
+| **Linux** | Not Supported | Future Consideration |
 
 > [!NOTE]
 >
-> - **iOS Status**: Native `URLSession` integration is fully implemented, but formal end-to-end performance benchmarking and stress testing have not yet been conducted.
-> - **Web & Other Desktop Platforms**: Web is not supported due to native OS transport requirements. Support for macOS and Linux is under consideration for future phases.
+> - **iOS & macOS Status**: Shared Darwin native `URLSession` integration (`sharedDarwinSource: true`) is implemented and unit-tested; formal end-to-end performance benchmarking reports are pending.
+> - **Web & Linux**: Web is not supported due to native OS transport requirements. Support for Linux is under consideration for future phases.
 
 ---
 
@@ -80,6 +81,15 @@ No special permissions are needed for HTTPS endpoints. If testing locally with c
     <key>NSAllowsLocalNetworking</key>
     <true/>
 </dict>
+```
+
+### macOS
+
+For macOS apps running with App Sandbox enabled (the default in Flutter), ensure outgoing network connections are permitted in both `macos/Runner/DebugProfile.entitlements` and `macos/Runner/Release.entitlements`:
+
+```xml
+<key>com.apple.security.network.client</key>
+<true/>
 ```
 
 ### Windows

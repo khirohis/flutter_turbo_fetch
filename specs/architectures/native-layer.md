@@ -1,4 +1,4 @@
-# ネイティブ層（Android / iOS / Windows）および通信ブリッジ仕様
+# ネイティブ層（Android / iOS / macOS / Windows）および通信ブリッジ仕様
 
 > 通信方式（MethodChannel/Pigeon vs FFI）の比較背景については [`docs/design-rationale.md`](../../docs/design-rationale.md) を参照。
 
@@ -10,14 +10,14 @@
 
 - **共通通信ブリッジ仕様（本ドキュメント）**: Dart ⇄ ネイティブ間の Pigeon データモデルおよび共通エラーコード体系
 - **Android ネイティブ層仕様**: [`android-native-layer.md`](./android-native-layer.md)（OkHttp3、3層クラス構成、リソース管理）
-- **iOS ネイティブ層仕様**: [`ios-native-layer.md`](./ios-native-layer.md)（URLSession、CFNetwork completionHandler 一括受信）
+- **iOS / macOS（Darwin）ネイティブ層仕様**: [`darwin-native-layer.md`](./darwin-native-layer.md)（URLSession、`sharedDarwinSource` 共通構成、CFNetwork completionHandler 一括受信、3層クラス構成）
 - **Windows ネイティブ層仕様**: [`windows-native-layer.md`](./windows-native-layer.md)（WinHTTP、OS スレッドプール、3層クラス構成）
 
 ---
 
 ## 2. Dart ⇄ ネイティブ間の通信ブリッジ仕様（Pigeon）
 
-通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、完成したレスポンスボディ `Uint8List`（Android `byte[]` / iOS `FlutterStandardTypedData` / Windows `std::vector<uint8_t>`）を 1 リクエストにつき 1 往復でやり取りする。
+通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、完成したレスポンスボディ `Uint8List`（Android `byte[]` / iOS・macOS `FlutterStandardTypedData` / Windows `std::vector<uint8_t>`）を 1 リクエストにつき 1 往復でやり取りする。
 
 ### 通信データモデル
 

@@ -23,7 +23,7 @@
 - [`architectures/architecture.md`](architectures/architecture.md): 一気通貫パイプライン構造と各層の責務境界
 - [`architectures/native-layer.md`](architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系
 - [`architectures/android-native-layer.md`](architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）
-- [`architectures/ios-native-layer.md`](architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）
+- [`architectures/darwin-native-layer.md`](architectures/darwin-native-layer.md): iOS / macOS（Darwin）ネイティブ層仕様（URLSession / クラス構成）
 - [`architectures/windows-native-layer.md`](architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP / クラス構成）
 - [`architectures/dart-layer.md`](architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様
 - [`architectures/benchmark.md`](architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト

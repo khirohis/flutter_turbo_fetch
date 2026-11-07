@@ -7,7 +7,7 @@
 ## 1. 一気通貫パイプライン構造
 
 ```text
-[ネイティブ層: Android (OkHttp3) / iOS (URLSession dataTask completionHandler) / Windows (WinHTTP)]
+[ネイティブ層: Android (OkHttp3) / iOS & macOS (URLSession dataTask completionHandler) / Windows (WinHTTP)]
   ├─ バックグラウンドスレッドで HTTP/2 並列通信・TLS 復号・ウィンドウ管理（OkHttp デフォルト 16MiB ウィンドウ / CFNetwork / WinHTTP SChannel）
   ├─ チャンク結合までをネイティブメモリ上で完結（デフォルトでサイズ制限なく最後まで受信、maxResponseBytes 指定時は上限超過を検知した時点で処理を中断しエラー返却）
   └─ 完成した byte[] / Data / std::vector<uint8_t> (Uint8List) を 1 リクエストにつき 1 回だけ Dart へ返却
@@ -34,7 +34,7 @@
 | レイヤー | 担当コンポーネント | 入力 | 出力 | 禁止事項 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Android 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboClientManager` (`OkHttp3`) | リクエスト情報 | 結合済み `byte[]`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
-| **iOS 通信層** | `FlutterTurboFetchPlugin` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
+| **iOS / macOS 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboSessionManager` (`URLSession` completionHandler) | リクエスト情報 | 結合済み `Data`・ステータス・ヘッダ | `NSURLSessionDataDelegate` の使用、ネイティブ JSON パース、途中データでの正常リターン |
 | **Windows 通信層** | `FlutterTurboFetchPlugin` + `TurboHttpExecutor` + `TurboSessionManager` (`WinHTTP`) | リクエスト情報 | 結合済み `std::vector<uint8_t>`・ステータス・ヘッダ | チャンク毎の通知、ネイティブ JSON パース、途中データでの正常リターン |
 | **Dart Adapter 層** | `TurboHttpAdapter` (`HttpClientAdapter`) | `RequestOptions`, `Stream<Uint8List>?` | `ResponseBody.fromBytes(Uint8List)`（単一チャンクストリーム） | チャンク分割送信・別アダプタへの不要なフォールバック |
 | **Dart Transform 層** | `TurboTransformer` (`BackgroundTransformer`) + `TurboOptions` | 単一チャンク `ResponseBody`, `RequestOptions` | `ResponseType` に応じた一次デコードデータ（`stream`, `bytes`, `plain`, `json`）、または `mapper` フック実行後の変換オブジェクト | JSON 変換時の中間 `String` 生成、常駐 Isolate (`SendPort.send`)、無制限な Isolate 起動 |
@@ -60,12 +60,14 @@ flutter_turbo_fetch/
 │       ├── TurboHttpExecutor.kt           # Android OkHttp3 通信実行・Call 管理層
 │       ├── TurboClientManager.kt          # Android OkHttp3 クライアント・接続管理層
 │       └── Messages.g.kt                  # Pigeon 自動生成コード（Kotlin 側）
-├── ios/
-│   ├── flutter_turbo_fetch.podspec        # CocoaPods 定義（iOS 13.0+）
+├── darwin/
+│   ├── flutter_turbo_fetch.podspec        # CocoaPods 定義（iOS 13.0+ / macOS 10.15+ 共通）
 │   └── flutter_turbo_fetch/
-│       ├── Package.swift                  # Swift Package Manager 定義（iOS 13.0+）
+│       ├── Package.swift                  # Swift Package Manager 定義（iOS 13.0+ / macOS 10.15+ 共通）
 │       └── Sources/flutter_turbo_fetch/
-│           ├── FlutterTurboFetchPlugin.swift # iOS FlutterPlugin + URLSession 実装
+│           ├── FlutterTurboFetchPlugin.swift # iOS / macOS FlutterPlugin インターフェース層
+│           ├── TurboHttpExecutor.swift       # URLSession 通信実行・Task 管理層
+│           ├── TurboSessionManager.swift     # URLSession 共有セッション・Delegate 管理層
 │           └── Messages.g.swift           # Pigeon 自動生成コード（Swift 側）
 ├── windows/
 │   ├── CMakeLists.txt                     # Windows CMake ビルド定義（winhttp リンク）
