@@ -51,7 +51,7 @@ Or add them directly to your `pubspec.yaml`:
 ```yaml
 dependencies:
   dio: ^5.4.0
-  flutter_turbo_fetch: ^0.0.1
+  flutter_turbo_fetch: ^0.0.2
 ```
 
 ---
@@ -161,7 +161,7 @@ Compared to traditional HTTP/1.1 and streaming Dart adapters, `flutter_turbo_fet
 
 - **Up to 3x faster end-to-end response times** under high concurrency.
 - **Zero UI frame drops (60/120 FPS preserved)** during multi-megabyte JSON decoding and model mapping.
-- **Minimal memory footprints** via native Okio/CFNetwork buffering and zero-copy Isolate transfers.
+- **Minimal memory footprints** via native Okio/CFNetwork/WinHTTP buffering and zero-copy Isolate transfers.
 
 To run benchmarks locally or view full empirical metrics on physical/emulator hardware:
 
