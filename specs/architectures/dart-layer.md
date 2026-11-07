@@ -33,7 +33,7 @@ final User user = response.data!;
 
 ### 2.1 サポート対象（全 `ResponseType` をネイティブ一括受信で統一処理）
 
-- **対応プラットフォーム**: Android / iOS / Windows（それ以外の OS で実行された場合は `UnsupportedError` をスローする。ただし `hostApi` が注入された場合は検証をスキップ）
+- **対応プラットフォーム**: Android / iOS / macOS / Windows（それ以外の OS で実行された場合は `UnsupportedError` をスローする。ただし `hostApi` が注入された場合は検証をスキップ）
 - **HTTP メソッド**: GET / POST / PUT / DELETE / PATCH / HEAD 等の基本メソッド
 - **リクエスト**:
   - リクエストヘッダ: ヘッダ値が `Iterable`（配列等）の場合はカンマ区切り（`', '`）文字列に自動結合してネイティブへ渡す。

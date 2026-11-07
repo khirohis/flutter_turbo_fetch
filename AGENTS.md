@@ -13,14 +13,14 @@
 
 - **対象プラットフォーム**:
   - Android: `minSdk = 24`（Android 7.0+）
-  - iOS: `13.0+`（CocoaPods / Swift Package Manager 両対応）
+  - iOS: `13.0+` / macOS: `10.15+`（`sharedDarwinSource: true` による `darwin/` 共通実装、CocoaPods / Swift Package Manager 両対応）
   - Windows: Windows 10 バージョン 1809（Build 17763）以降（64-bit: x64 / ARM64）
-  - ※ Web / macOS / Linux は非サポート（`UnsupportedError`）
+  - ※ Web / Linux は非サポート（`UnsupportedError`）
 - **主要技術スタック**:
   - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
   - **通信ブリッジ**: `pigeon`（型安全コード生成・`StandardMessageCodec`）
   - **Android**: Kotlin, `com.squareup.okhttp3:okhttp:4.12.0`（HTTP/2 共有クライアント）
-  - **iOS**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
+  - **iOS / macOS (Darwin)**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
   - **Windows**: C++17, `WinHTTP`（`winhttp.dll` HTTP/2 共有セッション + OS スレッドプール）
 
 ---
@@ -61,7 +61,7 @@
   - [`architecture.md`](specs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
   - [`native-layer.md`](specs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
   - [`android-native-layer.md`](specs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
-  - [`ios-native-layer.md`](specs/architectures/ios-native-layer.md): iOS ネイティブ層仕様（URLSession）。
+  - [`darwin-native-layer.md`](specs/architectures/darwin-native-layer.md): iOS / macOS（Darwin）ネイティブ層仕様（URLSession / クラス構成）。
   - [`windows-native-layer.md`](specs/architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP / クラス構成）。
   - [`dart-layer.md`](specs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
   - [`benchmark.md`](specs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。

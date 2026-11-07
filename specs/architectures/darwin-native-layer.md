@@ -1,4 +1,4 @@
-# iOS ネイティブ層仕様（URLSession）
+# iOS / macOS（Darwin）ネイティブ層仕様（URLSession）
 
 > 通信ブリッジ仕様・データモデル・共通エラーコード定義については [`native-layer.md`](./native-layer.md) を参照。
 
@@ -6,7 +6,8 @@
 
 ## 1. 概要 & 技術スタック
 
-- **ターゲット**: `iOS 13.0+`
+- **ターゲット**: `iOS 13.0+` / `macOS 10.15+`
+- **ソース構成**: Flutter `sharedDarwinSource: true` による `darwin/` ディレクトリ単一ソース共有
 - **パッケージマネージャー**: Swift Package Manager（SPM）および CocoaPods 両対応
 - **主要基盤**: `Foundation.URLSession`（CFNetwork completionHandler による OS レベル一括受信）
 - **主要プロトコル**: HTTP/2（ALPN ネゴシエーション）、HTTP/1.1 フォールバック
@@ -44,7 +45,10 @@ Flutter Engine / Pigeon との結合層、1 リクエストの通信実行・実
 
 ### ① `FlutterTurboFetchPlugin`（Flutter インターフェース層）
 
-- **役割**: Flutter Engine / Pigeon とのブリッジおよびメインスレッドへのコールバック返却。`URLSession` への直接依存を持たない。
+- **役割**: Flutter Engine（iOS `Flutter` / macOS `FlutterMacOS`）および Pigeon とのブリッジ、メインスレッドへのコールバック返却。`URLSession` への直接依存を持たない。
+- **プラットフォーム差分の吸収**:
+  - `#if os(iOS) import Flutter #elseif os(macOS) import FlutterMacOS #endif` により両 OS のプラグインフレームワークを単一ファイルで切り替える。
+  - `FlutterPluginRegistrar` からの `FlutterBinaryMessenger` 取得差分（iOS: `registrar.messenger()` メソッド / macOS: `registrar.messenger` プロパティ）をヘルパーメソッド `messenger(from:)` で吸収する。
 - **保持する状態**:
   - `executor`: `TurboHttpExecutor`
 - **公開 / 内部インターフェース**:
