@@ -9,7 +9,7 @@ import 'package:pigeon/pigeon.dart';
       package: 'io.github.khirohis.flutter_turbo_fetch',
     ),
     swiftOut:
-        'ios/flutter_turbo_fetch/Sources/flutter_turbo_fetch/Messages.g.swift',
+        'darwin/flutter_turbo_fetch/Sources/flutter_turbo_fetch/Messages.g.swift',
     cppHeaderOut: 'windows/messages.g.h',
     cppSourceOut: 'windows/messages.g.cpp',
     cppOptions: CppOptions(

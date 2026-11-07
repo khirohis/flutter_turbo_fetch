@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "flutter_turbo_fetch",
     platforms: [
-        .iOS("13.0")
+        .iOS("13.0"),
+        .macOS("10.15")
     ],
     products: [
         .library(name: "flutter-turbo-fetch", targets: ["flutter_turbo_fetch"])
