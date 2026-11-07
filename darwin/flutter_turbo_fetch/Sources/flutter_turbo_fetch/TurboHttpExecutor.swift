@@ -1,4 +1,10 @@
-import Flutter
+#if os(iOS)
+  import Flutter
+#elseif os(macOS)
+  import FlutterMacOS
+#else
+  #error("Unsupported platform.")
+#endif
 import Foundation
 
 /// URLSession request execution and in-flight task management layer responsible for

@@ -1,4 +1,10 @@
-import Flutter
+#if os(iOS)
+  import Flutter
+#elseif os(macOS)
+  import FlutterMacOS
+#else
+  #error("Unsupported platform.")
+#endif
 import Foundation
 
 /// Flutter plugin interface layer bridging Pigeon HostApi and main-thread callback dispatch.
@@ -16,13 +22,24 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterTurboFetchPlugin()
-    TurboFetchHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
+    TurboFetchHostApiSetup.setUp(binaryMessenger: messenger(from: registrar), api: instance)
     registrar.publish(instance)
   }
 
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
-    TurboFetchHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: nil)
+    TurboFetchHostApiSetup.setUp(
+      binaryMessenger: Self.messenger(from: registrar),
+      api: nil
+    )
     executor.shutdown()
+  }
+
+  private static func messenger(from registrar: FlutterPluginRegistrar) -> FlutterBinaryMessenger {
+    #if os(iOS)
+      return registrar.messenger()
+    #elseif os(macOS)
+      return registrar.messenger
+    #endif
   }
 
   func executeRequest(
