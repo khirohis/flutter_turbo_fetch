@@ -10,7 +10,7 @@
 
 - **共通通信ブリッジ仕様（本ドキュメント）**: Dart ⇄ ネイティブ間の Pigeon データモデルおよび共通エラーコード体系
 - **Android ネイティブ層仕様**: [`android-native-layer.md`](./android-native-layer.md)（OkHttp3、3層クラス構成、リソース管理）
-- **iOS ネイティブ層仕様**: [`ios-native-layer.md`](./ios-native-layer.md)（URLSession、CFNetwork completionHandler 一括受信）
+- **iOS ネイティブ層仕様**: [`ios-native-layer.md`](./ios-native-layer.md)（URLSession、CFNetwork completionHandler 一括受信、3層クラス構成）
 - **Windows ネイティブ層仕様**: [`windows-native-layer.md`](./windows-native-layer.md)（WinHTTP、OS スレッドプール、3層クラス構成）
 
 ---
