@@ -38,7 +38,7 @@ In Flutter applications (`package:dio`), making concurrent HTTP/2 requests for m
 
 ### 3.1 Why not parse JSON in the native layer?
 
-Parsing JSON in native code (Kotlin / Swift) cannot directly allocate Dart heap objects (`Map` / `List`). Doing so would require **double serialization** (native serialization / encoding into binary codecs + Dart deserialization), which is slower than passing raw bytes. The native layer achieves maximum performance by focusing strictly on **batch assembly and zero-copy return of raw byte arrays (`Uint8List`)**.
+Parsing JSON in native code (Kotlin / Swift / C++) cannot directly allocate Dart heap objects (`Map` / `List`). Doing so would require **double serialization** (native serialization / encoding into binary codecs + Dart deserialization), which is slower than passing raw bytes. The native layer achieves maximum performance by focusing strictly on **batch assembly and zero-copy return of raw byte arrays (`Uint8List`)**.
 
 ### 3.2 Why OkHttp instead of Cronet on Android?
 

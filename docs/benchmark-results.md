@@ -40,7 +40,7 @@ All benchmark scenarios evaluate three adapter and transformer combinations back
 
 ## 2. Cross-Platform Performance Highlights
 
-Across both mobile (Android) and desktop (Windows) environments, **(3) TurboFetch** outperforms standard Dio configurations by **2.1x to 15.8x in total wall-clock completion time** and up to **17.6x in per-request effective latency**.
+Across both mobile (Android) and desktop (Windows) environments, **(3) TurboFetch** outperforms standard Dio configurations by **2.1x to 15.8x in total wall-clock completion time** and up to **17.7x in per-request effective latency**.
 
 ### 2.1 Total Wall-Clock Time Comparison
 

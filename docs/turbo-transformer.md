@@ -66,7 +66,7 @@ class TurboOptions<T> extends Options {
     super.validateStatus,
     super.receiveDataWhenStatusError,
     super.followRedirects,
-    super.maxRedirects, // Note: Ignored as native OkHttp/URLSession handle redirects internally
+    super.maxRedirects, // Note: Ignored as native OkHttp/URLSession/WinHTTP handle redirects internally
     super.persistentConnection,
     super.requestEncoder,
     super.responseDecoder,
