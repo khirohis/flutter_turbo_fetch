@@ -281,9 +281,12 @@ void main() {
       );
     });
 
-    test('checks platform support (Android, iOS, Windows allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
+    test('checks platform support (Android, iOS, macOS, Windows allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
       final adapter = TurboHttpAdapter();
-      if (Platform.isAndroid || Platform.isIOS || Platform.isWindows) {
+      if (Platform.isAndroid ||
+          Platform.isIOS ||
+          Platform.isMacOS ||
+          Platform.isWindows) {
         // Supported platforms pass the platform guard and reach the Pigeon HostApi call
         // (which throws a DioException in unit tests without an active binary messenger).
         await expectLater(
