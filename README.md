@@ -52,7 +52,7 @@ Or add them directly to your `pubspec.yaml`:
 ```yaml
 dependencies:
   dio: ^5.4.0
-  flutter_turbo_fetch: ^0.0.2
+  flutter_turbo_fetch: ^0.0.3
 ```
 
 ---
