@@ -1,3 +1,8 @@
+## 0.0.3
+
+* **macOS Platform Support**: Added native macOS desktop support (`macOS 10.15+`) via a unified Darwin (`sharedDarwinSource: true`) implementation powered by `URLSession`, supporting both Swift Package Manager (SPM) and CocoaPods.
+* **Darwin 3-Layer Native Architecture**: Refactored the iOS/macOS native layer into a clean 3-layer separation of concerns (`FlutterTurboFetchPlugin`, `TurboHttpExecutor`, and `TurboSessionManager`) with dedicated `XCTest` unit test suites.
+
 ## 0.0.2
 
 * **Windows Platform Support**: Added native Windows desktop support (x64 / ARM64) powered by WinHTTP with HTTP/2 multiplexing and OS thread pool execution.
