@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show sleep;
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -7,10 +8,12 @@ import 'package:flutter_turbo_fetch/flutter_turbo_fetch.dart';
 import 'package:flutter_turbo_fetch/src/messages.g.dart';
 
 /// Test double for [TurboFetchHostApi].
+///
+/// If [onExecute] is omitted, defaults to returning HTTP 200 OK with an empty body.
 class FakeTurboFetchHostApi extends TurboFetchHostApi {
-  FakeTurboFetchHostApi({required this.onExecute, this.onCancel});
+  FakeTurboFetchHostApi({this.onExecute, this.onCancel});
 
-  final Future<TurboHttpResponse> Function(TurboHttpRequest request) onExecute;
+  final Future<TurboHttpResponse> Function(TurboHttpRequest request)? onExecute;
   final void Function(String requestId)? onCancel;
 
   TurboHttpRequest? lastRequest;
@@ -21,7 +24,8 @@ class FakeTurboFetchHostApi extends TurboFetchHostApi {
   Future<TurboHttpResponse> executeRequest(TurboHttpRequest request) {
     lastRequest = request;
     requests.add(request);
-    return onExecute(request);
+    return onExecute?.call(request) ??
+        Future.value(TurboHttpResponse(statusCode: 200, body: Uint8List(0)));
   }
 
   @override
@@ -41,6 +45,9 @@ class TestUser {
 
   @override
   int get hashCode => name.hashCode;
+
+  @override
+  String toString() => 'TestUser(name: $name)';
 }
 
 /// Helper to configure a standard [Dio] instance wired with turbo components.
@@ -58,18 +65,23 @@ Dio createTestDio(
   return dio;
 }
 
-// Top-level mappers for Worker Isolate tests (per TurboOptions isolate safety spec)
+// Top-level mappers for Worker Isolate tests (per TurboOptions isolate safety spec).
+// Must remain top-level or static functions to ensure cross-isolate transferability via Isolate.run.
+
+/// Computes length and first byte offset in Worker Isolate.
 int bytesLengthAndFirstByteMapper(dynamic data) {
   final bytes = data as Uint8List;
   return bytes.lengthInBytes + (bytes.isNotEmpty ? bytes[0] : 0);
 }
 
+/// Inspects string length and Worker Isolate debug name.
 String plainSummaryMapper(dynamic data) {
   final text = data as String;
   final isolateName = Isolate.current.debugName ?? 'unknown';
   return 'len=${text.length};isolate=$isolateName';
 }
 
+/// Inspects JSON array count and Worker Isolate debug name.
 Map<String, Object?> jsonIsolateInspectorMapper(dynamic data) {
   final map = data as Map<String, dynamic>;
   return <String, Object?>{
@@ -78,11 +90,9 @@ Map<String, Object?> jsonIsolateInspectorMapper(dynamic data) {
   };
 }
 
+/// Simulates a short Worker Isolate task with sleep to test semaphore queuing.
 int slowWorkerMapper(dynamic data) {
-  final sw = Stopwatch()..start();
-  while (sw.elapsedMilliseconds < 40) {
-    // Busy wait 40ms inside Worker Isolate to test semaphore queuing deterministically
-  }
+  sleep(const Duration(milliseconds: 40));
   final map = data as Map<String, dynamic>;
   return map['id'] as int;
 }

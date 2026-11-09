@@ -29,12 +29,11 @@ void main() {
     });
 
     group('ResponseType decoding (below threshold & streaming)', () {
-      test('supports all 4 ResponseTypes with and without mapper (below threshold)', () async {
+      test('decodes ResponseType.stream with and without mapper on Main Isolate', () async {
         final transformer = TurboTransformer(isolateThresholdBytes: 24 * 1024);
-
-        // 1. ResponseType.stream
         final streamBytes = Uint8List.fromList(<int>[1, 2, 3]);
         final streamBody = ResponseBody.fromBytes(streamBytes, 200);
+
         final streamResult = await transformer.transformResponse(
           RequestOptions(path: '/s', responseType: ResponseType.stream),
           streamBody,
@@ -49,9 +48,12 @@ void main() {
           ResponseBody.fromBytes(streamBytes, 206),
         );
         expect(mappedStreamResult, 206);
+      });
 
-        // 2. ResponseType.bytes
+      test('decodes ResponseType.bytes with and without mapper on Main Isolate', () async {
+        final transformer = TurboTransformer(isolateThresholdBytes: 24 * 1024);
         final rawBytes = Uint8List.fromList(<int>[7, 8, 9]);
+
         final bytesResult = await transformer.transformResponse(
           RequestOptions(path: '/b', responseType: ResponseType.bytes),
           ResponseBody.fromBytes(rawBytes, 200),
@@ -66,9 +68,12 @@ void main() {
           ResponseBody.fromBytes(rawBytes, 200),
         );
         expect(mappedBytesResult, 3 + 7);
+      });
 
-        // 3. ResponseType.plain
+      test('decodes ResponseType.plain with and without mapper on Main Isolate', () async {
+        final transformer = TurboTransformer(isolateThresholdBytes: 24 * 1024);
         final plainBytes = Uint8List.fromList(utf8.encode('hello turbo'));
+
         final plainResult = await transformer.transformResponse(
           RequestOptions(path: '/p', responseType: ResponseType.plain),
           ResponseBody.fromBytes(plainBytes, 200),
@@ -83,9 +88,12 @@ void main() {
           ResponseBody.fromBytes(plainBytes, 200),
         );
         expect(mappedPlainResult, 'HELLO TURBO');
+      });
 
-        // 4. ResponseType.json
+      test('decodes ResponseType.json with and without mapper on Main Isolate', () async {
+        final transformer = TurboTransformer(isolateThresholdBytes: 24 * 1024);
         final jsonBytes = Uint8List.fromList(utf8.encode('{"status":"ok"}'));
+
         final jsonResult = await transformer.transformResponse(
           RequestOptions(path: '/j', responseType: ResponseType.json),
           ResponseBody.fromBytes(jsonBytes, 200),
@@ -102,10 +110,27 @@ void main() {
         expect(mappedJsonResult, 'ok');
       });
 
-      test('handles empty payloads (0 bytes) for plain and json', () async {
+      test('handles empty payloads (0 bytes) for all 4 ResponseTypes', () async {
         final transformer = TurboTransformer();
         final emptyBytes = Uint8List(0);
 
+        // 1. stream empty payload
+        final streamEmpty = ResponseBody.fromBytes(emptyBytes, 200);
+        final streamResult = await transformer.transformResponse(
+          RequestOptions(path: '/s', responseType: ResponseType.stream),
+          streamEmpty,
+        );
+        expect(identical(streamResult, streamEmpty), isTrue);
+
+        // 2. bytes empty payload
+        final bytesEmpty = await transformer.transformResponse(
+          RequestOptions(path: '/b', responseType: ResponseType.bytes),
+          ResponseBody.fromBytes(emptyBytes, 200),
+        );
+        expect(bytesEmpty, isA<Uint8List>());
+        expect((bytesEmpty as Uint8List).lengthInBytes, 0);
+
+        // 3. plain empty payload
         final plainEmpty = await transformer.transformResponse(
           RequestOptions(path: '/p', responseType: ResponseType.plain),
           ResponseBody.fromBytes(emptyBytes, 200),
@@ -121,6 +146,7 @@ void main() {
         );
         expect(plainEmptyMapped, 'empty:true');
 
+        // 4. json empty payload
         final jsonEmpty = await transformer.transformResponse(
           RequestOptions(path: '/j', responseType: ResponseType.json),
           ResponseBody.fromBytes(emptyBytes, 204),
@@ -230,6 +256,20 @@ void main() {
 
         expect(jsonMapped['count'], 60);
         expect(jsonMapped['isolateDebugName'], isNot(equals(mainIsolateName)));
+      });
+
+      test('keeps ResponseType.stream on Main Isolate even when payload >= isolateThresholdBytes', () async {
+        final transformer = TurboTransformer(isolateThresholdBytes: 1024);
+        final largeStreamBytes = Uint8List(4096);
+        final streamBody = ResponseBody.fromBytes(largeStreamBytes, 200);
+
+        final result = await transformer.transformResponse(
+          RequestOptions(path: '/large-stream', responseType: ResponseType.stream),
+          streamBody,
+        );
+
+        // Stream must never be offloaded to Worker Isolate and returned as-is
+        expect(identical(result, streamBody), isTrue);
       });
 
       test('returns bytes directly on Main Isolate when bytes >= isolateThresholdBytes but mapper is null', () async {
