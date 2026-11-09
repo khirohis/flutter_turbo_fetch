@@ -1,79 +1,38 @@
-# 開発ロードマップ・ステップ一覧
+# 開発ロードマップ・履歴
 
-本プロジェクト（`flutter_turbo_fetch`）は、Flutter Plugin パッケージ構成（＋ `example/` アプリでのベンチマーク検証）として段階的に開発を進める。各層の詳細仕様は [`specs/architectures/`](architectures/) を参照。
-
----
-
-## Phase 0: 事前設計・既存パッケージ検証・アーキテクチャ確定
-
-- [x] **0-1. `pub.dev` 既存パッケージ（特に `rhttp`）の適合性判断**
-  - `rhttp` は不採用とし、OS 標準/軽量な `OkHttp` + `URLSession` で自作プラグインを構築する方針に確定（[`docs/design-rationale.md`](../docs/design-rationale.md)）。
-- [x] **0-2. プラグインの責務（Dio `HttpClientAdapter` & `Transformer` 準拠範囲）の定義**
-  - `TurboHttpAdapter` / `TurboTransformer` / `TurboOptions` の責務と 4 種の `ResponseType`（`stream` / `bytes` / `plain` / `json`）＋カスタムマッパー対応、非対応 OS での `UnsupportedError` 仕様を確定（[`specs/architectures/dart-layer.md`](architectures/dart-layer.md)）。
-- [x] **0-3. Dart ⇄ ネイティブ間の通信ブリッジ方式の選定**
-  - Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）を採用（[`specs/architectures/native-layer.md`](architectures/native-layer.md)）。
-- [x] **0-4. ターゲット環境・ネイティブ依存ライブラリのバージョン定義**
-  - Dart `^3.5.0`、Flutter `>=3.24.0`、`dio: ^5.4.0`、Android `minSdk = 24`（`okhttp:4.12.0`）、iOS `13.0+`（SPM / CocoaPods 両対応）に確定。
+本プロジェクト（`flutter_turbo_fetch`）の段階的な開発フェーズと達成履歴。各層の現行仕様は [`specs/architectures/`](architectures/) を参照。
 
 ---
 
-## Phase 1: Plugin 雛形構築 & 最小パイプライン実装・ベンチマーク検証（PoC）
+## Phase 0: 事前設計・アーキテクチャ確定
+- [x] **0-1. 既存パッケージ評価**: `rhttp` 等との比較検証を経て、OS 標準/軽量スタックによるネイティブ一括受信プラグインの自作方針を確定（[`docs/design-rationale.md`](../docs/design-rationale.md)）。
+- [x] **0-2. Dart 層責務定義**: `TurboHttpAdapter` / `TurboTransformer` / `TurboOptions` の責務と 4 種の `ResponseType` 対応仕様を確定。
+- [x] **0-3. 通信ブリッジ選定**: Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）を採用。
+- [x] **0-4. 初期ターゲット定義**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`, Android `minSdk = 24`（`okhttp:4.12.0`）, iOS `13.0+` に確定。
 
-- [x] **1-1. Flutter Plugin プロジェクト雛形の作成とディレクトリ設計**
-  - 単一パッケージ構成（`lib/`, `pigeons/`, `android/`, `ios/`, `example/`）および Pigeon コード生成基盤を構築（[`specs/architectures/architecture.md`](architectures/architecture.md)）。
-- [x] **1-2. ベンチマーク用 `example/` アプリとモック/検証サーバー環境の準備**
-  - HTTP/2 モックサーバー（`example/server/http2_mock_server.mjs`）と 4 プリセット比較ベンチマークアプリ（`example/lib/main.dart`）を実装。
-- [x] **1-3. Android ネイティブ層（`OkHttp` 一括受信）の基本実装**
-  - `FlutterTurboFetchPlugin.kt` / `TurboHttpExecutor.kt` / `TurboClientManager.kt` にて共有 `OkHttpClient` によるバックグラウンド一括受信・キャンセル・自己署名証明書許可を実装（[`specs/architectures/android-native-layer.md`](architectures/android-native-layer.md)）。
-- [x] **1-4. iOS ネイティブ層（`URLSession` Completion 一括受信）の基本実装**
-  - `FlutterTurboFetchPlugin.swift` / `TurboHttpExecutor.swift` / `TurboSessionManager.swift` にて `URLSession.dataTask(with:completionHandler:)` による一括受信・キャンセル・自己署名証明書許可を実装（[`specs/architectures/darwin-native-layer.md`](architectures/darwin-native-layer.md)）。
-- [x] **1-5. `TurboHttpAdapter` ＋ `TurboTransformer` の結合と並列ベンチマーク検証**
-  - ネイティブ一括受信〜ゼロコピー変換パイプラインを結合し、ベースライン（`IOHttpClientAdapter` / `dio_http2_adapter` / `native_dio_adapter`）に対する速度・UI フレームスパイク抑制の優位性を実証。
+## Phase 1: Plugin 雛形構築 & 最小パイプライン実証（PoC）
+- [x] **1-1. プロジェクト雛形構築**: 単一パッケージ構成および Pigeon コード生成基盤を構築。
+- [x] **1-2. ベンチマーク環境準備**: HTTP/2 モックサーバー（`example/server/`）と比較ベンチマークアプリ（`example/`）を実装。
+- [x] **1-3. Android 基本実装**: `OkHttp3` 共有クライアントによるバックグラウンド一括受信を実装。
+- [x] **1-4. iOS 基本実装**: `URLSession.dataTask(completionHandler:)` による一括受信を実装。
+- [x] **1-5. パイプライン結合検証**: ネイティブ一括受信〜ゼロコピー Isolate 変換を結合し、既存アダプタに対する速度・UI スムーズネスの優位性を実証。
 
----
+## Phase 2: プロダクション機能の本実装
+- [x] **2-1. Pigeon スキーマ拡張**: `maxResponseBytes`・`errorCode`・`cancelRequest(requestId)` 等を含む本番スキーマを確定。
+- [x] **2-2. Android プロダクション対応**: 3 層クラス分離、`maxResponseBytes` 上限チェック、3 フェーズタイムアウト分類、Engine デタッチ時クリーンアップを実装。
+- [x] **2-3. iOS プロダクション対応**: 3 層クラス分離、`maxResponseBytes` 上限チェック、フェーズ別タイマー、Engine デタッチ時クリーンアップを実装。
+- [x] **2-4. Dart API 仕上げ**: `TurboOptions<T>`（型安全ファクトリ `.json` / `.bytes` / `.plain` 含む）、`ResponseType.stream` 単一チャンク統一、動的デフォルトセマフォ制御を実装。
+- [x] **2-5. エラーマッピング統一**: ネイティブ共通エラーコードと `DioExceptionType` の一貫したマッピングおよび異常系検証を完了。
 
-## Phase 2: プロダクション機能の本実装（キャンセル・タイムアウト・エラー統合）
+## Phase 3: テスト・パッケージ品質・公開基盤整備
+- [x] **3-1. 自動テスト & マイクロベンチマーク整備**: Dart 層・各 OS ネイティブ層の単体テスト、Dart マイクロベンチマーク、結合テストを整備。
+- [x] **3-2. ドキュメント整備 & 言語分離**: `specs/`（日本語内部仕様）と `docs/`（英語技術リファレンス）の分離、`README.md` 整備、`pub.dev` 公開設定（v0.0.1 リリース）を完了。
 
-PoC で実証したコアパイプラインに対し、実運用で必須となる通信制御・ライフサイクル管理・エラーマッピング・カスタムオブジェクトマッピングを完備するフェーズ。
+## Phase 4: パフォーマンス比較ベンチマーク基盤の確立
+- [x] **4-1. 分離計測エンジン実装**: Net Time / Parse Time 分離計測ラッパー、並列スイープ実行エンジン、Jank（`FrameTiming`）およびメモリ（RSS）監視を実装。
+- [x] **4-2. ベンチマーク UI & エクスポート**: シナリオ A / B / C の一括比較実行 UI および Markdown テーブル出力機能を実装。
+- [x] **4-3. 実測レポート作成**: 実機・デスクトップでの計測結果および技術分析を [`docs/benchmark-results.md`](../docs/benchmark-results.md) および `docs/benchmarks/` に体系化。
 
-- [x] **2-1. 通信インターフェース（Pigeon スキーマ）の確定・拡張**
-  - [`specs/architectures/native-layer.md`](architectures/native-layer.md) に基づき、リクエスト情報（`maxResponseBytes` 追加等）・レスポンス情報・`cancelRequest(requestId)` のスキーマを確定しコードを再生成する。
-- [x] **2-2. Android Plugin クラス（`FlutterPlugin`）のプロダクション対応**
-  - [`specs/architectures/android-native-layer.md`](architectures/android-native-layer.md) に基づき、`maxResponseBytes` 指定時のサイズ上限チェック（超過時は即座にストリームを切断し `maxResponseBytesExceeded` を返却）、3層責務構造、および Engine デタッチ時のリソース解放を実装する。
-- [x] **2-3. iOS Plugin クラス（`FlutterPlugin`）のプロダクション対応**
-  - [`specs/architectures/darwin-native-layer.md`](architectures/darwin-native-layer.md) に基づき、`maxResponseBytes` 指定時のサイズ上限チェック（超過時は `maxResponseBytesExceeded` を返却）、3層責務構造、および Engine デタッチ時のリソース解放（`invalidateAndCancel()`）を実装する。
-- [x] **2-4. `TurboHttpAdapter`、`TurboTransformer` & `TurboOptions` の API 仕上げ**
-  - [`specs/architectures/dart-layer.md`](architectures/dart-layer.md) に基づき、`TurboOptions<T>`（`mapper` / `maxResponseBytes`）の実装、`TurboHttpAdapter` のフォールバック廃止（`ResponseType.stream` の単一チャンクラップ統一）、`TurboTransformer` の 4 データ種別＋マッパー対応および動的デフォルトセマフォ数設定を実装する。
-- [x] **2-5. エラーハンドリングと `DioException` マッピングの統一・異常系検証**
-  - Android / iOS のネイティブエラーおよび `maxResponseBytesExceeded` を `DioExceptionType` へ一貫してマッピングし、キャンセル・タイムアウト・TLS エラー・サイズ上限超過・非 200 系ステータスの挙動を検証する。
-
----
-
-## Phase 3: テスト・パッケージ品質整備・プライベート導入（非公開運用）
-
-- [x] **3-1. 自動テスト（Unit Test / Integration Test）およびパフォーマンス計測の整備**
-  - Dart 層の単体機能テスト（アダプタ入出力、エラーマッピング、`maxResponseBytes`、`TurboTransformer` の全 `ResponseType`・`TurboOptions(mapper: ...)`・閾値分岐・セマフォ制御・単一 `Dio` インスタンス並列非干渉）を整備する。
-  - Dart 層マイクロベンチマーク（`test/turbo_benchmark_test.dart`: Dio 標準 `BackgroundTransformer` vs `TurboTransformer` + `TurboOptions(mapper)` の変換速度・Main Isolate イベントループ最大遅延・RSS メモリ比較）と、`example/` の `integration_test`（ネイティブ実通信の機能検証＋4プリセット並列ベンチマーク）を整備する。
-- [x] **3-2. 導入ドキュメント（`README.md`）と設定・ベンチマークガイドの作成**
-  - `path:` / `git:` 導入手順、Android R8 / iOS ATS 注意事項、各チューニングパラメータ・`TurboOptions` の利用ガイド、およびパフォーマンス計測（単体ベンチマーク / 実機ベンチマーク）の実行手順を作成する。
-
----
-
-## Phase 4: パフォーマンス比較ベンチマーク基盤の実装と性能実証
-
-[`specs/architectures/benchmark.md`](architectures/benchmark.md) に基づき、実用的な3種類のシナリオ（計測A・B・C）を通じて4つのアダプタ構成の性能差・24KiB閾値の妥当性・多重化耐性・メモリ消費を精密に検証・証明するフェーズ。
-
-> **Phase 3-1 との位置づけの違い**: Phase 3-1 では品質担保としての単体マイクロベンチマークおよび単一固定ワークロード（100KiB等）でのPoC並列検証を整備した。本 Phase 4 では、実アプリの画面遷移や連続通信を模した本格的な実用ワークロード（サイズ別スイープ×10周、計測A・B・C）を対象とし、通信時間とパース時間の分離計測、24KiB閾値の妥当性評価、多重化時の劣化耐性検証を完結させる。
-
-- [x] **4-1. 計測コア・メトリクス分離エンジンおよび並列キューの実装**
-  - 4プリセット共通の Net Time（通信完了）/ Parse Time（パース完了）分離計測ラッパー・インターセプターを構築する。
-  - 指定並列数（3 / 5 / 10）制御付きのスイープ（全サイズ順次 × 10周）実行キューエンジンを実装する。
-  - UIフレーム遅延（`FrameTiming`）およびプロセスRSSメモリ（`ProcessInfo.currentRss`）の監視ロジックを統合する。
-- [x] **4-2. `example/` UI への組み込みと Markdown エクスポート機能の実装**
-  - `example/lib/main.dart` に計測シナリオA / B / C および個別・4構成一括実行UIを実装する。
-  - 実行中のリアルタイム進捗表示および完了後の比較テーブル表示を実装する。
-  - 結果の Markdown テーブル生成、コンソール出力（`debugPrint`）、クリップボードコピー機能を実装する。
-- [x] **4-3. ベンチマーク計測の実施と性能評価レポート（結果検証）の作成**
-  - HTTP/2 モックサーバーと連携し、計測A・B・Cを4プリセットで実行する。
-  - 得られた実測結果（Markdownテーブル）および技術分析を [`docs/benchmark-results.md`](../docs/benchmark-results.md) に記録する。
-  - 24KiB閾値の妥当性（50KiB未満差分）、多重リクエスト時の劣化抑制、メモリ消費量（RSS）の安定性を分析・評価する。
+## Phase 5: デスクトップ対応拡張（Windows / macOS）
+- [x] **5-1. Windows サポート追加（v0.0.2）**: C++17 `WinHTTP`（HTTP/2 共有セッション ＋ OS スレッドプール）による 3 層ネイティブ実装、C++ 単体テスト、Windows ベンチマーク実測レポートを追加。
+- [x] **5-2. macOS サポート追加 & Darwin 共通化（v0.0.3）**: `sharedDarwinSource: true` による `darwin/` 単一ソース化（CocoaPods / SPM 両対応）を実施し、iOS `13.0+` / macOS `10.15+` 共通の `URLSession` 実装および XCTest を整備。

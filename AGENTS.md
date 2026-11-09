@@ -32,7 +32,7 @@
 
 1. **安全性の最優先（Defensive Programming）**:
    - フェイルセーフ（上限サイズ超過防止・証明書検証厳格化）、厳格な型安全（Pigeon 遵守）、確実なリソース解放（リークゼロ）を徹底する。
-2. **シンプルさの維持（KISS 原則 & 最小驚きの原則）**:
+2. **シンプルさの維持（KISS 原則 & 驚き最小の原則）**:
    - 独自の複雑な仕組みを作らず OS・言語標準に素直に乗せる。Dio 標準の挙動やエラー体系に忠実であり、利用側に驚きを与えない。
 3. **メモリ効率の優先（Avoid Premature Optimization）**:
    - わずかな CPU サイクル短縮のためにメモリを犠牲にしない。中間バッファの排除とゼロコピーによるメモリフットプリント抑制を優先する。
@@ -49,67 +49,30 @@
 
 ## 5. ドキュメント構成（`specs/` & `docs/`）
 
-本プロジェクトでは、「AI・メンテナー向けの作業場（`specs/`）」と「利用者向けの公開リファレンス（`docs/`）」をルートレベルで明確に分離しています。
+本プロジェクトでは、「AI・メンテナー向けの作業場（[`specs/`](specs/README.md)）」と「利用者向けの公開リファレンス（[`docs/`](docs/README.md)）」をルートレベルで明確に分離しています。各ファイルの一覧と詳細はそれぞれのインデックスを参照してください。
 
-### 内部仕様・管理（[`specs/`](specs/README.md)）— 日本語正本
-
-- **[`specs/roadmap.md`](specs/roadmap.md)**: 開発ステップ一覧と進行チェックリスト。
-- **[`specs/guidelines/`](specs/guidelines/)**（開発ガイドライン・運用規約）:
-  - [`language-policy.md`](specs/guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）。
-  - [`branch-strategy.md`](specs/guidelines/branch-strategy.md): ブランチ戦略・リリース運用ガイドライン（GitHub Flow 拡張型）。
-- **[`specs/architectures/`](specs/architectures/)**（設計・実装時に参照する仕様定義）:
-  - [`architecture.md`](specs/architectures/architecture.md): 全体パイプライン構造と各層の責務境界。
-  - [`native-layer.md`](specs/architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）と共通データモデル・エラーコード体系。
-  - [`android-native-layer.md`](specs/architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / クラス構成）。
-  - [`darwin-native-layer.md`](specs/architectures/darwin-native-layer.md): iOS / macOS（Darwin）ネイティブ層仕様（URLSession / クラス構成）。
-  - [`windows-native-layer.md`](specs/architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP / クラス構成）。
-  - [`dart-layer.md`](specs/architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様。
-  - [`benchmark.md`](specs/architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様および実装プロンプト。
-- **`specs/features/`**: 個別機能の詳細仕様（現在未使用・将来の拡張用）。
-
-### 公開リファレンス（[`docs/`](docs/README.md)）— 英語正本
-
-- **[`docs/`](docs/README.md)**（利用者のための技術解説・ホワイトペーパー）:
-  - [`design-rationale.md`](docs/design-rationale.md): 課題背景・3大ボトルネック・既存パッケージ評価・設計原則の技術的根拠。
-  - [`turbo-transformer.md`](docs/turbo-transformer.md): `TurboTransformer` & `TurboOptions` のリファレンス実装コード。
-  - [`benchmark-results.md`](docs/benchmark-results.md) & [`docs/benchmarks/`](docs/benchmarks/): 全プラットフォーム横断のパフォーマンス比較ベンチマーク総括と、プラットフォーム別（Android / Windows 等）の実測結果・技術分析。
+- **内部仕様・管理（[`specs/README.md`](specs/README.md)）— 日本語正本**:
+  - 開発ロードマップ（[`specs/roadmap.md`](specs/roadmap.md)）、運用規約（`specs/guidelines/`）、アーキテクチャ仕様（`specs/architectures/`）。
+- **公開リファレンス（[`docs/README.md`](docs/README.md)）— 英語正本**:
+  - 設計根拠ホワイトペーパー、リファレンス実装、マルチプラットフォーム比較ベンチマーク実測レポート。
 
 ---
 
-## 6. 開発・リファクタリングの標準サイクル
+## 6. 開発・リファクタリングの標準サイクル & 運用規約
 
 機能追加やリファクタリングを行う際は、必ず以下の **3ステップのサイクル** を順に回すこと。
 **各ステップの完了時は必ずユーザーのレビューを受け、ユーザーからの合図（承認・進行指示）を待ってから次のステップへ進むこと。勝手に次のステップへ進んではならない。**
 
 1. **ドキュメント修正（最重要ディスカッション）**:
-   - 時間と労力をかけ、ユーザーとじっくりディスカッションを重ねて設計思想・仕様（`specs/architectures/*.md` 等）を固める。
-   - 仕様・挙動・入出力・エラーハンドリングのドキュメント修正を行い、ユーザーのレビュー・合意を得る。
+   - ユーザーとディスカッションを重ねて仕様（`specs/architectures/*.md` 等）を固め、ドキュメント修正についてレビュー・合意を得る。
 2. **テストコード修正**:
-   - 合意されたドキュメント仕様に基づき、テストコード（単体テスト・境界値・異常系）を追加・修正する（この時点ではテストが失敗してもよい）。
-   - テスト修正内容を提示してユーザーのレビューを受け、合図を待つ。
+   - 合意された仕様に基づきテストコード（単体・境界値・異常系）を追加・修正し（この時点では失敗してよい）、レビュー・合意を得る。
 3. **コード修正**:
-   - テストをパスさせるようにプロダクションコード（Dart / Kotlin / Swift）を修正・実装し、テスト全パスを確認する。
-   - 実装内容とテスト結果を提示し、ユーザーのレビュー OK をもってサイクルを完結させる。
+   - テストをパスさせるようにプロダクションコードを実装し、全テスト合格を確認してレビューを受ける。
 
 ### 開発進行時の共通ルール
 
-- **実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。**
-- **Git ブランチ運用とリリース規約**: [`specs/guidelines/branch-strategy.md`](specs/guidelines/branch-strategy.md) に厳格に従うこと。
-  - `main` ブランチへの直接コミットは禁止。必ず目的別の作業ブランチ（`feature/*`, `fix/*`, `docs/*`, `chore/*`）またはリリース準備ブランチ（`release/vX.Y.Z`）を作成して作業する。
-  - `main` へのマージは履歴可視化と安全性のため、**必ず `--no-ff`（ノンファストフォワード）** で行うこと。Fast-forward マージは禁止。
-  - リリース時は必ず `release/vX.Y.Z` を経由し、全テスト合格および `fvm dart pub publish --dry-run`（警告 0 件）を確認してから `main` へ `--no-ff` マージし、Git タグ（`vX.Y.Z`）を付与すること。
-- **Flutter / Dart コマンドの実行**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、コマンド実行時はグローバルの `flutter` / `dart` を直接呼ばず、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
-
----
-
-## 7. 言語運用ポリシー（Language & Communication Policy）
-
-プロジェクト成果物の国際化およびユーザーとのコミュニケーション精度を両立するため、[`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) で定義された言語運用ポリシーを厳格に遵守すること。
-
-1. **AI への指示・内部仕様・ユーザー対話（Control & Specs）: 日本語**
-   - ユーザーとのチャット対話、質問、進捗報告、設計ディスカッション、レビュー依頼はすべて **日本語** で行う。
-   - 内部仕様書・設計定義・ロードマップ（`specs/` 配下）は **日本語** を正本として維持する。
-2. **対外向けドキュメント・ソースコード・テスト（Artifacts）: 英語**
-   - パッケージ利用者向けリファレンスドキュメント（`docs/` 配下）は **英語（US English）** で作成・提供する。
-   - ソースコード（クラス名、関数名、Docコメント、インラインコメント）、テストコード、Git コミットメッセージ（Conventional Commits）、公開ドキュメント（ルート `README.md`、`CHANGELOG.md` 等）は **英語（US English）** で統一する。
-   - 詳細な適用範囲や翻訳移行計画は [`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) を参照すること。
+- **事前確認の徹底**: 実装前に判断が必要な選択肢がある場合は、コードを書く前に必ずユーザーへ質問して方針を確定させる。
+- **FVM の使用**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
+- **Git ブランチ・リリース運用**: [`specs/guidelines/branch-strategy.md`](specs/guidelines/branch-strategy.md) に厳格に従うこと（`main` 直接コミット禁止、目的別ブランチでの作業、`--no-ff` マージ必須）。
+- **言語運用ポリシー**: [`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) に厳格に従うこと（ユーザー対話および `specs/` は**日本語**、コード・テスト・コミット・公開ドキュメント等の成果物は**英語 [US English]**）。
