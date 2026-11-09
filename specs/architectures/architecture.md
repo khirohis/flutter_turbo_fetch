@@ -15,27 +15,25 @@
         ▼ (Pigeon / StandardMessageCodec による 1 往復転送)
 [Dart Main Isolate (TurboHttpAdapter + TurboTransformer + TurboOptions)]
   ├─ ResponseBody.fromBytes(bytes) により単一チャンクの Stream<Uint8List> としてラップ
-  ├─ ResponseType.stream: 単一チャンク Stream を持つ ResponseBody を O(1) 返却（指定時は mapper 実行）
-  ├─ ResponseType.bytes (mapper なし): BytesBuilder(copy: false) で Uint8List を O(1) ゼロコピー返却
-  ├─ 閾値未満（〜24KiB 未満）: Main Isolate 上で直接デコード（＋指定時は mapper 実行）
-  └─ 閾値以上（24KiB 以上）: TransferableTypedData (O(1) ゼロコピー) で Worker Isolate へ転送
+  ├─ 閾値未満または stream / mapper なし bytes: Main Isolate で O(1) 解決
+  └─ 閾値以上: TransferableTypedData (O(1) ゼロコピー) で Worker Isolate へ転送
         │
-        ▼ (セマフォで同時起動数を制御: デフォルト max(2, Platform.numberOfProcessors - 2))
+        ▼ (セマフォで同時起動数を制御)
 [Dart Worker Isolate (Isolate.run)]
-  ├─ 一次デコード (bytes: rawBytes / plain: utf8.decode / json: utf8.decoder.fuse(json.decoder))
+  ├─ 一次デコード (plain: utf8.decode / json: utf8.decoder.fuse(json.decoder))
   ├─ 後処理フック (TurboOptions.mapper): 同一 Isolate 内でドメインモデル等への変換まで完結
   └─ Isolate.exit (O(1) ゼロコピー) で最終成果物のみを Main Isolate へ返却
 ```
 
 ---
 
-## 2. 各層の責務境界と禁止事項
+## 2. 各層の責務境界
 
-| レイヤー | 担当コンポーネント | 責務（入出力） | 禁止事項（アンチパターン） |
-| :--- | :--- | :--- | :--- |
-| **ネイティブ通信層**<br>(Android / Darwin / Windows) | `FlutterTurboFetchPlugin`<br>`TurboHttpExecutor`<br>`TurboClientManager` / `TurboSessionManager` | リクエスト情報を受け取り、OS バックグラウンドで一括受信した結合済みバイト配列・ステータス・ヘッダを返す | チャンク毎の Dart 通知、ネイティブでの JSON パース、上限超過データの切り詰め正常返却 |
-| **Dart Adapter 層** | `TurboHttpAdapter`<br>(`HttpClientAdapter`) | `RequestOptions` とボディストリームをネイティブへ渡し、返却された `Uint8List` を単一チャンクの `ResponseBody` としてラップする | チャンク分割送信、別アダプタへのフォールバック |
-| **Dart Transform 層** | `TurboTransformer` + `TurboOptions`<br>(`BackgroundTransformer`) | 単一チャンク `ResponseBody` から `ResponseType` に応じた一次デコードおよび `mapper` 後処理を実行する | JSON 変換時の中間 `String` 生成、常駐ワーカー Isolate (`SendPort`)、無制限な Isolate 同時起動 |
+| レイヤー | 担当コンポーネント | 主な責務（入出力） |
+| :--- | :--- | :--- |
+| **ネイティブ通信層**<br>(Android / Darwin / Windows) | `FlutterTurboFetchPlugin`<br>`TurboHttpExecutor`<br>`TurboClientManager` / `TurboSessionManager` | リクエスト情報を受け取り、OS バックグラウンドで一括受信した結合済みバイト配列・ステータス・ヘッダを返す |
+| **Dart Adapter 層** | `TurboHttpAdapter`<br>(`HttpClientAdapter`) | `RequestOptions` とボディストリームをネイティブへ渡し、返却された `Uint8List` を単一チャンクの `ResponseBody` としてラップする |
+| **Dart Transform 層** | `TurboTransformer` + `TurboOptions`<br>(`BackgroundTransformer`) | 単一チャンク `ResponseBody` から `ResponseType` に応じた一次デコードおよび `mapper` 後処理を実行する |
 
 ---
 

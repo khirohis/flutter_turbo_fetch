@@ -15,17 +15,16 @@
   - リダイレクト設定は `followRedirects`（真偽値）のみを反映する（ネイティブ層の仕様に合わせ `maxRedirects` による回数制限は行わない）。
 - **レスポンス変換**:
   - すべての `ResponseType`（`stream` を含む）をネイティブ一括受信で処理し、別アダプタへのフォールバックは行わない。
-  - 受信した `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で単一チャンクストリームとしてラップして返却する（レスポンスヘッダのキーは小文字に正規化）。
+  - 受信した `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で単一チャンクストリームとしてラップして返却する。レスポンスヘッダのキーは小文字に正規化する。
 - **並行制御・キャンセル・ライフサイクル**:
   - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）。
   - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）。
   - リクエストごとに一意な `requestId` を採番し、`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す。
-  - `close({bool force = false})`: クローズ後は新規 `fetch()` に対して `StateError` をスローする。`force: true` の場合はネイティブの `cancelAllRequests()` を呼び出して実行中リクエストを即時中断する。
+  - `close({bool force = false})`: クローズ後は新規 `fetch()` に対して `StateError` をスローする。`force: true` の場合は管理中の実行中リクエストを即座にキャンセルする。
 
 ### 1.2 エラーマッピング（`DioException`）
 
-- ネイティブ層の共通 `errorCode`（[`native-layer.md`](./native-layer.md) 参照）を対応する `DioExceptionType` へ変換する。
-  - `maxResponseBytesExceeded` は上限バイト数をエラーメッセージに含めた上で `DioExceptionType.unknown` へマッピングする。
+- ネイティブ層の共通 `errorCode`（[`native-layer.md`](./native-layer.md) 参照）を対応する `DioExceptionType` へマッピングする。
 - HTTP 4xx / 5xx ステータスはアダプタ層では例外とせず通常レスポンスとして返却し、Dio 本体の `validateStatus`（`DioExceptionType.badResponse`）に委ねる。
 - Pigeon ブリッジ通信自体の例外は `DioExceptionType.unknown`（キャンセル済みの場合は `DioExceptionType.cancel`）としてラップする。
 

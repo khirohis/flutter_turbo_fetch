@@ -19,12 +19,12 @@
   - `maxResponseBytes`: レスポンスボディの最大許容バイト数（nullable、未指定時は無制限）
 - **レスポンス情報（`TurboHttpResponse`）**:
   - `statusCode` / `statusMessage`
-  - `headers`: マルチバリュー対応レスポンスヘッダ（キーを小文字に正規化した `Map<String, List<String>>`）
+  - `headers`: マルチバリュー対応レスポンスヘッダ（`Map<String?, Object?>?`。Dart 側で小文字キーの `Map<String, List<String>>` へ正規化）
   - `body`: 一括結合済みレスポンスボディ（`Uint8List`）
   - `errorCode` / `errorMessage`: エラー発生時の共通エラーコードと詳細メッセージ
-- **キャンセル API**:
-  - `cancelRequest(requestId)`: 指定リクエストを即座に中断する
-  - `cancelAllRequests()`: 実行中の全リクエストを一括中断する（`close(force: true)` 等で使用）
+- **キャンセル API（`TurboFetchHostApi`）**:
+  - `cancelRequest(requestId)`: 指定リクエストを即座に中断する。
+  - ※ 全リクエストの一括破棄は、Engine デタッチ時に各ネイティブの内部 `shutdown()` で実行されるほか、Dart の `close(force: true)` からは管理中のアクティブ `requestId` ごとに `cancelRequest` が呼び出される。
 
 ---
 
@@ -53,7 +53,7 @@
 
 | 共通エラーコード | 対応する `DioExceptionType` | 発生契機 |
 | :--- | :--- | :--- |
-| `cancel` | `DioExceptionType.cancel` | `cancelRequest` / `cancelAllRequests` 呼び出し、または通信中断 |
+| `cancel` | `DioExceptionType.cancel` | `cancelRequest` 呼び出し、または通信中断 |
 | `connectionTimeout` | `DioExceptionType.connectionTimeout` | TCP 接続確立 / TLS ハンドシェイク時のタイムアウト |
 | `sendTimeout` | `DioExceptionType.sendTimeout` | リクエストボディ送信中のタイムアウト |
 | `receiveTimeout` | `DioExceptionType.receiveTimeout` | レスポンス待機・ボディ受信中のタイムアウト |
