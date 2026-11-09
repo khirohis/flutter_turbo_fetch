@@ -1,7 +1,5 @@
 # AI agent instructions & prompts (do not distribute in package)
 AGENTS.md
-CLAUDE.md
-GEMINI.md
 .github/
 .agents/
 .agent/

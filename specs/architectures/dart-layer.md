@@ -1,110 +1,67 @@
-# Dart 層設計（`TurboHttpAdapter`、`TurboTransformer` & `TurboOptions`）
+# Dart 層仕様（`TurboHttpAdapter` / `TurboTransformer` / `TurboOptions`）
 
-本ドキュメントでは、Dart 層で提供する公開 API（Dio 用 `TurboHttpAdapter`、`TurboTransformer`、および `TurboOptions`）の責務および変換仕様を定義する。
-
----
-
-## 1. 利用側アプリからの導入インターフェース
-
-```dart
-final dio = Dio();
-dio.httpClientAdapter = TurboHttpAdapter(
-  maxRequestsPerHost: 32,
-  allowBadCertificates: false,
-);
-dio.transformer = TurboTransformer(
-  // maxConcurrentIsolates 未指定時は max(2, Platform.numberOfProcessors - 2)
-);
-
-// 後処理フック（mapper）やリクエスト単位の上限指定を行う場合
-final response = await dio.get<User>(
-  '/users/1',
-  options: TurboOptions.json(
-    mapper: (json) => User.fromJson(json as Map<String, dynamic>),
-    maxResponseBytes: 16 * 1024 * 1024, // 16MiB
-  ),
-);
-final User user = response.data!;
-```
+> リファレンス実装および利用コード例については [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。
 
 ---
 
-## 2. `TurboHttpAdapter`（Dio `HttpClientAdapter`）の責務とスコープ
+## 1. `TurboHttpAdapter`（Dio `HttpClientAdapter`）
 
-### 2.1 サポート対象（全 `ResponseType` をネイティブ一括受信で統一処理）
+### 1.1 責務と入出力契約
 
-- **対応プラットフォーム**: Android / iOS / macOS / Windows（それ以外の OS で実行された場合は `UnsupportedError` をスローする。ただし `hostApi` が注入された場合は検証をスキップ）
-- **HTTP メソッド**: GET / POST / PUT / DELETE / PATCH / HEAD 等の基本メソッド
-- **リクエスト**:
-  - リクエストヘッダ: ヘッダ値が `Iterable`（配列等）の場合はカンマ区切り（`', '`）文字列に自動結合してネイティブへ渡す。
-  - リクエストボディ: `Stream<Uint8List>` をサイズ制限なしで `BytesBuilder(copy: false)` により `Uint8List` として集約。
-- **レスポンス**: ステータスコード、レスポンスヘッダ（キーは小文字に統一）、一括受信ボディ（`ResponseBody.fromBytes(bytes, statusCode, headers: ...)` により単一チャンクの `Stream.value(bytes)` を内包した `ResponseBody` として返却。`ResponseType.stream` 指定時も別アダプタへフォールバックしない）
-- **制御機能・オプション**:
-  - `maxRequestsPerHost`: 1 ホストあたりの同時リクエスト上限（デフォルト `32`）
-  - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）
-  - `maxResponseBytes`: 最大許容レスポンスバイト数（`TurboOptions` でリクエスト単位に指定可能。未指定時は無制限）
-  - `hostApi`: Pigeon 生成 API の依存性注入用パラメータ（テスト・モック用）
-  - タイムアウト制御（`connectTimeout`, `receiveTimeout`, `sendTimeout`）
-  - キャンセル連動（`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す）
-  - `requestId` 生成仕様: ネイティブ層（キャンセル照合等）で使用する一意識別子。フォーマットは `'turbo_${Isolate.current.hashCode}_${++_requestCounter}'`（`_requestCounter` はクラス共通の静的連番）。
-  - リダイレクト追従設定（`followRedirects` の真偽値制御。ネイティブ層がリダイレクト上限回数の標準設定プロパティを持たないため、`maxRedirects` による追加の回数制御は行わない）
-- **ライフサイクル制御**:
-  - `close({bool force = false})` メソッドをサポートし、クローズ後は新規の `fetch()` 呼び出しに対して `StateError` をスローする。
+- **対応プラットフォーム**: Android / iOS / macOS / Windows。非対応環境ではコンストラクタで `UnsupportedError` をスローする（テスト用に `hostApi` が注入された場合を除く）。
+- **リクエスト変換**:
+  - ヘッダ値が `Iterable` の場合は `', '` 区切り文字列に結合する。
+  - リクエストボディ（`Stream<Uint8List>?`）は `BytesBuilder(copy: false)` で単一の `Uint8List` に集約してネイティブへ渡す。
+  - リダイレクト設定は `followRedirects`（真偽値）のみを反映する（ネイティブ層の仕様に合わせ `maxRedirects` による回数制限は行わない）。
+- **レスポンス変換**:
+  - すべての `ResponseType`（`stream` を含む）をネイティブ一括受信で処理し、別アダプタへのフォールバックは行わない。
+  - 受信した `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で単一チャンクストリームとしてラップして返却する。レスポンスヘッダのキーは小文字に正規化する。
+- **並行制御・キャンセル・ライフサイクル**:
+  - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）。
+  - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）。
+  - リクエストごとに一意な `requestId` を採番し、`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す。
+  - `close({bool force = false})`: クローズ後は新規 `fetch()` に対して `StateError` をスローする。`force: true` の場合は管理中の実行中リクエストを即座にキャンセルする。
 
-### 2.2 エラーハンドリング（`DioException` マッピング）
+### 1.2 エラーマッピング（`DioException`）
 
-- ネイティブ層から返却された共通エラーコードを、Dio 標準の `DioExceptionType`（`connectionTimeout`, `sendTimeout`, `receiveTimeout`, `badCertificate`, `cancel`, `connectionError`, `unknown`）へ変換する。
-  - `maxResponseBytesExceeded`（最大許容サイズ超過）は、エラーメッセージに上限バイト数を明記した上で `DioExceptionType.unknown` にマッピングする。
-- HTTP ステータスコード（4xx / 5xx）はネイティブ層で例外とせず通常のレスポンスとして返し、Dio 本体の `validateStatus`（失敗時は `DioExceptionType.badResponse`）に委ねる。
-- Pigeon ブリッジ層の予期せぬ例外発生時は `DioExceptionType.unknown`（キャンセル済みの場合は `DioExceptionType.cancel`）としてラップしてスローする。
+- ネイティブ層の共通 `errorCode`（[`native-layer.md`](./native-layer.md) 参照）を対応する `DioExceptionType` へマッピングする。
+- HTTP 4xx / 5xx ステータスはアダプタ層では例外とせず通常レスポンスとして返却し、Dio 本体の `validateStatus`（`DioExceptionType.badResponse`）に委ねる。
+- Pigeon ブリッジ通信自体の例外は `DioExceptionType.unknown`（キャンセル済みの場合は `DioExceptionType.cancel`）としてラップする。
 
 ---
 
-## 3. `TurboTransformer` & `TurboOptions` の設計仕様
+## 2. `TurboOptions<T>`（リクエスト単位オプション & 後処理フック）
 
-### 3.1 `TurboOptions<T>`（カスタム後処理フック・リクエスト単位オプション指定）
+- **2段階パイプライン（一次デコード ＋ 後処理フック）**:
+  - `responseType` で一次デコード形式を決定し、その結果を `mapper`（`T Function(dynamic data)`）へ渡して任意の型 `T` へ変換する。
+  - `maxResponseBytes`: リクエスト単位の最大許容レスポンスバイト数（未指定時は無制限）。
+  - 設定値は内部的に `Options.extra` の予約キーを介して `TurboHttpAdapter` と `TurboTransformer` へ伝達する。
+- **コンストラクタ体系**:
+  - `TurboOptions({...})`: 汎用コンストラクタ（`responseType` 省略時は Dio 標準の `ResponseType.json` を継承）。
+  - `TurboOptions.json({required T Function(dynamic json) mapper, ...})`: `ResponseType.json` 固定。
+  - `TurboOptions.bytes({required T Function(Uint8List bytes) mapper, ...})`: `ResponseType.bytes` 固定。
+  - `TurboOptions.plain({required T Function(String text) mapper, ...})`: `ResponseType.plain` 固定。
+- **Isolate 転送制約**:
+  - 閾値以上のレスポンスでは `mapper` も `Isolate.run` 内で実行されるため、トップレベル関数、`static` メソッド、または Isolate 間転送可能なクロージャである必要がある。
 
-- **2段階パイプライン設計（一次デコード ＋ 後処理フック）**:
-  - `responseType`: 受信した生バイト列を Dio 標準の基本データ形式（JSON / バイト列 / 文字列 / ストリーム）へ復元する **一次デコードパイプライン** を決定する。
-  - `mapper`（`typedef TurboResponseMapper<T> = T Function(dynamic data)`）: 一次デコード結果を入力として受け取り、任意の型 `T` への変換や追加処理を実行する **後処理フック（Post-processing Hook）** である（ドメインモデルへの変換、Protobuf/MessagePack などのバイナリデシリアライズ、キャッシュ永続化などの処理を実行可能）。
-  - **Dio デフォルトの継承**: Dio の基底 `Options.responseType` のデフォルト値（`ResponseType.json`）をそのまま継承しているため、`responseType` を省略して `TurboOptions(mapper: ...)` と記述した場合は、自動的に JSON デコード済みのデータ構造（`Map` または `List`）が `mapper` の引数として渡される。
-- **型安全ファクトリコンストラクタ（一次デコードと後処理入力型の束縛）**:
-  一次デコード形式と `mapper` 入力型を静的に一致させ、`responseType` の手動指定とダウンキャストを不要化する 3 つの名前付きファクトリを提供する。
-  - **`TurboOptions.json`**:
-    - 責務: JSON デコード結果を後処理フックへ引き渡す。
-    - 仕様: 内部で `responseType = ResponseType.json` を固定設定。`mapper` は `T Function(dynamic json)`（`required`）として定義。
-  - **`TurboOptions.bytes`**:
-    - 責務: 生バイト列（バイナリ）を後処理フックへ引き渡す。
-    - 仕様: 内部で `responseType = ResponseType.bytes` を固定設定。`mapper` は `T Function(Uint8List bytes)`（`required`）として厳格に型付け。
-  - **`TurboOptions.plain`**:
-    - 責務: デコード済み文字列（テキスト）を後処理フックへ引き渡す。
-    - 仕様: 内部で `responseType = ResponseType.plain` を固定設定。`mapper` は `T Function(String text)`（`required`）として厳格に型付け。
-  - **共通パラメータの透過性**:
-    - `Dio` の標準 `Options` パラメータ（`method`, `sendTimeout`, `receiveTimeout`, `headers`, `extra`, `maxResponseBytes` 等）は各ファクトリで受け取り、基底コンストラクタへ透過的に転送する。
-- **下位互換性の保証（非破壊的追加）**:
-  - 既存の無名コンストラクタ `TurboOptions({mapper, maxResponseBytes, ...})` はシグネチャ・デフォルト挙動を一切変更せず存続し、柔軟な手動指定や既存コードとの後方互換性を 100% 維持する。
-- 内部的には `Options.extra` の予約キーを通じて `TurboHttpAdapter`（`maxResponseBytes`）および `TurboTransformer`（`mapper`）へ設定を引き渡す。
-- **Isolate 転送要件**: 閾値以上のレスポンス（`bytes` [mapper 指定時] / `plain` / `json`）では `mapper` も `Isolate.run`（Worker Isolate）内で実行するため、トップレベル関数、`static` メソッド、または外部のミュータブルな状態をキャプチャしていないクロージャを渡す仕様とする。
+---
 
-### 3.2 `TurboTransformer` の変換・オフロード処理
+## 3. `TurboTransformer`（Dio `BackgroundTransformer` 拡張）
 
-- **取得データ種別ごとの変換処理（全 4 種の `ResponseType` 対応）**:
-  1. **ストリーム (`ResponseType.stream` → `ResponseBody` または `mapper(ResponseBody)`)**:
-     - `TurboHttpAdapter` が生成した単一チャンクの `ResponseBody` をストリーム消費せずそのまま O(1) で返却する（`mapper` 指定時は Main Isolate 上で `mapper(responseBody)` を実行）。
-  2. **バイト列 (`ResponseType.bytes` → `Uint8List` または `mapper(Uint8List)`)**:
-     - `BytesBuilder(copy: false)` で単一チャンクの `Uint8List` をゼロコピー取得する。
-     - `mapper` 未指定時: データサイズに関わらず Main Isolate 上でそのまま `Uint8List` を O(1) 返却する（Isolate 転送オーバーヘッドを回避）。
-     - `mapper` 指定時: 閾値未満なら Main Isolate で `mapper(bytes)` を同期実行し、閾値以上なら Worker Isolate へオフロードして `mapper(rawBytes)` を実行・返却する。
-  3. **テキスト (`ResponseType.plain` → `String` または `mapper(String)`)**:
-     - 空データ（0 バイト）の場合: `mapper` 未指定なら `''`、指定時は `mapper('')` を返却する。
-     - 閾値未満なら Main Isolate 上で `utf8.decode(bytes, allowMalformed: true)`（および指定時は `mapper`）を実行する。
-     - 閾値以上なら Worker Isolate へオフロードして実行・返却する。
-  4. **JSON (`ResponseType.json` → `dynamic` または `mapper(dynamic)`)**:
-     - 空データ（0 バイト）の場合: `mapper` 未指定なら `null`、指定時は `mapper(null)` を返却する。
-     - 閾値未満なら Main Isolate 上で `utf8.decoder.fuse(json.decoder)` で中間 `String` を作らずデコード（および指定時は `mapper`）を実行する。
-     - 閾値以上なら Worker Isolate へオフロードして中間 `String` なしでデコード・オブジェクト生成まで完結させて返却する。
-- **Isolate オフロード制御（`bytes` [mapper 指定時] / `plain` / `json` 共通）**:
-  - **一次デコードと後処理の一気通貫実行**: 閾値以上のペイロードでは、一次デコード（UTF-8/JSON デコード等）と `mapper` フックが同一の Worker Isolate 内で連続実行される。これにより、巨大な JSON ツリーやバイト配列といった中間データを Main Isolate に一切持ち込まず、`mapper` が返した最終成果物のみを `Isolate.exit`（$O(1)$ ゼロコピー）で返却する。
-  - **閾値（`isolateThresholdBytes`、デフォルト 24KiB）**: 閾値未満は Main Isolate で同期実行し、閾値以上は行き `TransferableTypedData`・帰り `Isolate.run`（`Isolate.exit`）により生成オブジェクトまで往復 O(1) ゼロコピーでオフロードする。
-  - **同時起動 Isolate 数（`maxConcurrentIsolates`）**: セマフォで同時起動数を制限する。デフォルトは `math.max(2, Platform.numberOfProcessors - 2)`（定数 `defaultMinConcurrentIsolates = 2`）とし、2 コア端末（iPhone 6s 等）で最低限のスループットを維持しつつ、4 コア以上の端末では UI/Raster スレッド用に 2 コアを確実に保護する仕様とする（コンストラクタ引数でカスタマイズ可能）。
-- **リファレンス実装**: [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。
+### 3.1 `ResponseType` 別の変換・オフロード仕様
+
+`TurboHttpAdapter` から渡された単一チャンクの `ResponseBody` を `BytesBuilder(copy: false)` でゼロコピー抽出し、データ種別とサイズ（閾値 `isolateThresholdBytes`、デフォルト 24KiB）に応じて以下のように処理する。
+
+| `ResponseType` | 一次デコード方式 | 空ボディ（0 byte）時 | 閾値未満（Main Isolate） | 閾値以上（Worker Isolate オフロード） |
+| :--- | :--- | :--- | :--- | :--- |
+| **`stream`** | ストリーム消費なし（`ResponseBody` 維持） | そのまま返却（または `mapper`） | Main Isolate で O(1) 返却（指定時は `mapper(responseBody)`） | オフロードしない（常に Main Isolate で O(1) 返却） |
+| **`bytes`** | `BytesBuilder(copy: false)` | `Uint8List(0)`（または `mapper`） | Main Isolate で O(1) 返却（指定時は `mapper(bytes)`） | `mapper` 未指定時は Main Isolate で O(1) 返却。<br>`mapper` 指定時のみ Worker Isolate で `mapper(bytes)` を実行 |
+| **`plain`** | `utf8.decode(bytes, allowMalformed: true)` | `''`（または `mapper('')`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
+| **`json`** | `utf8.decoder.fuse(json.decoder)`<br>（中間 `String` 生成なし） | `null`（または `mapper(null)`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
+
+### 3.2 Isolate オフロードとセマフォ制御
+
+- **ゼロコピー往復転送**:
+  - 閾値以上のオフロード時は、入力バイト列を `TransferableTypedData` で Worker Isolate へ $O(1)$ 転送し、一次デコードと `mapper` を同一 Worker 内で連続実行した上で、最終成果物のみを `Isolate.run`（`Isolate.exit`）で $O(1)$ 返却する。
+- **同時起動 Isolate 数の制限（`maxConcurrentIsolates`）**:
+  - セマフォにより同時起動数を制限する。デフォルト値は `math.max(2, Platform.numberOfProcessors - 2)`（最小保証定数 `defaultMinConcurrentIsolates = 2`）とし、UI / Raster スレッド用の CPU コアを保護する。

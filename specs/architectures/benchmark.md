@@ -1,176 +1,56 @@
-# ベンチマーク・性能検証アーキテクチャ設計仕様（`benchmark.md`）
+# ベンチマーク・性能検証仕様（`benchmark.md`）
 
-本ドキュメントは、`flutter_turbo_fetch` の性能優位性および設計妥当性（24KiB閾値、HTTP/2マルチプレキシング、ゼロコピーIsolate変換）を客観的・再現性高く検証するための **パフォーマンス比較ベンチマーク基盤の仕様書および実装プロンプト** である。
-
----
-
-## 1. 計測の目的と検証ポイント
-
-1. **実効スループットの比較**:
-   3種類のアダプタ構成において、実用ワークロードにおける全リクエスト完了までの総合時間（Wall Clock Time）を比較する。
-2. **24KiB 閾値設計の妥当性評価（50KiB未満）**:
-   小サイズ通信でのメインスレッド同期デコードと、24KiB超過時のゼロコピー Isolate オフロード（`Isolate.run` + `Isolate.exit`）によるオーバーヘッド相殺・優位性を確認する。
-3. **多重リクエスト耐性とセマフォ制御**:
-   同時リクエスト数が増加した際に、HTTP/2 マルチプレキシングおよびセマフォ制御（`maxConcurrentIsolates`）によりレイテンシ劣化が抑えられているかを検証する。
-4. **UI スムーズネス（フレーム落ち / Jank 抑制）**:
-   連続通信・デコード中における Main Isolate（UIスレッド）の負荷を監視し、16.6ms（60fps基準）以上のフレーム遅延（Jank）をどの程度抑制できているかを測定する。
-5. **メモリ消費の安定性**:
-   データコピー頻発によるヒープ肥大化やGCスパイクを抑え、ピークメモリ（RSS）および増分（Delta）が安定しているかを評価する。
+> 実測結果および技術評価レポートについては [`docs/benchmark-results.md`](../../docs/benchmark-results.md) および [`docs/benchmarks/`](../../docs/benchmarks/) を参照。
 
 ---
 
-## 2. 計測シナリオ定義（実用性重視：スイープ × 10周）
+## 1. 比較対象プリセットと計測シナリオ
 
-実アプリの画面遷移や連続API通信ワークロードを模し、全サイズを連続して順次リクエストするシーケンスを **10周（10セット）** 実行し、最後のJSONパースが完了するまでを計測する。
+### 1.1 比較対象プリセット（3構成）
 
-| シナリオ | サイズ構成（全サイズ順次リクエスト） | 最大並列度 | 1セット数 | 10周の総リクエスト数 | 主な検証観点 |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| **計測A** | **5KiB 〜 45KiB**（5KiB刻み・9段階）<br>`5, 10, 15, 20, 25, 30, 35, 40, 45 KiB` | **3並列** | 9回 | **90 リクエスト** | **24KiB境界・軽量通信の応答性**<br>小サイズ通信でのオーバーヘッドとMain/Isolate切替の挙動 |
-| **計測B** | **10KiB 〜 100KiB**（10KiB刻み・10段階）<br>`10, 20, 30, ..., 100 KiB` | **5並列** | 10回 | **100 リクエスト** | **実運用標準負荷の総合性能**<br>一般的なモバイルAPIレスポンスサイズでの実力値 |
-| **計測C** | **20KiB 〜 200KiB**（20KiB刻み・10段階）<br>`20, 40, 60, ..., 200 KiB` | **10並列** | 10回 | **100 リクエスト** | **高多重・セマフォ上限時の耐性**<br>並列キューイング時の遅延抑制・ピークメモリ安定性 |
+同一のベンチマークシナリオ・同一の HTTP/2 モックサーバーに対して、以下の 3 構成を公平に比較する（個別実行および 3 構成一括連続実行をサポート）。
 
-※各並列リクエストは、プールされたワーカー（最大N並列）により順次消化される。
-
----
-
-## 3. 比較対象プリセット（3つのアダプタ構成）
-
-同一のベンチマークシナリオ・同一のモックサーバーに対して、以下の3構成を公平に比較する。
-
-| プリセット名 | アダプタ層（`HttpClientAdapter`） | トランスフォーマー層（`Transformer`） | 特徴・方式 |
+| プリセット名 | アダプタ（`HttpClientAdapter`） | トランスフォーマー（`Transformer`） | 方式・特徴 |
 | :--- | :--- | :--- | :--- |
-| **① IO (HTTP/1.1)** | `IOHttpClientAdapter` | `BackgroundTransformer` | Dio 標準構成（Dart `dart:io`、都度 `compute`） |
-| **② dio_http2** | `Http2Adapter` | `BackgroundTransformer` | Dart 実装の HTTP/2（`package:http2`、都度 `compute`） |
-| **③ TurboFetch** | **`TurboHttpAdapter`** | **`TurboTransformer`** | **OS ネイティブ一括受信 ＋ 24KiB閾値ゼロコピー変換（本プラグイン）** |
+| **① IO (HTTP/1.1)** | `IOHttpClientAdapter` | `BackgroundTransformer` | Dio 標準構成（`dart:io`、50KiB 超で都度 `compute`） |
+| **② dio_http2** | `Http2Adapter` | `BackgroundTransformer` | 純粋 Dart 実装の HTTP/2（`package:http2`、64KiB 初期ウィンドウ） |
+| **③ TurboFetch** | **`TurboHttpAdapter`** | **`TurboTransformer`** | **OS ネイティブ一括受信 ＋ 24KiB 閾値ゼロコピー変換** |
 
-> ※ `native_dio_adapter`（`NativeAdapter`）は、ローカル HTTP/2 モックサーバーの自己署名証明書許可（`allowBadCertificates`）に非対応であり（Android Cronet 等の制約により全リクエストが即時 SSL エラーとなる）、また Windows デスクトップ環境ではネイティブ HTTP/2 に対応せず `IOHttpClientAdapter` へフォールバックされるため、比較対象から除外している。
+> ※ `native_dio_adapter` は Android Cronet が自己署名証明書許可（`allowBadCertificates`）に非対応であり、Windows では `IOHttpClientAdapter` へフォールバックされるため比較対象外とする。
+
+### 1.2 計測シナリオ（実用スイープ × 10周）
+
+全サイズを順次リクエストするシーケンスを **10周（10セット）** 実行し、プールされたワーカーで最大並列数を制御しながら最後の JSON パース完了までを計測する。
+
+| シナリオ | サイズ構成（1周あたり） | 最大並列度 | 総リクエスト数（10周） | 主な検証観点 |
+| :--- | :--- | :---: | :---: | :--- |
+| **計測A** | **5KiB 〜 45KiB**（5KiB 刻み・9段階） | **3並列** | **90 req** | **24KiB 境界・軽量通信の応答性**（Main / Isolate 切替挙動） |
+| **計測B** | **10KiB 〜 100KiB**（10KiB 刻み・10段階） | **5並列** | **100 req** | **実運用標準負荷の総合性能**（標準 API サイズでの実効速度） |
+| **計測C** | **20KiB 〜 200KiB**（20KiB 刻み・10段階） | **10並列** | **100 req** | **高多重・セマフォ上限時の耐性**（HTTP/2 多重化とピークメモリ安定性） |
 
 ---
 
-## 4. 計測アーキテクチャとメトリクス分離
+## 2. 収集メトリクスと計測境界
 
-```text
-[リクエスト開始]
-       │
-       ▼  ◄── ① Net Time: ソケット通信 〜 ResponseBody 受領（アダプタ完了）まで
-[アダプタ完了]
-       │
-       ▼  ◄── ② Parse Time: バイト配列集約 〜 JSONオブジェクト生成完了まで
-[レスポンス完了]
-```
+全プリセット共通の計測ラッパー（アダプタラッパー & トランスフォーマーラッパー）により、以下の 6 指標を収集し、UI テーブル表示・`debugPrint` 出力・Markdown クリップボードコピーを提供する。
 
-### 4.1 収集メトリクス一覧
-
-| メトリクス項目 | 単位 | 計測内容・目的 |
+| メトリクス項目 | 単位 | 計測境界・定義 |
 | :--- | :---: | :--- |
 | **Total Wall Time** | ms | 10周の全リクエスト完了までの総所要時間（実効スループット） |
-| **Net Time (Avg / P95)** | ms | ネットワーク通信所要時間（平均値および P95） |
-| **Parse Time (Avg / P95)** | ms | JSONパース・マッピング実効完了待ち時間（セマフォ待ち時間を含む、平均値および P95） |
-| **Jank Frames** | 回 (%) | 16.6ms（60fps基準）を超過したカクつきフレーム数と全フレームに対する発生率 |
-| **Max Frame Duration** | ms | 計測中に発生した最大フレーム時間（UIフリーズの度合い） |
-| **Peak RSS / Delta** | MiB | 計測中のプロセス最大メモリ消費量（RSS）および開始時からの増分 |
-
-### 4.2 分離計測の仕組み（共通ラッパー設計）
-
-3つのアダプタすべてで同一基準で分離するため、Dio のインターセプターおよびトランスフォーマーラッパーを用いて以下のように計測する：
-
-- **Net Time**: `onRequest`（送信直前）〜 `ResponseBody` がアダプタから返却される瞬間までの経過時間。
-- **Parse Time**: `transformResponse` 呼び出し開始から、デコードおよびマッピングが完了してオブジェクトを返す瞬間までの経過時間（高並列時に Isolate セマフォ上限に達した場合のセマフォ獲得待ち時間を含め、アプリ側から見た実効完了待ち時間として計測する）。
+| **Net Time (Avg / P95)** | ms | `fetch()` 開始 〜 アダプタから `ResponseBody` が返却されるまでの経過時間 |
+| **Parse Time (Avg / P95)** | ms | `transformResponse` 開始 〜 デコード・マッピング完了までの実効待ち時間（セマフォ獲得待ち時間を含む） |
+| **Jank Frames** | 回 (%) | `SchedulerBinding`（`FrameTiming`）で 16.6ms（60fps 基準）を超過したフレーム数と発生率 |
+| **Max Frame Duration** | ms | 計測中に発生した単一フレームの最大所要時間（UI フリーズの最大幅） |
+| **Peak RSS / Delta** | MiB | `ProcessInfo.currentRss` による計測中の最大メモリ消費量および開始時からの増分 |
 
 ---
 
-## 5. 出力フォーマット仕様（Markdown テーブル出力）
+## 3. 実行前提条件と手順
 
-アプリ画面上でのリアルタイム表示・結果リスト表示に加え、コンソール出力（`debugPrint`）およびワンクリックでのクリップボードコピーが可能な Markdown テーブル形式で出力する。
-
-### 出力フォーマット例
-
-```markdown
-### ベンチマーク結果: 計測A (5KiB〜45KiB × 10周, 最大3並列, 合計90req)
-
-| アダプタ構成 | Total Time | Net Time (Avg/P95) | Parse Time (Avg/P95) | Jank Frames (%) | Max Frame | Peak RSS (Δ) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| ① IO (HTTP/1.1) | 3,420 ms | 32.1 ms / 58.4 ms | 4.8 ms / 7.2 ms | 12 (15.2%) | 42.1 ms | 85.4 MiB (+18.2 MiB) |
-| ② dio_http2 | 2,850 ms | 26.4 ms / 44.0 ms | 4.9 ms / 7.1 ms | 14 (17.5%) | 48.0 ms | 92.1 MiB (+24.9 MiB) |
-| **③ TurboFetch** | **1,820 ms** | **18.5 ms / 29.0 ms** | **1.2 ms / 2.1 ms** | **0 (0.0%)** | **8.2 ms** | **74.0 MiB (+6.8 MiB)** |
-```
-
----
-
-## 6. 計測実行の前提条件と手順
-
-### 6.1 前提条件
-
-1. **Release ビルド必須**:
-   - 理由: 計測精度の担保（JIT/assert/オーバーヘッド排除）、デバッガ接続待ちによる画面停止防止、マルチ Isolate 起動時のハング防止。
-2. **HTTP/2 モックサーバー常駐**:
-   - 事前に `node example/server/http2_mock_server.mjs` を起動（ポート 8443）しておくこと。
-   - 接続先ベース URL はターゲットプラットフォームに応じて以下のように解決する（UI 上での手動変更も可）：
-     - **Android エミュレータ**: `https://10.0.2.2:8443`
-     - **Windows / iOS Simulator / macOS / Linux**: `https://localhost:8443`
-     - **Android / iOS 物理実機**: ホストマシンの LAN IP（例: `https://192.168.x.x:8443`）またはポートフォワーディング（`adb reverse tcp:8443 tcp:8443`）
-
-### 6.2 実行手順
-
-- **GUI 実行（推奨）**:
-  対象プラットフォーム向けに Release モードで起動またはビルド＆インストールし、アプリ画面の「Run All 3 Presets」を実行して Markdown 結果をコピーする。
-  - **Android**: `fvm flutter run --release -d <device_id>`（または `fvm flutter build apk --release`）
-  - **Windows**: `fvm flutter run --release -d windows`（または `fvm flutter build windows --release`）
-  - **iOS**: `fvm flutter run --release -d <device_id>`
-  - **macOS / Linux（将来拡張時）**: `fvm flutter run --release -d <macos|linux>`
-- **CLI 実行**:
-  `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`
-
----
-
-## 7. 実装プロンプト（Implementation Prompt）
-
-以下は、AIエージェントや開発者が本仕様を `example/` アプリへ実装する際に使用する指示プロンプトである。
-
-```text
-【タスク指示】
-docs/architectures/benchmark.md に基づき、example/lib/main.dart（および関連モジュール）を改修し、
-パフォーマンス比較ベンチマーク基盤を実装してください。
-
-【要件】
-1. 計測シナリオの実装:
-   - 計測A: 5〜45KiB (5KiB刻み・9段階) × 10周、最大3並列
-   - 計測B: 10〜100KiB (10KiB刻み・10段階) × 10周、最大5並列
-   - 計測C: 20〜200KiB (20KiB刻み・10段階) × 10周、最大10並列
-   ※各シナリオはプールされたワーカーで指定並列数を超えないよう順次キューイング制御すること。
-
-2. 3種のアダプタ構成の比較:
-   - ① IOHttpClientAdapter + BackgroundTransformer
-   - ② Http2Adapter + BackgroundTransformer
-   - ③ TurboHttpAdapter + TurboTransformer
-   ※「個別実行」および「3構成一括連続実行」の両方をサポートすること。
-
-3. 通信時間とパース時間の公平な分離計測:
-   - 全プリセット共通で Net Time（通信完了まで）と Parse Time（デコード完了まで）を
-     ミリ秒精度で正確に分離計測できるラッパー/インターセプターを構築すること。
-   - Parse Time はセマフォ獲得待ちを含めた実効待ち時間として計測すること。
-
-4. UIフレーム（Jank）およびメモリ（RSS）の監視:
-   - SchedulerBinding による FrameTiming 監視（16.6ms 超過フレーム数、最大フレーム時間）。
-   - ProcessInfo.currentRss による Peak RSS および Delta RSS の監視（単位: MiB）。
-
-5. 結果出力と Markdown エクスポート:
-   - アプリ画面上での結果表示（テーブル表示）。
-   - debugPrint への Markdown テーブル出力およびクリップボードコピー機能。
-```
-
----
-
-## 8. 実測結果の参照先
-
-本仕様に基づいて実施したベンチマークの実測結果および技術評価レポートは、全プラットフォーム横断の総括ドキュメントと、プラットフォーム別の詳細ドキュメントに分割して管理する。
-
-- 📊 **[ベンチマーク総括レポート (`docs/benchmark-results.md`)](../../docs/benchmark-results.md)**
-  - 全プラットフォーム横断のエグゼクティブサマリー、共通の計測境界仕様（Net Time / Parse Time、Jank 評価基準）、およびアーキテクチャ全体の結論。
-- 📁 **プラットフォーム別詳細レポート (`docs/benchmarks/`)**:
-  - 各 OS 固有の計測環境スペック、シナリオ A / B / C の実測データ（Markdown テーブル）、およびネイティブエンジン固有の技術分析を記録する。
-  - 🤖 **[Android (`docs/benchmarks/android.md`)](../../docs/benchmarks/android.md)** — `OkHttp3` 共有クライアント
-  - 🪟 **[Windows (`docs/benchmarks/windows.md`)](../../docs/benchmarks/windows.md)** — `WinHTTP` + OS Thread Pool
-  - 🍎 **iOS (`docs/benchmarks/ios.md`)** — `URLSession` *(順次追加予定)*
-  - 💻 **macOS (`docs/benchmarks/macos.md`)** *(将来追加予定)*
-  - 🐧 **Linux (`docs/benchmarks/linux.md`)** *(将来追加予定)*
+1. **Release ビルド必須**: JIT オーバーヘッドや assert、デバッガ通信による歪みを排除するため、必ず `--release` モードで実行する。
+2. **HTTP/2 モックサーバーの起動**:
+   - 事前に `node example/server/http2_mock_server.mjs`（ポート `8443`）を起動しておく。
+   - デフォルト接続先は Android エミュレータが `https://10.0.2.2:8443`、デスクトップ / iOS シミュレータが `https://localhost:8443`（実機検証時は LAN IP または `adb reverse tcp:8443 tcp:8443` を使用）。
+3. **実行コマンド（`example/` ディレクトリ）**:
+   - **GUI 実行**: `fvm flutter run --release -d <device_id>`
+   - **CLI 統合テスト実行**: `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`
