@@ -105,5 +105,34 @@ internal class TurboClientManagerTest {
         manager.shutdown()
         assertTrue(client.dispatcher.executorService.isShutdown)
     }
+
+    @Test
+    fun acquireClient_withZeroOrNegativeMaxRequestsPerHost_coercesToOneSafely() {
+        val manager = TurboClientManager()
+
+        // Zero limit coerces to 1
+        val clientZero = manager.acquireClient(createRequest(maxRequestsPerHost = 0L))
+        assertEquals(1, clientZero.dispatcher.maxRequestsPerHost)
+
+        // Negative limit coerces to 1
+        val clientNegative = manager.acquireClient(createRequest(maxRequestsPerHost = -10L))
+        assertEquals(1, clientNegative.dispatcher.maxRequestsPerHost)
+    }
+
+    @Test
+    fun acquireClient_withNullTimeouts_preservesOkHttpDefaults() {
+        val manager = TurboClientManager()
+        val request = createRequest(
+            connectTimeoutMs = null,
+            receiveTimeoutMs = null,
+            sendTimeoutMs = null
+        )
+
+        val client = manager.acquireClient(request)
+        // OkHttp default timeouts are 10,000 ms (10 seconds)
+        assertEquals(10_000, client.connectTimeoutMillis)
+        assertEquals(10_000, client.readTimeoutMillis)
+        assertEquals(10_000, client.writeTimeoutMillis)
+    }
 }
 
