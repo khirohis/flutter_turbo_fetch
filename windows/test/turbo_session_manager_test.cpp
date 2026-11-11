@@ -44,6 +44,23 @@ TURBO_TEST(TurboSessionManager_AcquireSession_RecoversAfterShutdown) {
   manager.Shutdown();
 }
 
+TURBO_TEST(
+    TurboSessionManager_AcquireSession_WithZeroOrNegativeLimit_CoercesToOneSafely) {
+  TurboSessionManager manager;
+
+  // Zero limit coerces to 1
+  HINTERNET session_zero = manager.AcquireSession(0);
+  ASSERT_NE(nullptr, session_zero);
+  ASSERT_EQ(1, manager.current_max_per_host());
+
+  // Negative limit coerces to 1
+  HINTERNET session_neg = manager.AcquireSession(-10);
+  ASSERT_NE(nullptr, session_neg);
+  ASSERT_EQ(1, manager.current_max_per_host());
+
+  manager.Shutdown();
+}
+
 }  // namespace test
 }  // namespace flutter_turbo_fetch
 

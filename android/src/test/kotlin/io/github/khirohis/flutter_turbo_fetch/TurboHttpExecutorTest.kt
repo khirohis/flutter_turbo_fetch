@@ -10,6 +10,9 @@ import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSource
+import okio.Sink
+import okio.Timeout
+import okio.buffer
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
@@ -526,5 +529,39 @@ internal class TurboHttpExecutorTest {
         assertEquals(200L, response.statusCode)
         assertNotNull(response.body)
         assertEquals(0, response.body.size)
+    }
+
+    @Test
+    fun execute_timeoutDuringBodyWrite_returnsSendTimeout() {
+        val payload = "payload-causing-write-timeout".encodeToByteArray()
+
+        val executor = createInterceptedExecutor { chain ->
+            val request = chain.request()
+            val requestBody = request.body ?: throw IOException("Missing request body")
+
+            // Simulate socket timeout during request body streaming
+            val failingSink = object : Sink {
+                override fun write(source: Buffer, byteCount: Long) {
+                    throw SocketTimeoutException("Write timed out sending request body")
+                }
+
+                override fun flush() {}
+                override fun timeout(): Timeout = Timeout.NONE
+                override fun close() {}
+            }
+
+            requestBody.writeTo(failingSink.buffer())
+
+            // Unreachable in expected flow
+            chain.proceed(request)
+        }
+
+        val response = executeSync(
+            executor = executor,
+            request = createRequest(method = "POST", body = payload)
+        )
+
+        assertEquals("sendTimeout", response.errorCode)
+        assertNotNull(response.errorMessage)
     }
 }
