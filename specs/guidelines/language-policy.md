@@ -23,7 +23,7 @@
 | **内部仕様・管理** | `specs/**/*.md` | **日本語** | AI・メンテナー向け仕様境界、開発規約、ロードマップ |
 | **対外ドキュメント** | `docs/**/*.md` | **英語** | 利用者向け設計根拠、リファレンス実装、ベンチマーク実測レポート |
 | **公開パッケージ情報** | `README.md` / `CHANGELOG.md` / `pubspec.yaml` | **英語** | `pub.dev` および GitHub トップの導入・利用ガイド |
-| **ソースコード** | `lib/**` / `android/**` / `darwin/**` / `windows/**` / `linux/**` / `common/**` / `pigeons/**` | **英語** | 識別子、Doc コメント（DartDoc / KDoc / SwiftDoc / Doxygen）、インラインコメント |
+| **ソースコード** | `lib/**` / `android/**` / `darwin/**` / `windows/**` / `linux/**` / `pigeons/**` | **英語** | 識別子、Doc コメント（DartDoc / KDoc / SwiftDoc / Doxygen）、インラインコメント |
 | **テスト・サンプル** | `test/**` / `example/**` / 各 OS ネイティブテスト | **英語** | テストケース名、アサーションメッセージ、UI 表示文言、コメント |
 | **バージョン管理** | Git コミットメッセージ、PR 概要 | **英語** | Conventional Commits（`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:` 等） |
 

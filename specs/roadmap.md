@@ -36,4 +36,4 @@
 ## Phase 5: デスクトップ対応拡張（Windows / macOS / Linux）
 - [x] **5-1. Windows サポート追加（v0.0.2）**: C++17 `WinHTTP`（HTTP/2 共有セッション ＋ OS スレッドプール）による 3 層ネイティブ実装、C++ 単体テスト、Windows ベンチマーク実測レポートを追加。
 - [x] **5-2. macOS サポート追加 & Darwin 共通化（v0.0.3）**: `sharedDarwinSource: true` による `darwin/` 単一ソース化（CocoaPods / SPM 両対応）を実施し、iOS `13.0+` / macOS `10.15+` 共通の `URLSession` 実装および XCTest を整備。
-- [ ] **5-3. Linux サポート追加（v0.0.4）**: C++17 `libcurl`（HTTP/2 共有接続 ＋ ワーカースレッドプール）による 3 層ネイティブ実装、CMake ビルド定義、C++ 単体テスト（WSL2 / Linux 共通）、Linux ベンチマーク実測レポートを追加。
+- [ ] **5-3. Linux サポート追加（v0.0.4）**: Pigeon GObject コード生成、C++17 `libcurl`（HTTP/2 共有接続 ＋ ワーカースレッドプール）による 3 層ネイティブ実装、CMake ビルド定義、C++ 単体テスト（WSL2 / Linux 共通）、Linux ベンチマーク実測レポートを追加。

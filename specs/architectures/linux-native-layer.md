@@ -7,9 +7,11 @@
 ## 1. Linux 固有の設計・実装仕様
 
 - **GTK メインループ連携とライフサイクル（`FlutterTurboFetchPlugin`）**:
-  - Pigeon 生成 C++ コードは `common/cpp/` の共通ファイルを参照し、GTK プラグイン経由で登録を行う。
+  - Flutter Linux 公式仕様に準拠した Pigeon GObject 生成コード（`linux/messages.g.h` / `linux/messages.g.cc`）を使用し、`fl_plugin_registrar_get_messenger` 経由で Host API メソッドハンドラーを登録する。
+  - GObject ハンドラーから C++ の `TurboHttpExecutor` インスタンスへ処理を委譲し、OS バックグラウンドでの通信を実行する。
   - `curl_global_init(CURL_GLOBAL_ALL)` をプラグイン初期化時に呼び出し、Engine デタッチ時に `curl_global_cleanup()` で解放する。
-  - ワーカースレッド完了時の Pigeon コールバックは、GTK メインループを介してメインスレッド側へディスパッチする。
+  - ワーカースレッド完了時の Pigeon コールバックは、`g_idle_add` 等を用いて GLib/GTK メインループを介してメインスレッド側へディスパッチする。
+  - Engine デタッチ時（`fl_plugin_registrar_get_messenger` 破棄等）は、未完了リクエストのキャンセルとセッションクリーンアップを実行する。
 - **共有接続・セッション管理（`TurboSessionManager`）**:
   - DNS キャッシュ・TLS セッション・コネクションプールを複数リクエスト間で共有するため、共有ハンドル（`CURLSH`）を排他制御付きで保持する。
   - HTTP/2（`CURLOPT_HTTP_VERSION = CURL_HTTP_VERSION_2_0`）による多重化通信を行い、`maxRequestsPerHost` に基づくホスト単位の同時実行制限（セマフォ制御等）を適用する。

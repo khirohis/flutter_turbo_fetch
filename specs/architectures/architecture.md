@@ -45,8 +45,7 @@
 | `pigeons/` | Dart ⇄ ネイティブ間の Pigeon スキーマ定義（`messages.dart`） |
 | `android/` | Android ネイティブ層実装（Kotlin / `OkHttp3`）および JUnit 単体テスト |
 | `darwin/` | iOS / macOS 共通ネイティブ層実装（Swift / `URLSession`, `sharedDarwinSource`）および XCTest |
-| `windows/` | Windows ネイティブ層実装（C++17 / `WinHTTP`）および C++ 単体テスト |
-| `linux/` | Linux ネイティブ層実装（C++17 / `libcurl` / CMake）および C++ 単体テスト |
-| `common/` | Windows / Linux 共通 C++ 資産（Pigeon 生成コード `messages.g.h` / `.cpp` 等） |
+| `windows/` | Windows ネイティブ層実装（C++17 / `WinHTTP`）、Pigeon C++ 生成コードおよび C++ 単体テスト |
+| `linux/` | Linux ネイティブ層実装（C++17 / `libcurl` / CMake）、Pigeon GObject 生成コードおよび C++ 単体テスト |
 | `test/` | Dart 層の単体テストおよびマイクロベンチマーク |
 | `example/` | HTTP/2 モックサーバーおよびマルチプラットフォーム比較ベンチマークアプリ |

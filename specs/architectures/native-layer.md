@@ -8,7 +8,7 @@
 ## 1. Dart ⇄ ネイティブ間の通信ブリッジ仕様（Pigeon）
 
 通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、OS バックグラウンドで結合した単一のレスポンスボディ `Uint8List` を 1 リクエストにつき 1 往復でやり取りする。  
-※ 生成コードは、iOS / macOS は `darwin/` 単一ソース、Windows / Linux は `common/cpp/` の共通 C++ コード（`messages.g.h` / `.cpp`）を共有する。
+※ 生成コードは、iOS / macOS は `darwin/` 単一ソース（Swift）、Windows は `windows/`（Flutter C++ Client Wrapper 準拠の C++）、Linux は `linux/`（Flutter Linux GTK/GObject C API 準拠の GObject）にそれぞれ配置する。
 
 - **リクエスト情報（`TurboHttpRequest`）**:
   - `requestId`: リクエスト識別子（キャンセル紐付け用）
