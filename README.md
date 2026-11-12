@@ -5,13 +5,13 @@
 
 A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
-`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS & macOS `URLSession` / Windows `WinHTTP`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
+`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS & macOS `URLSession` / Windows `WinHTTP` / Linux `libcurl`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
 
 ---
 
 ## ✨ Features
 
-- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3, URLSession, & WinHTTP).
+- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3, URLSession, WinHTTP, & libcurl).
 - **Non-Blocking UI Thread**: Eliminates jank on large payloads (>= 24KB) through zero-copy `TransferableTypedData` offloading.
 - **In-Worker Model Mapping**: Directly parses and instantiates domain models inside worker Isolates.
 - **Full Dio Compatibility**: Drop-in replacement supporting all 4 standard `ResponseType`s.
@@ -29,13 +29,13 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
+| **Linux** | `Ubuntu 20.04+ / Debian 11+` (64-bit) • `libcurl` | Tested (Benchmarking Pending) |
 | **Web** | Not Supported | Out of Scope |
-| **Linux** | Not Supported | Future Consideration |
 
 > [!NOTE]
 >
-> - **iOS & macOS Status**: Shared Darwin native `URLSession` integration (`sharedDarwinSource: true`) is implemented and unit-tested; formal end-to-end performance benchmarking reports are pending.
-> - **Web & Linux**: Web is not supported due to native OS transport requirements. Support for Linux is under consideration for future phases.
+> - **iOS, macOS & Linux Status**: Native implementations are complete and unit/integration-tested; formal end-to-end performance benchmarking reports are pending.
+> - **Web**: Web is not supported due to native OS transport requirements.
 
 ---
 
@@ -52,7 +52,7 @@ Or add them directly to your `pubspec.yaml`:
 ```yaml
 dependencies:
   dio: ^5.4.0
-  flutter_turbo_fetch: ^0.0.3
+  flutter_turbo_fetch: ^0.0.4
 ```
 
 ---
@@ -95,6 +95,14 @@ For macOS apps running with App Sandbox enabled (the default in Flutter), ensure
 ### Windows
 
 No additional setup or external libraries are required. The plugin links directly against the Windows OS system component `winhttp.dll`.
+
+### Linux
+
+Ensure `libcurl` and OpenSSL development headers are installed on your build machine:
+
+```bash
+sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+```
 
 ---
 

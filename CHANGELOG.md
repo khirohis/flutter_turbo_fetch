@@ -1,3 +1,9 @@
+## 0.0.4
+
+* **Linux Platform Support**: Added native Linux desktop support (`Ubuntu 20.04+` / `Debian 11+`, 64-bit x64 / ARM64) powered by C++17 `libcurl` (`libcurl4-openssl-dev`) with HTTP/2 connection sharing (`CURLSH*`) and worker thread pool execution.
+* **Pigeon Desktop Code Generation**: Differentiated Pigeon code generation for desktop platforms, adopting standard GObject C API (`--gobject_out`) for Linux adhering to the Flutter GTK architecture and C++ (`--cpp_out`) for Windows.
+* **Linux Native 3-Layer Architecture**: Implemented 3-layer separation of concerns (`FlutterTurboFetchPlugin`, `TurboHttpExecutor`, and `TurboSessionManager`) with dedicated C++ unit test suite runnable on WSL2 and Linux environments.
+
 ## 0.0.3
 
 * **macOS Platform Support**: Added native macOS desktop support (`macOS 10.15+`) via a unified Darwin (`sharedDarwinSource: true`) implementation powered by `URLSession`, supporting both Swift Package Manager (SPM) and CocoaPods.
