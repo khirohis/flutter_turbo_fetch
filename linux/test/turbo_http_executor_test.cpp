@@ -20,7 +20,7 @@ TurboHttpRequest CreateRequest(
     const std::string& request_id = "test-req",
     const std::string& url = "https://example.com/api",
     const std::string& method = "GET",
-    const flutter::EncodableMap& headers = {},
+    const std::unordered_map<std::string, std::string>& headers = {},
     const std::vector<uint8_t>* body = nullptr,
     std::optional<int64_t> max_response_bytes = std::nullopt) {
   const int64_t timeout_ms = 5000;
@@ -142,9 +142,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_InvalidHeaderCharacters_ReturnsConnectionEr
   TurboSessionManager session_manager;
   TurboHttpExecutor executor(session_manager);
 
-  flutter::EncodableMap bad_headers;
-  bad_headers[flutter::EncodableValue("Bad\r\nHeader")] =
-      flutter::EncodableValue("Value");
+  std::unordered_map<std::string, std::string> bad_headers;
+  bad_headers["Bad\r\nHeader"] = "Value";
 
   auto request = CreateRequest("req-bad-header", "https://example.com", "GET", bad_headers);
   auto response = ExecuteSync(executor, request);
@@ -168,16 +167,15 @@ TURBO_TEST(TurboHttpExecutor_ParseRawHeaders_NormalizesToLowercaseAndAggregatesM
       TurboHttpExecutor::ParseRawHeaders(raw_headers);
 
   // Lowercase keys
-  ASSERT_TRUE(headers_map.find(flutter::EncodableValue("content-type")) != headers_map.end());
-  ASSERT_TRUE(headers_map.find(flutter::EncodableValue("set-cookie")) != headers_map.end());
-  ASSERT_TRUE(headers_map.find(flutter::EncodableValue("x-custom-id")) != headers_map.end());
+  ASSERT_TRUE(headers_map.find("content-type") != headers_map.end());
+  ASSERT_TRUE(headers_map.find("set-cookie") != headers_map.end());
+  ASSERT_TRUE(headers_map.find("x-custom-id") != headers_map.end());
 
   // Multi-value aggregation for set-cookie
-  const auto& cookies_val = headers_map[flutter::EncodableValue("set-cookie")];
-  const auto& cookies_list = std::get<flutter::EncodableList>(cookies_val);
+  const auto& cookies_list = headers_map["set-cookie"];
   ASSERT_EQ(static_cast<size_t>(2), cookies_list.size());
-  ASSERT_EQ("session=abc; Path=/", std::get<std::string>(cookies_list[0]));
-  ASSERT_EQ("token=xyz; Secure", std::get<std::string>(cookies_list[1]));
+  ASSERT_EQ("session=abc; Path=/", cookies_list[0]);
+  ASSERT_EQ("token=xyz; Secure", cookies_list[1]);
 }
 
 TURBO_TEST(TurboHttpExecutor_ParseRawHeaders_MalformedLinesAndInvalidContentLength_HandlesSafely) {
@@ -191,7 +189,7 @@ TURBO_TEST(TurboHttpExecutor_ParseRawHeaders_MalformedLinesAndInvalidContentLeng
       TurboHttpExecutor::ParseRawHeaders(raw_headers);
 
   ASSERT_FALSE(content_length.has_value());
-  ASSERT_TRUE(headers_map.find(flutter::EncodableValue("valid-header")) != headers_map.end());
+  ASSERT_TRUE(headers_map.find("valid-header") != headers_map.end());
 }
 
 TURBO_TEST(TurboHttpExecutor_Execute_MaxResponseBytesNull_ReturnsFullBodyAndHeaders) {

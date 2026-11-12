@@ -4,7 +4,6 @@ set(PROJECT_NAME "flutter_turbo_fetch")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 set(PLUGIN_NAME "flutter_turbo_fetch_plugin")
-set(COMMON_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp")
 
 find_package(CURL REQUIRED)
 
@@ -15,8 +14,8 @@ list(APPEND PLUGIN_SOURCES
   "turbo_http_executor.h"
   "turbo_session_manager.cc"
   "turbo_session_manager.h"
-  "${COMMON_CPP_DIR}/messages.g.cpp"
-  "${COMMON_CPP_DIR}/messages.g.h"
+  "messages.g.cc"
+  "messages.g.h"
 )
 
 # Standard Flutter Linux Plugin Target
@@ -39,7 +38,7 @@ if(TARGET flutter)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   target_include_directories(${PLUGIN_NAME} PRIVATE
-    "${COMMON_CPP_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
     ${GTK_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
   )
@@ -83,8 +82,6 @@ if(BUILD_TESTING)
     "flutter_turbo_fetch_plugin.cc"
     "turbo_http_executor.cc"
     "turbo_session_manager.cc"
-    "${COMMON_CPP_DIR}/messages.g.cpp"
-    "${WRAPPER_ROOT}/standard_codec.cc"
   )
 
   target_compile_features(${TEST_BINARY_NAME} PRIVATE cxx_std_17)
@@ -97,9 +94,6 @@ if(BUILD_TESTING)
   target_include_directories(${TEST_BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${COMMON_CPP_DIR}"
-    "${FLUTTER_ENGINE_DIR}"
-    "${WRAPPER_ROOT}/include"
     ${GTK_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
   )

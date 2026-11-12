@@ -14,19 +14,13 @@ bool IsValidHttpUrl(const std::string& url) {
   return url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
 }
 
-bool HasInvalidHeaderChars(const flutter::EncodableMap& headers) {
-  for (const auto& [key_val, val_val] : headers) {
-    if (std::holds_alternative<std::string>(key_val)) {
-      const auto& key = std::get<std::string>(key_val);
-      if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos) {
-        return true;
-      }
+bool HasInvalidHeaderChars(const std::unordered_map<std::string, std::string>& headers) {
+  for (const auto& [key, val] : headers) {
+    if (key.find('\r') != std::string::npos || key.find('\n') != std::string::npos) {
+      return true;
     }
-    if (std::holds_alternative<std::string>(val_val)) {
-      const auto& val = std::get<std::string>(val_val);
-      if (val.find('\r') != std::string::npos || val.find('\n') != std::string::npos) {
-        return true;
-      }
+    if (val.find('\r') != std::string::npos || val.find('\n') != std::string::npos) {
+      return true;
     }
   }
   return false;
@@ -148,9 +142,9 @@ std::pair<std::string, std::string> TurboHttpExecutor::ClassifyError(
   }
 }
 
-std::pair<flutter::EncodableMap, std::optional<int64_t>>
+std::pair<std::unordered_map<std::string, std::vector<std::string>>, std::optional<int64_t>>
 TurboHttpExecutor::ParseRawHeaders(const std::string& raw_headers) {
-  flutter::EncodableMap headers_map;
+  std::unordered_map<std::string, std::vector<std::string>> headers_map;
   std::optional<int64_t> content_length;
 
   std::istringstream stream(raw_headers);
@@ -182,16 +176,7 @@ TurboHttpExecutor::ParseRawHeaders(const std::string& raw_headers) {
       }
     }
 
-    auto key_enc = flutter::EncodableValue(key);
-    auto it = headers_map.find(key_enc);
-    if (it == headers_map.end()) {
-      flutter::EncodableList list;
-      list.push_back(flutter::EncodableValue(val));
-      headers_map[key_enc] = flutter::EncodableValue(std::move(list));
-    } else {
-      auto& list = std::get<flutter::EncodableList>(it->second);
-      list.push_back(flutter::EncodableValue(val));
-    }
+    headers_map[key].push_back(val);
   }
 
   return {std::move(headers_map), content_length};
@@ -386,13 +371,9 @@ TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
 
   // Headers
   struct curl_slist* header_list = nullptr;
-  for (const auto& [key_val, val_val] : request.headers()) {
-    if (std::holds_alternative<std::string>(key_val) &&
-        std::holds_alternative<std::string>(val_val)) {
-      std::string header_line = std::get<std::string>(key_val) + ": " +
-                                std::get<std::string>(val_val);
-      header_list = curl_slist_append(header_list, header_line.c_str());
-    }
+  for (const auto& [key, val] : request.headers()) {
+    std::string header_line = key + ": " + val;
+    header_list = curl_slist_append(header_list, header_line.c_str());
   }
   if (header_list != nullptr) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);

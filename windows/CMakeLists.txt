@@ -4,7 +4,6 @@ set(PROJECT_NAME "flutter_turbo_fetch")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 set(PLUGIN_NAME "flutter_turbo_fetch_plugin")
-set(COMMON_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../common/cpp")
 
 list(APPEND PLUGIN_SOURCES
   "flutter_turbo_fetch_plugin.cpp"
@@ -13,8 +12,8 @@ list(APPEND PLUGIN_SOURCES
   "turbo_http_executor.h"
   "turbo_session_manager.cpp"
   "turbo_session_manager.h"
-  "${COMMON_CPP_DIR}/messages.g.cpp"
-  "${COMMON_CPP_DIR}/messages.g.h"
+  "messages.g.cpp"
+  "messages.g.h"
 )
 
 if(TARGET flutter_wrapper_plugin)
@@ -40,7 +39,7 @@ if(TARGET flutter_wrapper_plugin)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   target_include_directories(${PLUGIN_NAME} PRIVATE
-    "${COMMON_CPP_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(${PLUGIN_NAME} PRIVATE
     flutter
@@ -100,7 +99,6 @@ if(BUILD_TESTING)
   target_include_directories(${TEST_BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${COMMON_CPP_DIR}"
     "${FLUTTER_ENGINE_DIR}"
     "${FLUTTER_LIB_DIR}"
     "${WRAPPER_ROOT}/include"
