@@ -6,6 +6,8 @@
 
 ## 1. Windows 固有の設計・実装仕様
 
+- **Pigeon ブリッジ連携とライフサイクル（`FlutterTurboFetchPluginCApi`）**:
+  - Pigeon 生成 C++ コードは `common/cpp/` の共通ファイルを参照し、Windows C API 経由で登録を行う。
 - **共有セッション管理（`TurboSessionManager`）**:
   - OS 自動プロキシ（`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY`）および HTTP/2（`WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL`）を有効化した単一の同期 `HINTERNET` セッションを共有する。
   - `WINHTTP_OPTION_MAX_CONNS_PER_SERVER`（デフォルト `32`）により同時接続数を動的に更新する。

@@ -8,7 +8,7 @@
 
 ### 1.1 責務と入出力契約
 
-- **対応プラットフォーム**: Android / iOS / macOS / Windows。非対応環境ではコンストラクタで `UnsupportedError` をスローする（テスト用に `hostApi` が注入された場合を除く）。
+- **対応プラットフォーム**: Android / iOS / macOS / Windows / Linux。非対応環境ではコンストラクタで `UnsupportedError` をスローする（テスト用に `hostApi` が注入された場合を除く）。
 - **リクエスト変換**:
   - ヘッダ値が `Iterable` の場合は `', '` 区切り文字列に結合する。
   - リクエストボディ（`Stream<Uint8List>?`）は `BytesBuilder(copy: false)` で単一の `Uint8List` に集約してネイティブへ渡す。

@@ -15,13 +15,15 @@
   - Android: `minSdk = 24`（Android 7.0+）
   - iOS: `13.0+` / macOS: `10.15+`（`sharedDarwinSource: true` による `darwin/` 共通実装、CocoaPods / Swift Package Manager 両対応）
   - Windows: Windows 10 バージョン 1809（Build 17763）以降（64-bit: x64 / ARM64）
-  - ※ Web / Linux は非サポート（`UnsupportedError`）
+  - Linux: Ubuntu 20.04+ / Debian 11+ / glibc 2.31+ 以降（64-bit: x64 / ARM64）
+  - ※ Web は非サポート（`UnsupportedError`）
 - **主要技術スタック**:
   - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
   - **通信ブリッジ**: `pigeon`（型安全コード生成・`StandardMessageCodec`）
   - **Android**: Kotlin, `com.squareup.okhttp3:okhttp:4.12.0`（HTTP/2 共有クライアント）
   - **iOS / macOS (Darwin)**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
   - **Windows**: C++17, `WinHTTP`（`winhttp.dll` HTTP/2 共有セッション + OS スレッドプール）
+  - **Linux**: C++17, `libcurl`（OpenSSL / nghttp2 バックエンド、HTTP/2 共有接続 + ワーカースレッドプール）
 
 ---
 

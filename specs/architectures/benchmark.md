@@ -50,7 +50,7 @@
 1. **Release ビルド必須**: JIT オーバーヘッドや assert、デバッガ通信による歪みを排除するため、必ず `--release` モードで実行する。
 2. **HTTP/2 モックサーバーの起動**:
    - 事前に `node example/server/http2_mock_server.mjs`（ポート `8443`）を起動しておく。
-   - デフォルト接続先は Android エミュレータが `https://10.0.2.2:8443`、デスクトップ / iOS シミュレータが `https://localhost:8443`（実機検証時は LAN IP または `adb reverse tcp:8443 tcp:8443` を使用）。
+   - デフォルト接続先は Android エミュレータが `https://10.0.2.2:8443`、デスクトップ（Windows / macOS / Linux） / iOS シミュレータが `https://localhost:8443`（実機検証時は LAN IP または `adb reverse tcp:8443 tcp:8443` を使用）。
 3. **実行コマンド（`example/` ディレクトリ）**:
    - **GUI 実行**: `fvm flutter run --release -d <device_id>`
    - **CLI 統合テスト実行**: `fvm flutter test integration_test/benchmark_suite_test.dart -d <device_id> --release`

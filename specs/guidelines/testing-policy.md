@@ -22,7 +22,7 @@
 | 階層 | 対象ディレクトリ | モック方針 | 主な検証責務 |
 | :--- | :--- | :--- | :--- |
 | **Dart 層単体テスト** | `test/` | Pigeon `TurboFetchHostApi` を Fake 化 | リクエスト/レスポンス変換、`ResponseType` デコード、Isolate 分岐（24KiB）、エラーマッピング、キャンセル伝播、クローズ状態遷移 |
-| **ネイティブ層単体テスト** | `android/`<br>`example/ios/RunnerTests/`<br>`example/macos/RunnerTests/`<br>`windows/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
+| **ネイティブ層単体テスト** | `android/`<br>`example/ios/RunnerTests/`<br>`example/macos/RunnerTests/`<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
 | **統合テスト (E2E)** | `example/integration_test/` | 実通信環境 / 実機 / シミュレータ | プラットフォームチャネルを介した実 HTTP/2 通信およびベンチマーク基盤の結合動作 |
 
 ### Dart 層テストのファイル構成
