@@ -76,7 +76,7 @@ Because `BenchmarkTimingAdapter` and `BenchmarkTimingTransformer` instrument Dio
   - `HttpClientAdapter.fetch()` resolves as soon as **initial HTTP response headers** arrive.
   - Reading and reassembling response body chunks from the TCP/TLS socket occurs downstream inside `Transformer.transformResponse`. Consequently, **socket transfer and HTTP/2 frame processing latency are recorded inside Parse Time**. Under high concurrency (Scenario C), `dio_http2` suffers severe Parse Time inflation because 10 parallel HTTP/2 streams compete on Dart's single event loop and hit the hardcoded 64KiB flow-control window.
 - **(3) TurboFetch (Platform Native Batch Model)**:
-  - The OS native layer (`OkHttp` on Android, `URLSession` on iOS, `WinHTTP` on Windows) receives, decompresses, and concatenates all HTTP/2 `DATA` frames in background OS threads, returning a single contiguous `Uint8List` via Pigeon before `fetch()` resolves.
+  - The OS native layer (`OkHttp` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` on Linux) receives, decompresses, and concatenates all HTTP/2 `DATA` frames in background OS threads, returning a single contiguous `Uint8List` via Pigeon before `fetch()` resolves.
   - Consequently, **network transmission, TLS decryption, full body download, native buffer assembly, and Pigeon IPC are all accounted for within Net Time**, while **Parse Time strictly measures in-memory fused UTF-8/JSON decoding (`JsonUtf8Decoder`), zero-copy Isolate handoff, and semaphore queuing**.
 
 Evaluating **Effective Total Latency (Net Time + Parse Time)** alongside **Total Wall Time** provides a strictly apples-to-apples comparison across both models.
