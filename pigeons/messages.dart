@@ -15,6 +15,11 @@ import 'package:pigeon/pigeon.dart';
     cppOptions: CppOptions(
       namespace: 'flutter_turbo_fetch',
     ),
+    gobjectHeaderOut: 'linux/messages.g.h',
+    gobjectSourceOut: 'linux/messages.g.cc',
+    gobjectOptions: GObjectOptions(
+      module: 'FlutterTurboFetch',
+    ),
   ),
 )
 class TurboHttpRequest {

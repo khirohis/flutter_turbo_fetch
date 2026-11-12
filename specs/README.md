@@ -26,6 +26,7 @@
 - [`architectures/android-native-layer.md`](architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 固有設計・例外マッピング）
 - [`architectures/darwin-native-layer.md`](architectures/darwin-native-layer.md): iOS / macOS（Darwin）ネイティブ層仕様（URLSession 固有設計・例外マッピング）
 - [`architectures/windows-native-layer.md`](architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP 固有設計・例外マッピング）
+- [`architectures/linux-native-layer.md`](architectures/linux-native-layer.md): Linux ネイティブ層仕様（libcurl 固有設計・例外マッピング）
 - [`architectures/dart-layer.md`](architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様
 - [`architectures/benchmark.md`](architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様
 

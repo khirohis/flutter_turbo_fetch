@@ -112,12 +112,13 @@ void main() {
         expect(responseBody.headers['server'], <String>['TurboServer/1.0']);
       });
 
-      test('checks platform support (Android, iOS, macOS, Windows allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
+      test('checks platform support (Android, iOS, macOS, Windows, Linux allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
         final adapter = TurboHttpAdapter();
         if (Platform.isAndroid ||
             Platform.isIOS ||
             Platform.isMacOS ||
-            Platform.isWindows) {
+            Platform.isWindows ||
+            Platform.isLinux) {
           await expectLater(
             adapter.fetch(RequestOptions(path: 'https://example.com'), null, null),
             throwsA(isA<DioException>()),

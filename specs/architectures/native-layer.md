@@ -1,13 +1,14 @@
 # ネイティブ層共通仕様および通信ブリッジ仕様
 
 > 通信方式（MethodChannel/Pigeon vs FFI）の比較背景については [`docs/design-rationale.md`](../../docs/design-rationale.md) を参照。  
-> 各 OS 固有の設計・エラーマッピングについては [`android-native-layer.md`](./android-native-layer.md) / [`darwin-native-layer.md`](./darwin-native-layer.md) / [`windows-native-layer.md`](./windows-native-layer.md) を参照。
+> 各 OS 固有の設計・エラーマッピングについては [`android-native-layer.md`](./android-native-layer.md) / [`darwin-native-layer.md`](./darwin-native-layer.md) / [`windows-native-layer.md`](./windows-native-layer.md) / [`linux-native-layer.md`](./linux-native-layer.md) を参照。
 
 ---
 
 ## 1. Dart ⇄ ネイティブ間の通信ブリッジ仕様（Pigeon）
 
-通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、OS バックグラウンドで結合した単一のレスポンスボディ `Uint8List` を 1 リクエストにつき 1 往復でやり取りする。
+通信ブリッジには **Pigeon（`StandardMessageCodec` ベースの型安全コード生成、`@HostApi` + `@async`）** を採用し、OS バックグラウンドで結合した単一のレスポンスボディ `Uint8List` を 1 リクエストにつき 1 往復でやり取りする。  
+※ 生成コードは、iOS / macOS は `darwin/` 単一ソース（Swift）、Windows は `windows/`（Flutter C++ Client Wrapper 準拠の C++）、Linux は `linux/`（Flutter Linux GTK/GObject C API 準拠の GObject）にそれぞれ配置する。
 
 - **リクエスト情報（`TurboHttpRequest`）**:
   - `requestId`: リクエスト識別子（キャンセル紐付け用）
@@ -30,7 +31,7 @@
 
 ## 2. 全プラットフォーム共通のアーキテクチャ不変条件
 
-すべての対応 OS（Android / iOS / macOS / Windows）のネイティブ実装は、以下の共通設計原則に従う。
+すべての対応 OS（Android / iOS / macOS / Windows / Linux）のネイティブ実装は、以下の共通設計原則に従う。
 
 1. **3層クラス責務分離（SRP & テスタビリティ）**:
    - **`FlutterTurboFetchPlugin`（インターフェース層）**: Flutter Engine / Pigeon とのブリッジおよびメインスレッドへのコールバック返却を担当し、HTTP 通信ライブラリへの直接依存を持たない。

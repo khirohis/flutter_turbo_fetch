@@ -7,7 +7,7 @@
 ## 1. 一気通貫パイプライン構造
 
 ```text
-[ネイティブ層: Android (OkHttp3) / iOS & macOS (URLSession) / Windows (WinHTTP)]
+[ネイティブ層: Android (OkHttp3) / iOS & macOS (URLSession) / Windows (WinHTTP) / Linux (libcurl)]
   ├─ OS バックグラウンドスレッドで HTTP/2 多重化通信・TLS 復号・チャンク結合を完結
   ├─ maxResponseBytes 指定時は上限超過を検知した時点で通信を中断しエラー返却
   └─ 完成した単一の生バイト配列 (Uint8List) を 1 リクエストにつき 1 回のみ Dart へ返却
@@ -31,7 +31,7 @@
 
 | レイヤー | 担当コンポーネント | 主な責務（入出力） |
 | :--- | :--- | :--- |
-| **ネイティブ通信層**<br>(Android / Darwin / Windows) | `FlutterTurboFetchPlugin`<br>`TurboHttpExecutor`<br>`TurboClientManager` / `TurboSessionManager` | リクエスト情報を受け取り、OS バックグラウンドで一括受信した結合済みバイト配列・ステータス・ヘッダを返す |
+| **ネイティブ通信層**<br>(Android / Darwin / Windows / Linux) | `FlutterTurboFetchPlugin`<br>`TurboHttpExecutor`<br>`TurboClientManager` / `TurboSessionManager` | リクエスト情報を受け取り、OS バックグラウンドで一括受信した結合済みバイト配列・ステータス・ヘッダを返す |
 | **Dart Adapter 層** | `TurboHttpAdapter`<br>(`HttpClientAdapter`) | `RequestOptions` とボディストリームをネイティブへ渡し、返却された `Uint8List` を単一チャンクの `ResponseBody` としてラップする |
 | **Dart Transform 層** | `TurboTransformer` + `TurboOptions`<br>(`BackgroundTransformer`) | 単一チャンク `ResponseBody` から `ResponseType` に応じた一次デコードおよび `mapper` 後処理を実行する |
 
@@ -45,6 +45,7 @@
 | `pigeons/` | Dart ⇄ ネイティブ間の Pigeon スキーマ定義（`messages.dart`） |
 | `android/` | Android ネイティブ層実装（Kotlin / `OkHttp3`）および JUnit 単体テスト |
 | `darwin/` | iOS / macOS 共通ネイティブ層実装（Swift / `URLSession`, `sharedDarwinSource`）および XCTest |
-| `windows/` | Windows ネイティブ層実装（C++17 / `WinHTTP`）および C++ 単体テスト |
+| `windows/` | Windows ネイティブ層実装（C++17 / `WinHTTP`）、Pigeon C++ 生成コードおよび C++ 単体テスト |
+| `linux/` | Linux ネイティブ層実装（C++17 / `libcurl` / CMake）、Pigeon GObject 生成コードおよび C++ 単体テスト |
 | `test/` | Dart 層の単体テストおよびマイクロベンチマーク |
 | `example/` | HTTP/2 モックサーバーおよびマルチプラットフォーム比較ベンチマークアプリ |

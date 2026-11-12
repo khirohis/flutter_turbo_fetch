@@ -22,12 +22,13 @@
 | 階層 | 対象ディレクトリ | モック方針 | 主な検証責務 |
 | :--- | :--- | :--- | :--- |
 | **Dart 層単体テスト** | `test/` | Pigeon `TurboFetchHostApi` を Fake 化 | リクエスト/レスポンス変換、`ResponseType` デコード、Isolate 分岐（24KiB）、エラーマッピング、キャンセル伝播、クローズ状態遷移 |
-| **ネイティブ層単体テスト** | `android/`<br>`example/ios/RunnerTests/`<br>`example/macos/RunnerTests/`<br>`windows/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
+| **ネイティブ層単体テスト** | `android/`<br>`example/ios/RunnerTests/`<br>`example/macos/RunnerTests/`<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
 | **統合テスト (E2E)** | `example/integration_test/` | 実通信環境 / 実機 / シミュレータ | プラットフォームチャネルを介した実 HTTP/2 通信およびベンチマーク基盤の結合動作 |
 
 ### Dart 層テストのファイル構成
 
 1ファイル集中（`flutter_turbo_fetch_test.dart`）を避け、責務単位でファイルを分割・整理する：
+
 - `adapter_test.dart`: `TurboHttpAdapter` のリクエスト/レスポンス変換、キャンセル、ライフサイクル、エラー変換。
 - `transformer_test.dart`: `TurboTransformer` の型変換、Isolate 分岐、セマフォ並行制御。
 - `options_test.dart`: `TurboOptions` の引数・mapper 型安全性。
@@ -68,4 +69,3 @@
 4. **テストヘルパー・モデルの設計作法**:
    - Fake クラスは標準的な正常系レスポンス（200 OK・空ボディ）をデフォルト挙動とし、テスト側のボイラープレートを排除する。
    - テスト用モデルには `toString()` を必ず実装し、アサーション失敗時の差分ログを明瞭化する。
-
