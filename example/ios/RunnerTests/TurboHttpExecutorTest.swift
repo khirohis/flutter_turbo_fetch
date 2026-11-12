@@ -60,11 +60,16 @@ final class TurboHttpExecutorTest: XCTestCase {
   ) -> TurboHttpResponse {
     let exp = expectation(description: "TurboHttpExecutor.execute completion")
     var capturedResponse: TurboHttpResponse?
+    var callCount = 0
     executor.execute(request: request) { response in
+      callCount += 1
       capturedResponse = response
       exp.fulfill()
     }
     wait(for: [exp], timeout: 5.0)
+    XCTAssertEqual(1, callCount, "Callback must be invoked exactly once")
+    XCTAssertEqual(0, executor.activeTaskCount, "activeTasks must be empty after execution")
+    XCTAssertFalse(executor.hasActiveTask(requestId: request.requestId), "activeTasks must not retain finished request")
     return capturedResponse!
   }
 
@@ -267,7 +272,9 @@ final class TurboHttpExecutorTest: XCTestCase {
     defer { executor.shutdown() }
 
     var capturedResponse: TurboHttpResponse?
+    var callCount = 0
     executor.execute(request: createRequest(requestId: "cancel-target")) { response in
+      callCount += 1
       capturedResponse = response
       resultReceived.fulfill()
     }
@@ -277,6 +284,83 @@ final class TurboHttpExecutorTest: XCTestCase {
 
     wait(for: [resultReceived], timeout: 5.0)
     XCTAssertEqual("cancel", capturedResponse?.errorCode)
+    XCTAssertEqual(1, callCount, "Callback must be invoked exactly once on cancel")
+    XCTAssertEqual(0, executor.activeTaskCount, "activeTasks must be cleared after cancellation")
+    XCTAssertFalse(executor.hasActiveTask(requestId: "cancel-target"))
+  }
+
+  func testCancel_immediatelyAfterExecute_cancelsSafelyAndInvokesCallbackExactlyOnce() {
+    let allowFinish = expectation(description: "Allow URLProtocol to finish")
+    let resultReceived = expectation(description: "Immediate cancel result received")
+
+    let executor = createMockedExecutor { request in
+      _ = XCTWaiter.wait(for: [allowFinish], timeout: 5.0)
+      let response = HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/2.0",
+        headerFields: nil
+      )!
+      return (response, Data("ok".utf8))
+    }
+    defer { executor.shutdown() }
+
+    var capturedResponse: TurboHttpResponse?
+    var callCount = 0
+
+    executor.execute(request: createRequest(requestId: "race-cancel")) { response in
+      callCount += 1
+      capturedResponse = response
+      resultReceived.fulfill()
+    }
+
+    // Cancel immediately right after execute (testing race before/during request dispatch)
+    executor.cancel(requestId: "race-cancel")
+    allowFinish.fulfill()
+
+    wait(for: [resultReceived], timeout: 5.0)
+    XCTAssertEqual("cancel", capturedResponse?.errorCode)
+    XCTAssertEqual(1, callCount, "Callback must be invoked exactly once under immediate cancellation")
+    XCTAssertEqual(0, executor.activeTaskCount)
+    XCTAssertFalse(executor.hasActiveTask(requestId: "race-cancel"))
+  }
+
+  func testShutdown_cancelsInFlightRequestsAndCleansUpActiveTasks() {
+    let requestStarted = expectation(description: "Request started in URLProtocol")
+    let allowFinish = expectation(description: "Allow URLProtocol to finish")
+    let resultReceived = expectation(description: "Shutdown cancel result received")
+
+    let executor = createMockedExecutor { request in
+      requestStarted.fulfill()
+      _ = XCTWaiter.wait(for: [allowFinish], timeout: 5.0)
+      let response = HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/2.0",
+        headerFields: nil
+      )!
+      return (response, Data("ok".utf8))
+    }
+
+    var capturedResponse: TurboHttpResponse?
+    var callCount = 0
+
+    executor.execute(request: createRequest(requestId: "shutdown-target")) { response in
+      callCount += 1
+      capturedResponse = response
+      resultReceived.fulfill()
+    }
+
+    wait(for: [requestStarted], timeout: 5.0)
+    // Shutdown cancels all active tasks and cleans up state
+    executor.shutdown()
+    allowFinish.fulfill()
+
+    wait(for: [resultReceived], timeout: 5.0)
+    XCTAssertEqual("cancel", capturedResponse?.errorCode)
+    XCTAssertEqual(1, callCount, "Callback must be invoked exactly once on shutdown cancellation")
+    XCTAssertEqual(0, executor.activeTaskCount)
+    XCTAssertFalse(executor.hasActiveTask(requestId: "shutdown-target"))
   }
 
   func testExecute_maxResponseBytesNil_returnsFullBodyAndHeaders() {
@@ -391,10 +475,105 @@ final class TurboHttpExecutorTest: XCTestCase {
     XCTAssertNil(response.errorCode)
     XCTAssertEqual(payload, response.body?.data)
   }
+
+  func testExecute_postWithRequestBody_transmitsPayloadCorrectly() {
+    let requestPayload = Data("turbo-post-payload".utf8)
+    var capturedPayload: Data?
+
+    let executor = createMockedExecutor { request in
+      XCTAssertEqual("POST", request.httpMethod)
+      capturedPayload = MockURLProtocol.extractBodyData(from: request)
+
+      let response = HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/2.0",
+        headerFields: nil
+      )!
+      return (response, Data("response-ok".utf8))
+    }
+    defer { executor.shutdown() }
+
+    let response = executeSync(
+      executor: executor,
+      request: createRequest(method: "POST", body: requestPayload)
+    )
+
+    XCTAssertNil(response.errorCode)
+    XCTAssertEqual(200, response.statusCode)
+    XCTAssertEqual(requestPayload, capturedPayload)
+  }
+
+  func testExecute_postWithNullBody_fallsBackSafely() {
+    var capturedBodyLength: Int?
+
+    let executor = createMockedExecutor { request in
+      XCTAssertEqual("POST", request.httpMethod)
+      let bodyData = MockURLProtocol.extractBodyData(from: request)
+      capturedBodyLength = bodyData?.count ?? 0
+
+      let response = HTTPURLResponse(
+        url: request.url!,
+        statusCode: 204,
+        httpVersion: "HTTP/2.0",
+        headerFields: nil
+      )!
+      return (response, nil)
+    }
+    defer { executor.shutdown() }
+
+    let response = executeSync(
+      executor: executor,
+      request: createRequest(method: "POST", body: nil)
+    )
+
+    XCTAssertNil(response.errorCode)
+    XCTAssertEqual(204, response.statusCode)
+    XCTAssertEqual(0, capturedBodyLength)
+    XCTAssertEqual(Data(), response.body?.data)
+  }
+
+  func testExecute_emptyResponseBody_returnsEmptyByteArraySafely() {
+    let executor = createMockedExecutor { request in
+      let response = HTTPURLResponse(
+        url: request.url!,
+        statusCode: 200,
+        httpVersion: "HTTP/2.0",
+        headerFields: nil
+      )!
+      return (response, Data())
+    }
+    defer { executor.shutdown() }
+
+    let response = executeSync(executor: executor, request: createRequest())
+    XCTAssertNil(response.errorCode)
+    XCTAssertEqual(200, response.statusCode)
+    XCTAssertEqual(Data(), response.body?.data)
+  }
 }
 
 private final class MockURLProtocol: URLProtocol {
   static var requestHandler: ((URLRequest) throws -> (URLResponse, Data?))?
+
+  static func extractBodyData(from request: URLRequest) -> Data? {
+    if let body = request.httpBody {
+      return body
+    }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var buffer = [UInt8](repeating: 0, count: 1024)
+    var data = Data()
+    while stream.hasBytesAvailable {
+      let read = stream.read(&buffer, maxLength: buffer.count)
+      if read > 0 {
+        data.append(buffer, count: read)
+      } else {
+        break
+      }
+    }
+    return data
+  }
 
   override class func canInit(with request: URLRequest) -> Bool {
     return true

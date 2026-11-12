@@ -559,6 +559,17 @@ void TurboHttpExecutor::Shutdown() {
   session_manager_.Shutdown();
 }
 
+size_t TurboHttpExecutor::active_request_count() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return active_requests_.size();
+}
+
+bool TurboHttpExecutor::has_active_request(
+    const std::string& request_id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return active_requests_.find(request_id) != active_requests_.end();
+}
+
 // static
 std::string TurboHttpExecutor::ClassifyError(const RequestContext& ctx,
                                              DWORD win32_error,

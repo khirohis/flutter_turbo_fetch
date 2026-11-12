@@ -70,6 +70,9 @@ class TurboHttpExecutor {
 
   virtual void Shutdown();
 
+  size_t active_request_count() const;
+  bool has_active_request(const std::string& request_id) const;
+
   // Classifies a Win32 / WinHTTP error into the platform-unified error code.
   static std::string ClassifyError(const RequestContext& ctx,
                                    DWORD win32_error,
@@ -127,7 +130,7 @@ class TurboHttpExecutor {
   TP_CALLBACK_ENVIRON callback_env_{};
   bool env_initialized_ = false;
 
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<RequestContext>>
       active_requests_;
   std::atomic<bool> is_shutdown_{false};

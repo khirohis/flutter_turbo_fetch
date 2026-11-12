@@ -32,6 +32,11 @@ internal open class TurboHttpExecutor(
 ) {
     private val activeCalls = ConcurrentHashMap<String, Call>()
 
+    internal val activeCallCount: Int
+        get() = activeCalls.size
+
+    internal fun hasActiveCall(requestId: String): Boolean = activeCalls.containsKey(requestId)
+
     // -------------------------------------------------------------------------
     // Lifecycle & Call Management
     // -------------------------------------------------------------------------

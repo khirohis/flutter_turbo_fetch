@@ -17,6 +17,7 @@
 
 - [`guidelines/language-policy.md`](guidelines/language-policy.md): 言語運用ポリシー（制御系＝日本語、成果物系＝英語）
 - [`guidelines/branch-strategy.md`](guidelines/branch-strategy.md): ブランチ戦略・リリース運用ガイドライン（GitHub Flow 拡張型、`pub.dev` 公開手順）
+- [`guidelines/testing-policy.md`](guidelines/testing-policy.md): テスト方針・品質ガイドライン（階層責務、検証マトリクス、モック方針、実装規約）
 
 ### 3. アーキテクチャ仕様 (`architectures/`) — What / Why
 

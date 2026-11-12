@@ -93,5 +93,18 @@ final class TurboSessionManagerTest: XCTestCase {
     taskA.cancel()
     taskB.cancel()
   }
+
+  func testAcquireSession_nonPositiveLimit_clampsToOne() {
+    let manager = TurboSessionManager()
+    defer { manager.shutdown() }
+
+    let sessionZero = manager.acquireSession(maxConnectionsPerHost: 0)
+    XCTAssertEqual(1, sessionZero.configuration.httpMaximumConnectionsPerHost)
+    XCTAssertEqual(1, manager.currentMaxConnectionsPerHost)
+
+    let sessionNeg = manager.acquireSession(maxConnectionsPerHost: -10)
+    XCTAssertEqual(1, sessionNeg.configuration.httpMaximumConnectionsPerHost)
+    XCTAssertEqual(1, manager.currentMaxConnectionsPerHost)
+  }
 }
 
