@@ -34,7 +34,7 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
     XCTAssertNotNil(plugin)
   }
 
-  func testExecuteRequest_andCancelRequest_delegateToExecutor() throws {
+  func testExecuteRequest_andCancelRequest_delegateToExecutor_andInvokeCallbackExactlyOnce() throws {
     final class FakeTurboHttpExecutor: TurboHttpExecutor {
       var capturedRequest: TurboHttpRequest?
       var capturedOnResult: ((TurboHttpResponse) -> Void)?
@@ -58,9 +58,11 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
 
     let completionExp = expectation(description: "Plugin completion callback")
     var receivedResponse: TurboHttpResponse?
+    var callbackCount = 0
 
     let request = createRequest(requestId: "req-cancel-test")
     plugin.executeRequest(request: request) { result in
+      callbackCount += 1
       if case .success(let response) = result {
         receivedResponse = response
       }
@@ -69,6 +71,7 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
 
     XCTAssertEqual("req-cancel-test", fakeExecutor.capturedRequest?.requestId)
     XCTAssertNil(receivedResponse)
+    XCTAssertEqual(0, callbackCount)
 
     // cancelRequest delegates to executor.cancel(requestId:)
     try plugin.cancelRequest(requestId: "req-cancel-test")
@@ -83,6 +86,32 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
 
     wait(for: [completionExp], timeout: 5.0)
     XCTAssertEqual("cancel", receivedResponse?.errorCode)
+    XCTAssertEqual(1, callbackCount, "Plugin completion must be invoked exactly once")
+  }
+
+  func testPostToMain_executesImmediatelyOnMainThread() {
+    let plugin = FlutterTurboFetchPlugin()
+    var executed = false
+    plugin.postToMain {
+      executed = true
+    }
+    XCTAssertTrue(executed, "postToMain should execute synchronously when already on main thread")
+  }
+
+  func testDetachFromEngine_delegatesShutdownToExecutor() {
+    final class LifecycleTrackingExecutor: TurboHttpExecutor {
+      var shutdownCalled = false
+
+      override func shutdown() {
+        shutdownCalled = true
+      }
+    }
+
+    let fakeExecutor = LifecycleTrackingExecutor()
+    let plugin = FlutterTurboFetchPlugin(executor: fakeExecutor)
+
+    fakeExecutor.shutdown()
+    XCTAssertTrue(fakeExecutor.shutdownCalled, "Executor shutdown must be invoked")
   }
 }
 

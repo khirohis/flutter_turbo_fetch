@@ -22,6 +22,18 @@ internal class TurboHttpExecutor {
   // Lifecycle & Task Management
   // ---------------------------------------------------------------------------
 
+  var activeTaskCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return activeTasks.count
+  }
+
+  func hasActiveTask(requestId: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return activeTasks[requestId] != nil
+  }
+
   func shutdown() {
     lock.lock()
     let tasks = Array(activeTasks.values)
