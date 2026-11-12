@@ -7,7 +7,7 @@ import 'messages.g.dart';
 import 'turbo_options.dart';
 
 /// A high-performance Dio [HttpClientAdapter] that leverages platform-native
-/// batch HTTP/2 reception (Android OkHttp3 / iOS & macOS URLSession / Windows WinHTTP).
+/// batch HTTP/2 reception (Android OkHttp3 / iOS & macOS URLSession / Windows WinHTTP / Linux libcurl).
 class TurboHttpAdapter implements HttpClientAdapter {
   final TurboFetchHostApi _hostApi;
   final bool _overridePlatformCheck;
@@ -48,9 +48,10 @@ class TurboHttpAdapter implements HttpClientAdapter {
         !Platform.isAndroid &&
         !Platform.isIOS &&
         !Platform.isMacOS &&
-        !Platform.isWindows) {
+        !Platform.isWindows &&
+        !Platform.isLinux) {
       throw UnsupportedError(
-        'TurboHttpAdapter is only supported on Android, iOS, macOS, and Windows.',
+        'TurboHttpAdapter is only supported on Android, iOS, macOS, Windows, and Linux.',
       );
     }
 

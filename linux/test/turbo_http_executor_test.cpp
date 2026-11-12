@@ -132,7 +132,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_InvalidUrl_ReturnsConnectionError) {
   auto request = CreateRequest("req-invalid-url", "htp://invalid url scheme", "GET");
   auto response = ExecuteSync(executor, request);
 
-  ASSERT_EQ(0, response.status_code());
+  ASSERT_NE(nullptr, response.status_code());
+  ASSERT_EQ(static_cast<int64_t>(0), *response.status_code());
   ASSERT_TRUE(response.error_code() != nullptr);
   ASSERT_EQ(TurboErrorCodes::kConnectionError, *response.error_code());
 }
@@ -148,7 +149,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_InvalidHeaderCharacters_ReturnsConnectionEr
   auto request = CreateRequest("req-bad-header", "https://example.com", "GET", bad_headers);
   auto response = ExecuteSync(executor, request);
 
-  ASSERT_EQ(0, response.status_code());
+  ASSERT_NE(nullptr, response.status_code());
+  ASSERT_EQ(static_cast<int64_t>(0), *response.status_code());
   ASSERT_TRUE(response.error_code() != nullptr);
   ASSERT_EQ(TurboErrorCodes::kConnectionError, *response.error_code());
 }
@@ -203,7 +205,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_MaxResponseBytesNull_ReturnsFullBodyAndHead
       200, "OK", header_block, body_data, std::nullopt);
 
   ASSERT_TRUE(res.error_code() == nullptr);
-  ASSERT_EQ(200, res.status_code());
+  ASSERT_NE(nullptr, res.status_code());
+  ASSERT_EQ(static_cast<int64_t>(200), *res.status_code());
   ASSERT_TRUE(res.body() != nullptr);
   ASSERT_EQ(static_cast<size_t>(1000), res.body()->size());
 }
@@ -339,7 +342,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_EmptyResponseBody_ReturnsEmptyBodySafely) {
   auto res = TurboHttpExecutor::ValidateAndAssembleChunks(
       204, "No Content", headers, empty_body, std::nullopt);
 
-  ASSERT_EQ(204, res.status_code());
+  ASSERT_NE(nullptr, res.status_code());
+  ASSERT_EQ(static_cast<int64_t>(204), *res.status_code());
   ASSERT_TRUE(res.body() != nullptr);
   ASSERT_EQ(static_cast<size_t>(0), res.body()->size());
 }

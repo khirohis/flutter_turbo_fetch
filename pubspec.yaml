@@ -39,3 +39,5 @@ flutter:
         sharedDarwinSource: true
       windows:
         pluginClass: FlutterTurboFetchPluginCApi
+      linux:
+        pluginClass: FlutterTurboFetchPlugin

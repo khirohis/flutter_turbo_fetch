@@ -63,9 +63,15 @@ if(BUILD_TESTING)
   set(TEST_BINARY_NAME "${PROJECT_NAME}_linux_test")
 
   if(NOT DEFINED FLUTTER_ENGINE_DIR)
-    set(FLUTTER_ENGINE_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64"
-    )
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64")
+      set(FLUTTER_ENGINE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64"
+      )
+    else()
+      set(FLUTTER_ENGINE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/windows-x64"
+      )
+    endif()
   endif()
 
   set(WRAPPER_ROOT "${FLUTTER_ENGINE_DIR}/cpp_client_wrapper")
@@ -74,15 +80,19 @@ if(BUILD_TESTING)
     "test/turbo_session_manager_test.cpp"
     "test/turbo_http_executor_test.cpp"
     "test/flutter_turbo_fetch_plugin_test.cpp"
+    "flutter_turbo_fetch_plugin.cc"
     "turbo_http_executor.cc"
     "turbo_session_manager.cc"
     "${COMMON_CPP_DIR}/messages.g.cpp"
-    "${WRAPPER_ROOT}/core_implementations.cc"
     "${WRAPPER_ROOT}/standard_codec.cc"
   )
 
   target_compile_features(${TEST_BINARY_NAME} PRIVATE cxx_std_17)
   target_compile_options(${TEST_BINARY_NAME} PRIVATE -Wall -Wextra -pthread)
+  target_compile_definitions(${TEST_BINARY_NAME} PRIVATE TURBO_STANDALONE_TEST)
+
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GTK REQUIRED gtk+-3.0)
 
   target_include_directories(${TEST_BINARY_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -90,11 +100,13 @@ if(BUILD_TESTING)
     "${COMMON_CPP_DIR}"
     "${FLUTTER_ENGINE_DIR}"
     "${WRAPPER_ROOT}/include"
+    ${GTK_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
   )
 
   target_link_libraries(${TEST_BINARY_NAME} PRIVATE
     pthread
+    ${GTK_LIBRARIES}
     ${CURL_LIBRARIES}
   )
 
