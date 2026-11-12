@@ -10,8 +10,8 @@ import 'package:pigeon/pigeon.dart';
     ),
     swiftOut:
         'darwin/flutter_turbo_fetch/Sources/flutter_turbo_fetch/Messages.g.swift',
-    cppHeaderOut: 'windows/messages.g.h',
-    cppSourceOut: 'windows/messages.g.cpp',
+    cppHeaderOut: 'common/cpp/messages.g.h',
+    cppSourceOut: 'common/cpp/messages.g.cpp',
     cppOptions: CppOptions(
       namespace: 'flutter_turbo_fetch',
     ),
