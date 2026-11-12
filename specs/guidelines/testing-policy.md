@@ -28,6 +28,7 @@
 ### Dart 層テストのファイル構成
 
 1ファイル集中（`flutter_turbo_fetch_test.dart`）を避け、責務単位でファイルを分割・整理する：
+
 - `adapter_test.dart`: `TurboHttpAdapter` のリクエスト/レスポンス変換、キャンセル、ライフサイクル、エラー変換。
 - `transformer_test.dart`: `TurboTransformer` の型変換、Isolate 分岐、セマフォ並行制御。
 - `options_test.dart`: `TurboOptions` の引数・mapper 型安全性。
@@ -68,4 +69,3 @@
 4. **テストヘルパー・モデルの設計作法**:
    - Fake クラスは標準的な正常系レスポンス（200 OK・空ボディ）をデフォルト挙動とし、テスト側のボイラープレートを排除する。
    - テスト用モデルには `toString()` を必ず実装し、アサーション失敗時の差分ログを明瞭化する。
-
