@@ -26,7 +26,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Dart** | `>= 3.5.0` | Supported |
 | **Dio** | `^5.4.0` | Supported |
 | **Android** | `minSdk = 24` (Android 7.0+) • `okhttp:4.12.0` | Tested & Benchmarked |
-| **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
+| **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested & Benchmarked (iPhone 17, Release) |
 | **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
 | **Linux** | `Ubuntu 20.04+ / Debian 11+` (64-bit) • `libcurl` | Tested (Benchmarking Pending) |
@@ -34,7 +34,8 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
 > [!NOTE]
 >
-> - **iOS, macOS & Linux Status**: Native implementations are complete and unit/integration-tested; formal end-to-end performance benchmarking reports are pending.
+> - **iOS Status**: A physical-device Release [benchmark report](docs/benchmarks/ios/2026-11-14-release.md) documents measured tradeoffs and limitations.
+> - **macOS & Linux Status**: Native implementations are complete and unit/integration-tested; formal end-to-end performance benchmarking reports are pending.
 > - **Web**: Web is not supported due to native OS transport requirements.
 
 ---
@@ -184,6 +185,7 @@ Compared to traditional HTTP/1.1 and streaming Dart adapters, `flutter_turbo_fet
 To run benchmarks locally or view full empirical metrics on physical/emulator hardware:
 
 - **Microbenchmarks**: Run `flutter test test/turbo_benchmark_test.dart`
+- **iOS Physical Device**: [2026-11-14 Release results, raw data, and limitations](docs/benchmarks/ios/2026-11-14-release.md), with a [reproduction protocol](docs/benchmarks/ios/README.md). TurboFetch was faster than dio_http2 and slower than IO in these workloads; frame metrics were not measured.
 - **End-to-End Suite**: Uses a local Node.js HTTP/2 mock server with self-signed TLS (`allowBadCertificates: true`). See [`example/`](https://github.com/khirohis/flutter_turbo_fetch/tree/main/example) for server setup and [Benchmark Results](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmark-results.md) for detailed metrics.
 
 ---

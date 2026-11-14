@@ -55,6 +55,8 @@ def export(device_path, server_path, prefix):
         assert r["http_version"] == expected_protocol
         peer = server[key]
         assert peer["http_version"] == expected_protocol and peer["status"] == 200
+        if expected_protocol == "2.0":
+            assert peer["alpn"] == "h2", "HTTP/2 requires server-observed h2 ALPN"
         assert int(peer["response_bytes"]) == r["response_bytes"]
         assert r["response_bytes"] >= r["size_kib"] * 1024
         sizes.setdefault(r["size_kib"], r["response_bytes"])
@@ -94,6 +96,9 @@ def export(device_path, server_path, prefix):
     request_fields = ["scenario", "preset", "trial", "sequence", "round", "size_kib",
                       "status", "response_bytes", "http_version", "network_ms", "parse_ms", "request_ms", "error"]
     write_csv(prefix.with_name(prefix.name + "-requests.csv"), request_fields, requests)
+    write_csv(prefix.with_name(prefix.name + "-server.csv"),
+              ["scenario", "preset", "trial", "sequence", "size_kib", "http_version",
+               "alpn", "status", "response_bytes"], server.values())
     summary = []
     for s in ("scenario_a", "scenario_b", "scenario_c"):
         for p in ("io_http1", "dio_http2", "turbo_fetch"):
@@ -116,7 +121,7 @@ def export(device_path, server_path, prefix):
 
 def write_csv(path, fields, rows):
     with path.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow({key: "N/A" if row.get(key) is None else row[key] for key in fields})

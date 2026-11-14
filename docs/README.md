@@ -15,3 +15,7 @@ For internal specifications and agent instructions (maintained in Japanese), ref
   Cross-platform executive summary and common evaluation methodology, accompanied by platform-specific empirical benchmark reports under `docs/benchmarks/` (Android, Windows, etc.).
 - **[TurboTransformer Reference (`turbo-transformer.md`)](turbo-transformer.md)**:
   Architecture and implementation breakdown of zero-copy Isolate transformations, fused decoders, and semaphore concurrency governance.
+
+- **[iOS Physical-Device Release Benchmark](benchmarks/ios/2026-11-14-release.md)**:
+  iPhone 17 measurements, raw trial/request/server data, variation, and limitations
+  under a controlled split-pipeline protocol.

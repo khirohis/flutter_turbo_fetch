@@ -36,6 +36,7 @@ class ExportTests(unittest.TestCase):
                         server.append({"type": "server_response", "scenario": scenario,
                                        "preset": preset, "trial": str(trial), "sequence": str(sequence),
                                        "http_version": protocol, "status": 200, "response_bytes": "6000"})
+                        server[-1]["alpn"] = "h2" if protocol == "2.0" else False
         records.append({"type": "session_complete"})
         device = root / "device.log"
         peer = root / "server.log"
@@ -71,6 +72,14 @@ class ExportTests(unittest.TestCase):
             device, peer, _ = self.fixture(root)
             peer.write_text(peer.read_text().replace('"http_version":"2.0"', '"http_version":"1.1"', 1))
             with self.assertRaises(AssertionError):
+                export(device, peer, root / "synthetic")
+
+    def test_missing_h2_alpn_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            device, peer, _ = self.fixture(root)
+            peer.write_text(peer.read_text().replace('"alpn":"h2"', '"alpn":false', 1))
+            with self.assertRaisesRegex(AssertionError, "ALPN"):
                 export(device, peer, root / "synthetic")
 
 

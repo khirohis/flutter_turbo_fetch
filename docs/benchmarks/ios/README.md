@@ -120,7 +120,9 @@ results are mixed into Release data.
 
    The exporter requires a completed Release session, 90 measured trials,
    nine warmups, 8,700 successful measured requests, matching server records,
-   expected protocols, and identical byte lengths for matching requested sizes.
+   expected protocols, server-observed `h2` ALPN for HTTP/2, and identical byte
+   lengths for matching requested sizes. A public server CSV retains allowlisted
+   protocol and response metadata without host/device addresses.
    It rejects partial/failed sessions and exports only allowlisted fields.
    CSV `N/A` means unavailable; warmup rows are explicitly marked and excluded
    from trial statistics. P50 uses the median and P95 uses nearest rank.
@@ -130,3 +132,5 @@ results are mixed into Release data.
 
 Physical-device results are published only after the completion and consistency
 checks above pass. Failed preparation runs are not performance measurements.
+
+- [2026-11-14 Release results — 90 trials, 8,700 measured requests](2026-11-14-release.md)
