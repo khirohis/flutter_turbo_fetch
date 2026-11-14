@@ -124,3 +124,7 @@ app.*.symbols
 
 # Visual Studio Code
 .vscode/
+
+# Antigravity / Agent tools
+.agents/
+

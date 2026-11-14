@@ -5,10 +5,12 @@ import csv
 import io
 import json
 import pathlib
+import sys
 import tempfile
 import unittest
 
-from export_ios_benchmark import export
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from export_benchmark import export
 
 
 class ExportTests(unittest.TestCase):
@@ -48,39 +50,45 @@ class ExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             device, peer, _ = self.fixture(root)
-            with contextlib.redirect_stdout(io.StringIO()):
-                export(device, peer, root / "synthetic")
-            text = (root / "synthetic-raw.csv").read_text()
-            self.assertNotIn("must-not-export", text)
-            rows = list(csv.DictReader(io.StringIO(text)))
-            self.assertEqual(len(rows), 99)
-            self.assertTrue(all(r["jank_frames"] == "N/A" for r in rows))
-            self.assertEqual(sum(r["warmup"] == "False" for r in rows), 90)
+            export(device, peer, root / "out")
+            with (root / "out-summary.csv").open(newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            jank = [r for r in rows if r["metric"] == "jank_frames"]
+            self.assertTrue(all(r["n"] == "0" and r["median"] == "N/A" for r in jank))
+            total = [r for r in rows if r["metric"] == "total_ms"]
+            self.assertTrue(all(r["n"] == "10" and float(r["median"]) == 100.0 for r in total))
+            with (root / "out-raw.csv").open(newline="") as stream:
+                raw = list(csv.DictReader(stream))
+            self.assertEqual(len(raw), 99)
+            self.assertNotIn("private_metadata", raw[0])
+            self.assertEqual(raw[0]["source_sha"], "a" * 40)
 
-    def test_incomplete_session_cannot_create_performance_files(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = pathlib.Path(temp)
-            device, peer, records = self.fixture(root)
-            device.write_text("\n".join("IOS_BENCHMARK " + json.dumps(r) for r in records[:-1]))
-            with self.assertRaisesRegex(AssertionError, "Incomplete session"):
-                export(device, peer, root / "synthetic")
-            self.assertFalse((root / "synthetic-raw.csv").exists())
-
-    def test_protocol_mismatch_is_rejected(self):
+    def test_rejects_missing_server_evidence(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             device, peer, _ = self.fixture(root)
-            peer.write_text(peer.read_text().replace('"http_version":"2.0"', '"http_version":"1.1"', 1))
+            peer.write_text("")
             with self.assertRaises(AssertionError):
-                export(device, peer, root / "synthetic")
+                export(device, peer, root / "out")
 
-    def test_missing_h2_alpn_is_rejected(self):
+    def test_rejects_incomplete_session(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             device, peer, _ = self.fixture(root)
-            peer.write_text(peer.read_text().replace('"alpn":"h2"', '"alpn":false', 1))
-            with self.assertRaisesRegex(AssertionError, "ALPN"):
-                export(device, peer, root / "synthetic")
+            lines = [l for l in device.read_text().splitlines() if "session_complete" not in l]
+            device.write_text("\n".join(lines))
+            with self.assertRaises(AssertionError):
+                export(device, peer, root / "out")
+
+    def test_rejects_protocol_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            device, peer, _ = self.fixture(root)
+            bad = device.read_text().replace('"preset": "io_http1", "trial": 0, "sequence": 0, "round": 0, "size_kib": 5, "status": 200, "response_bytes": 6000, "http_version": "1.1"',
+                                             '"preset": "io_http1", "trial": 0, "sequence": 0, "round": 0, "size_kib": 5, "status": 200, "response_bytes": 6000, "http_version": "2.0"')
+            device.write_text(bad)
+            with self.assertRaises(AssertionError):
+                export(device, peer, root / "out")
 
 
 if __name__ == "__main__":

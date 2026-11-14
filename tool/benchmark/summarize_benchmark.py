@@ -1,6 +1,6 @@
 """Render report tables from validated trial CSVs using Python's standard library.
 
-Usage: python3 example/tool/summarize_ios_benchmark.py RAW_CSV
+Usage: python tool/benchmark/summarize_benchmark.py RAW_CSV
 """
 
 import csv
@@ -59,4 +59,7 @@ def render(path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)
     render(*sys.argv[1:])

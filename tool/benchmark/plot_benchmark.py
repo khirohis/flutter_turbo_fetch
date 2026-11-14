@@ -1,6 +1,6 @@
 """Plot measured trials only. Requires matplotlib; never substitutes N/A with zero.
 
-Usage: python3 example/tool/plot_ios_benchmark.py RAW_CSV OUTPUT_PNG
+Usage: python tool/benchmark/plot_benchmark.py RAW_CSV OUTPUT_PNG
 """
 
 import csv
@@ -46,15 +46,16 @@ def plot(raw_path, output_path):
             ax.set_ylabel(ylabel)
             ax.grid(axis="y", alpha=.25)
             ax.set_ylim(0, max(max(group) for group in groups) * 1.1)
-    fig.suptitle("iPhone 17 / iOS Release / 2026-11-14\n"
+    fig.suptitle("Benchmark Comparison (Release)\n"
                  "10 trials per adapter/scenario; warmups excluded; split-pipeline protocol")
-    fig.text(.5, .015, "Points: individual trials. Boxes: quartiles and median. "
-             "RSS sampled every 25 ms; retained clients and caches affect baselines.",
-             ha="center", fontsize=9)
-    fig.tight_layout(rect=(0, .04, 1, .92))
-    fig.savefig(output_path, dpi=160, metadata={"Software": "matplotlib"})
-    plt.close(fig)
+    fig.tight_layout()
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200)
 
 
 if __name__ == "__main__":
-    plot(*sys.argv[1:])
+    if len(sys.argv) != 3:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)
+    plot(sys.argv[1], sys.argv[2])
