@@ -172,6 +172,24 @@ Controls Isolate dispatching and thread concurrency:
 | `isolateThresholdBytes` | `int` | `24 * 1024` (24KB) | Payloads below this threshold are decoded synchronously on the Main Isolate (< 0.5ms). Payloads at or above this threshold are dispatched to Worker Isolates via zero-copy `TransferableTypedData`. |
 | `maxConcurrentIsolates` | `int?` | `max(2, cores - 2)` | Maximum concurrent worker Isolates permitted by the internal semaphore, preventing CPU thread starvation during 10-20x burst requests. |
 
+> [!TIP]
+> **💡 Performance Tuning for High-End Devices (Apple Silicon / Flagship Phones)**:
+>
+> The default configuration (24KB threshold, conservative semaphore) prioritizes UI frame safety on entry-level and mid-range mobile devices. On high-performance hardware (e.g., iPhone 15/16/17 with Apple Silicon, or modern flagship Android chips), consider these adjustments for maximum throughput:
+>
+> 1. **Increase `isolateThresholdBytes` (Sweet spot: 128KB – 256KB)**:
+>    Modern high-end CPU cores decode JSON synchronously on the Main Isolate in **< 0.7ms for 100KB** and **~1.0ms for 200KB**. Raising the threshold to **128KB–256KB** avoids worker Isolate spawning and semaphore dispatch overhead (~1.0ms), matching the physical break-even point while keeping Main Isolate blocking safely below the strict 120 FPS frame budget (8.33ms).
+>
+>    ```dart
+>    // Example: Maximize throughput on high-end mobile devices
+>    dio.transformer = TurboTransformer(
+>      isolateThresholdBytes: 128 * 1024, // 128KB threshold (up to 256KB)
+>    );
+>    ```
+>
+> 2. **Increase `maxConcurrentIsolates` for Heavy Burst Concurrency**:
+>    When issuing 10+ concurrent heavy JSON requests simultaneously over high-speed networks, scaling `maxConcurrentIsolates` to match the device's physical performance cores (e.g., `4` to `6`) reduces semaphore queue wait times and maximizes parallel parsing throughput.
+
 ---
 
 ## 📊 Performance & Benchmarks

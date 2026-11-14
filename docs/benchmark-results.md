@@ -148,3 +148,10 @@ The iPhone 17 physical-device benchmark revealed subtle trade-offs when operatin
    - **Single-Core JSON Decoding**: iPhone 17's CPU cores decode JSON synchronously on the Main Isolate in **< 0.2 ms for <= 20KiB** and **< 0.7 ms for 100KiB**.
    - **The 24KiB Isolate Boundary**: Payloads >= 25KiB trigger `TurboTransformer`'s Isolate dispatch. For payloads between 25KiB and 100KiB, the Isolate spawn and semaphore scheduling overhead (0.9–1.9 ms) exceeded the raw Main Isolate decoding speed, temporarily inflating Parse Time.
    - **Ultra-Low Latency Wi-Fi LAN (RTT 1–2 ms)**: In local testing, HTTP/1.1 head-of-line blocking penalties are minimal. For payloads >= 120KiB, however, TurboFetch's pure network transmission was **up to 13% faster** than IO (42.7 ms vs. 49.1 ms at 200KiB), proving native HTTP/2 throughput gains as volume scales.
+
+#### 3.4.1 Practical Tuning Recommendations for High-End Hardware
+
+Based on empirical evidence from the iPhone 17 physical-device study, developers targeting modern high-end devices can maximize throughput with two simple adjustments:
+
+- **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship mobile processors, decoding up to 100KiB synchronously on the Main Isolate takes under 0.7ms, and 200KiB takes ~1.0ms—safely below the 8.33ms (120 FPS) frame budget. Raising the threshold to **128KiB–256KiB** matches the physical Isolate break-even point and eliminates worker dispatch overhead, closing the slight gap with `IOHttpClientAdapter` while maintaining non-blocking safety for genuinely massive responses.
+- **Scale `maxConcurrentIsolates` for Burst Concurrency**: Under 10+ parallel worker bursts (Scenario C), increasing semaphore capacity (e.g., to `4`–`6` on 6-core or 8-core CPUs) allows more concurrent decodes without queue stalls.
