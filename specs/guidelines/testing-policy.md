@@ -32,7 +32,7 @@
 - `adapter_test.dart`: `TurboHttpAdapter` のリクエスト/レスポンス変換、キャンセル、ライフサイクル、エラー変換。
 - `transformer_test.dart`: `TurboTransformer` の型変換、Isolate 分岐、セマフォ並行制御。
 - `options_test.dart`: `TurboOptions` の引数・mapper 型安全性。
-- `benchmark_test.dart`: ベンチマーク集計・フォーマット検証。
+- `turbo_benchmark_test.dart`: Dart 層マイクロベンチマークおよびパフォーマンステスト。
 
 ---
 

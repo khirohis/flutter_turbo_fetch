@@ -1,8 +1,7 @@
-# Platform benchmark reports
+# Platform Benchmark Reports
 
-- [Android](android.md)
-- [Windows](windows.md)
-- [iOS physical-device protocol and evidence](ios/README.md)
+- [Android Benchmark Report](android.md) — Android 16 Emulator, `OkHttp3`
+- [Windows Benchmark Report](windows.md) — Windows 11 x64, `WinHTTP`
+- [iOS Benchmark Report](ios.md) — iPhone 17 Physical Device Release, `URLSession`
 
-See the [cross-platform summary](../benchmark-results.md) for historical results.
-Different measurement protocols must not be pooled or directly ranked.
+See the [Cross-Platform Benchmark Summary](../benchmark-results.md) for cross-platform architectural comparisons, design trade-offs, and methodology principles.

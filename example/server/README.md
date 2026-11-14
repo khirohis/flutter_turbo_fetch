@@ -25,7 +25,7 @@ The default bind address is `127.0.0.1`. For a physical iPhone, set `HOST` to
 one specific Mac LAN address and include that address in the certificate SAN.
 `REQUIRE_TLS=1` prevents fallback to cleartext. `BENCHMARK_LOG=1` pre-generates
 scenario payloads and logs response status, byte count, and observed protocol
-without client addresses. See the [iOS protocol](../../docs/benchmarks/ios/README.md).
+without client addresses. See the [iOS benchmark report](../../docs/benchmarks/ios.md).
 
 ---
 

@@ -6,13 +6,26 @@ import 'package:flutter/services.dart';
 import 'benchmark/benchmark_formatter.dart';
 import 'benchmark/benchmark_models.dart';
 import 'benchmark/benchmark_runner.dart';
+import 'benchmark/verified_session.dart';
 
 export 'benchmark/benchmark_formatter.dart';
 export 'benchmark/benchmark_models.dart';
 export 'benchmark/benchmark_runner.dart';
+export 'benchmark/verified_session.dart';
+
+const _automatedBaseUrl = String.fromEnvironment('BENCHMARK_BASE_URL');
+const _allowLocalCertificate = bool.fromEnvironment('BENCHMARK_LOCAL_TLS');
 
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  if (_automatedBaseUrl.isNotEmpty) {
+    runApp(const VerifiedBenchmarkApp(
+      baseUrl: _automatedBaseUrl,
+      allowLocalCertificate: _allowLocalCertificate,
+    ));
+  } else {
+    runApp(const MyApp());
+  }
 }
 
 class MyApp extends StatelessWidget {

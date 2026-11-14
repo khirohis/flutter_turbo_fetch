@@ -37,15 +37,6 @@
 
 ---
 
-## 3. ディレクトリ構成
+## 3. ディレクトリ構成・配置ルール
 
-| パス | 役割 |
-| :--- | :--- |
-| `lib/` | Dart 公開 API（`TurboHttpAdapter`, `TurboTransformer`, `TurboOptions`）および Pigeon 生成コード |
-| `pigeons/` | Dart ⇄ ネイティブ間の Pigeon スキーマ定義（`messages.dart`） |
-| `android/` | Android ネイティブ層実装（Kotlin / `OkHttp3`）および JUnit 単体テスト |
-| `darwin/` | iOS / macOS 共通ネイティブ層実装（Swift / `URLSession`, `sharedDarwinSource`）および XCTest |
-| `windows/` | Windows ネイティブ層実装（C++17 / `WinHTTP`）、Pigeon C++ 生成コードおよび C++ 単体テスト |
-| `linux/` | Linux ネイティブ層実装（C++17 / `libcurl` / CMake）、Pigeon GObject 生成コードおよび C++ 単体テスト |
-| `test/` | Dart 層の単体テストおよびマイクロベンチマーク |
-| `example/` | HTTP/2 モックサーバーおよびマルチプラットフォーム比較ベンチマークアプリ |
+ルート階層の責務分離および各ディレクトリ配下のファイル配置ルールについては、[`specs/guidelines/directory-structure.md`](../guidelines/directory-structure.md) を参照。

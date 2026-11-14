@@ -43,3 +43,9 @@
 - [x] **5-1. Windows サポート追加（v0.0.2）**: C++17 `WinHTTP`（HTTP/2 共有セッション ＋ OS スレッドプール）による 3 層ネイティブ実装、C++ 単体テスト、Windows ベンチマーク実測レポートを追加。
 - [x] **5-2. macOS サポート追加 & Darwin 共通化（v0.0.3）**: `sharedDarwinSource: true` による `darwin/` 単一ソース化（CocoaPods / SPM 両対応）を実施し、iOS `13.0+` / macOS `10.15+` 共通の `URLSession` 実装および XCTest を整備。
 - [x] **5-3. Linux サポート追加（v0.0.4）**: Pigeon GObject コード生成、C++17 `libcurl`（HTTP/2 共有接続 ＋ ワーカースレッドプール）による 3 層ネイティブ実装、CMake ビルド定義、C++ 単体テスト（WSL2 / Linux 共通）、Linux ベンチマーク実測レポートを追加。
+- [x] **5-4. iOS 実機ベンチマーク・厳密測定プロトコルの確立**: iPhone 17 実機（Release モード）での計測実施、分割パイプライン厳密プロトコル（N=10 ラウンドロビン ＋ サーバー監査）の確立、iOS 実測レポート（[`docs/benchmarks/ios.md`](../docs/benchmarks/ios.md)）およびディレクトリルール（`specs/guidelines/directory-structure.md`）の策定。
+
+## Phase 6: ベンチマーク共通標準化 & パフォーマンス最適化（将来課題）
+
+- [ ] **6-1. TurboTransformer 閾値最適化**: Apple Silicon 等の超高速シングルコア環境向けに、24KiB 閾値のカスタマイズ（動的チューニング・オプション指定）の設計と実装。
+- [ ] **6-2. 全プラットフォーム共通厳密プロトコル移行**: 本 iOS 検証で確立した厳密プロトコル（`tool/benchmark/`）を標準とし、Linux / macOS / Android / Windows の再ベンチマーク計測とドキュメント統合を実施。

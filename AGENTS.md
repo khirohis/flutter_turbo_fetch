@@ -83,3 +83,4 @@
 - **FVM の使用**: 本リポジトリは FVM（`.fvmrc`）でバージョンを固定しているため、必ず `fvm flutter ...` および `fvm dart ...` を使用すること。
 - **Git ブランチ・リリース運用**: [`specs/guidelines/branch-strategy.md`](specs/guidelines/branch-strategy.md) に厳格に従うこと（`main` 直接コミット禁止、目的別ブランチでの作業、`--no-ff` マージ必須）。
 - **言語運用ポリシー**: [`specs/guidelines/language-policy.md`](specs/guidelines/language-policy.md) に厳格に従うこと（ユーザー対話および `specs/` は**日本語**、コード・テスト・コミット・公開ドキュメント等の成果物は**英語 [US English]**）。
+- **ディレクトリ構成ルール**: [`specs/guidelines/directory-structure.md`](specs/guidelines/directory-structure.md) に厳格に従うこと（ルート責務分離、`example/lib/main.dart` へのエントリポイント一本化、`docs/` への生データ混入禁止、命名・階層のフラット性維持）。
