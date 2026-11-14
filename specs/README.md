@@ -30,7 +30,3 @@
 - [`architectures/linux-native-layer.md`](architectures/linux-native-layer.md): Linux ネイティブ層仕様（libcurl 固有設計・例外マッピング）
 - [`architectures/dart-layer.md`](architectures/dart-layer.md): `TurboHttpAdapter`・`TurboTransformer`・`TurboOptions` の仕様
 - [`architectures/benchmark.md`](architectures/benchmark.md): パフォーマンス比較ベンチマーク基盤の仕様
-
-### 4. 機能別仕様 (`features/`)
-
-- 個別機能の詳細仕様を配置（現在未使用・将来の拡張用）。

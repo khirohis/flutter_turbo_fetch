@@ -55,13 +55,13 @@
 | **Total Wall Time** | ms | 10周の全リクエスト完了までの総所要時間（実効スループット） |
 | **Net Time (Avg / P50 / P95)** | ms | `fetch()` 開始 〜 アダプタから全本文バイト列（または `ResponseBody`）が返却されるまでの経過時間 |
 | **Parse Time (Avg / P50 / P95)** | ms | `transformResponse` 開始 〜 デコード・マッピング完了までの実効待ち時間（セマフォ獲得待ち時間を含む） |
-| **Jank Frames** | 回 (%) | `SchedulerBinding`（`FrameTiming`）で 16.6ms（60fps 基準）を超過したフレーム数と発生率（Release 実機では N/A） |
+| **Jank Frames** | 回 (%) | `SchedulerBinding`（`FrameTiming`）で 16.6ms（60fps 基準）を超過したフレーム数と発生率（※Flutter の仕様上、Release ビルドでは無効化されるため実機では N/A） |
 | **Max Frame Duration** | ms | 計測中に発生した単一フレームの最大所要時間（UI フリーズの最大幅） |
 | **Peak RSS / Delta** | MiB | `ProcessInfo.currentRss` による計測中の最大メモリ消費量および開始時からの増分 |
 
 ### 2.2 欠損値および安全性の原則
 
-- 未取得の計測、全失敗時の統計、RSS 取得例外、フレーム未取得はゼロに置換せず **N/A** とする。
+- 未取得の計測、全失敗時の統計、RSS 取得例外、フレーム未取得（Release 実機での `FrameTiming` コールバック無効化等）はゼロに置換せず **N/A** とする。
 - 公開ログおよびレポートには端末 ID、ユーザー名、LAN アドレス、秘密鍵、証明書、署名情報を含めない。
 - Simulator やホストテストの数値を実機結果として流用・偽装しない。実機計測が未実施の場合は未実施と明記する。
 
