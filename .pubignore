@@ -10,12 +10,24 @@ _agent/
 specs/
 docs/
 
+# Internal developer tools, benchmark scripts & raw benchmark data
+tool/
+example/server/
+
 # Code generation schema definitions
 pigeons/
+
+# Linter & repository metadata
+.markdownlint.json
 
 # FVM configuration & version cache
 .fvm/
 .fvmrc
+
+# IDE & editor configuration
+.vscode/
+.idea/
+*.iml
 
 # Miscellaneous & IDE / Build artifacts (kept in sync as .pubignore overrides .gitignore)
 *.class
@@ -23,6 +35,7 @@ pigeons/
 *.log
 *.pyc
 *.swp
+.DS_Store
 .buildlog/
 .history
 .dart_tool/
@@ -37,6 +50,7 @@ build/
 coverage/
 app.*.symbols
 .gradle/
+.kotlin/
 **/android/**/gradle-wrapper.jar
 **/android/captures/
 **/android/gradlew
@@ -45,6 +59,7 @@ app.*.symbols
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
 *.jks
+**/android/**/.cxx/
 **/ios/**/DerivedData/
 **/ios/**/Pods/
 **/ios/**/.symlinks/
@@ -52,12 +67,23 @@ app.*.symbols
 **/ios/.generated/
 **/ios/Flutter/
 **/ios/Runner/GeneratedPluginRegistrant.*
-**/Flutter/ephemeral/
+**/darwin/**/DerivedData/
+**/darwin/**/Pods/
+**/darwin/**/.symlinks/
+**/darwin/**/xcuserdata
+**/darwin/.generated/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/ephemeral/
 **/windows/flutter/generated_plugin_registrant.cc
 **/windows/flutter/generated_plugin_registrant.h
 **/windows/flutter/generated_plugins.cmake
 windows/build/
 windows/test/
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+linux/build/
+linux/test/
 
 # Local mock server certificates
 *.pem
