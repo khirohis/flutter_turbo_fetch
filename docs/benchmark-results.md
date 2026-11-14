@@ -155,3 +155,5 @@ Based on empirical evidence from the iPhone 17 physical-device study, developers
 
 - **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship mobile processors, decoding up to 100KiB synchronously on the Main Isolate takes under 0.7ms, and 200KiB takes ~1.0ms—safely below the 8.33ms (120 FPS) frame budget. Raising the threshold to **128KiB–256KiB** matches the physical Isolate break-even point and eliminates worker dispatch overhead, closing the slight gap with `IOHttpClientAdapter` while maintaining non-blocking safety for genuinely massive responses.
 - **Scale `maxConcurrentIsolates` for Burst Concurrency**: Under 10+ parallel worker bursts (Scenario C), increasing semaphore capacity (e.g., to `4`–`6` on 6-core or 8-core CPUs) allows more concurrent decodes without queue stalls.
+
+*(Note: Similar characteristics and tuning may also apply to macOS on Apple Silicon due to the shared Darwin native layer.)*

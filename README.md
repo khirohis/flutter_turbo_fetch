@@ -189,6 +189,8 @@ Controls Isolate dispatching and thread concurrency:
 >
 > 2. **Increase `maxConcurrentIsolates` for Heavy Burst Concurrency**:
 >    When issuing 10+ concurrent heavy JSON requests simultaneously over high-speed networks, scaling `maxConcurrentIsolates` to match the device's physical performance cores (e.g., `4` to `6`) reduces semaphore queue wait times and maximizes parallel parsing throughput.
+>
+> *(Note: macOS applications running on Apple Silicon may also benefit from similar tuning.)*
 
 ---
 

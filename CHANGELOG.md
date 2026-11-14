@@ -1,3 +1,9 @@
+## 0.0.5
+
+* **Documentation & Tuning Guide**: Added performance tuning guidelines for high-end Apple Silicon devices (tested on iPhone, noting that macOS may also benefit), detailing the sweet spot for `isolateThresholdBytes` (128KiB–256KiB) and concurrency settings to safeguard 120 FPS UI frame budgets.
+* **Verified iOS Benchmark Results**: Published physical iPhone release benchmark reports and isolated comparative data against Dio baseline and `dio_http2`.
+* **Package Optimization**: Refined `.pubignore` to exclude internal developer tools, raw benchmark datasets, and platform build artifacts, minimizing the published package archive size.
+
 ## 0.0.4
 
 * **Linux Platform Support**: Added native Linux desktop support (`Ubuntu 20.04+` / `Debian 11+`, 64-bit x64 / ARM64) powered by C++17 `libcurl` (`libcurl4-openssl-dev`) with HTTP/2 connection sharing (`CURLSH*`) and worker thread pool execution.
