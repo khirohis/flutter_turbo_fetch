@@ -59,6 +59,13 @@ function getJsonPayloadBuffer(sizeKb) {
 }
 
 function handleRequest(req, res) {
+  // Drain the request before completing a response. Otherwise Node may reset
+  // an unread HTTP/2 request stream after responding, racing Dart body reads.
+  if (!req.readableEnded) {
+    req.once('end', () => handleRequest(req, res));
+    req.resume();
+    return;
+  }
   const reqUrl = new URL(req.url ?? '/', `https://localhost:${port}`);
   if (process.env.BENCHMARK_LOG === '1') {
     res.on('finish', () => console.log(JSON.stringify({
