@@ -1,6 +1,7 @@
 name: flutter_turbo_fetch_example
 description: "Benchmark and verification app for the flutter_turbo_fetch plugin."
 publish_to: 'none'
+version: 1.0.0+1
 
 environment:
   sdk: ^3.5.0

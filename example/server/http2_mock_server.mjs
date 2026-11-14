@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT ?? 8443);
+const host = process.env.HOST ?? '127.0.0.1';
 const certPath = process.env.CERT_PATH ?? path.join(__dirname, 'cert.pem');
 const keyPath = process.env.KEY_PATH ?? path.join(__dirname, 'key.pem');
 
@@ -59,6 +60,15 @@ function getJsonPayloadBuffer(sizeKb) {
 
 function handleRequest(req, res) {
   const reqUrl = new URL(req.url ?? '/', `https://localhost:${port}`);
+  if (process.env.BENCHMARK_LOG === '1') {
+    res.on('finish', () => console.log(JSON.stringify({
+      type: 'server_response', scenario: reqUrl.searchParams.get('scenario'),
+      preset: reqUrl.searchParams.get('preset'), trial: reqUrl.searchParams.get('trial'),
+      sequence: reqUrl.searchParams.get('seq'), size_kib: reqUrl.searchParams.get('sizeKb'),
+      http_version: req.httpVersion, alpn: req.stream?.session?.socket?.alpnProtocol ?? req.socket.alpnProtocol,
+      status: res.statusCode, response_bytes: res.getHeader('content-length') ?? null,
+    })));
+  }
   if (reqUrl.pathname === '/health') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ status: 'ok', httpVersion: req.httpVersion }));
@@ -115,13 +125,20 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   );
   console.log(`[HTTP/2 TLS Server] Listening on https://localhost:${port}`);
 } else {
+  if (process.env.REQUIRE_TLS === '1') throw new Error('TLS certificate and key are required');
   console.warn(
     `[Warning] TLS cert/key not found at ${certPath} / ${keyPath}. Starting cleartext h2c server on http://localhost:${port}`,
   );
   server = http2.createServer(handleRequest);
 }
 
-server.listen(port, () => {
+// Pre-generate benchmark bodies so cache misses do not depend on adapter order.
+if (process.env.BENCHMARK_LOG === '1') {
+  for (const size of new Set([5, 10, 15, 20, 25, 30, 35, 40, 45,
+    50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200])) getJsonPayloadBuffer(size);
+}
+
+server.listen(port, host, () => {
   console.log(`Endpoint example: /json?sizeKb=100&delayMs=20`);
   console.log(`Android Emulator URL: https://10.0.2.2:${port}/json?sizeKb=100`);
   console.log(`iOS Simulator URL:    https://localhost:${port}/json?sizeKb=100`);
