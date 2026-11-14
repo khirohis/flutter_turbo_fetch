@@ -77,6 +77,7 @@ class VerifiedBenchmarkClient {
   Future<Map<String, Object?>> run(
       BenchmarkScenario scenario, int trial, int position) async {
     final rows = <Map<String, Object?>>[];
+    final diagnostics = <String>[];
     final startRss = _rss();
     int? peakRss = startRss;
     var rssSamples = 0;
@@ -143,6 +144,7 @@ class VerifiedBenchmarkClient {
         } on DioException catch (e) {
           status = e.response?.statusCode;
           error = e.type.name;
+          diagnostics.add('$sequence: $e\n${e.error}\n${e.stackTrace}');
         } on FormatException {
           error = 'invalid_payload_or_protocol';
         } catch (_) {
@@ -170,6 +172,12 @@ class VerifiedBenchmarkClient {
       wall.stop();
       timer.cancel();
       sample();
+    }
+    // Failed trials are excluded from performance exports. Keep detailed errors
+    // on the device only, outside timed sections; they may contain private URLs.
+    if (diagnostics.isNotEmpty) {
+      File('${Directory.systemTemp.path}/ios-benchmark-network-diagnostic.txt')
+          .writeAsStringSync(diagnostics.join('\n\n'));
     }
     rows.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
     final successes = rows.where((row) => row['error'] == null).toList();
