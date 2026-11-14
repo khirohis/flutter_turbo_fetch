@@ -6,7 +6,7 @@ For detailed platform-specific measurement environments, full scenario tables, a
 
 - 🤖 **[Android Benchmark Report (`docs/benchmarks/android.md`)](benchmarks/android.md)** — `OkHttp3` Shared Connection Pool
 - 🪟 **[Windows Benchmark Report (`docs/benchmarks/windows.md`)](benchmarks/windows.md)** — `WinHTTP` + OS Thread Pool (`TP_POOL`)
-- 🍎 **iOS Benchmark Report (`docs/benchmarks/ios.md`)** — `URLSession` *(Planned)*
+- 🍎 **[iOS Physical-Device Release Report](benchmarks/ios/2026-11-14-release.md)** — iPhone 17, `URLSession`; 90 measured trials with validated request/server evidence. Uses a separate split-pipeline protocol; historical phase metrics below are not directly comparable.
 - 💻 **macOS Benchmark Report (`docs/benchmarks/macos.md`)** *(Planned)*
 - 🐧 **Linux Benchmark Report (`docs/benchmarks/linux.md`)** *(Planned)*
 
