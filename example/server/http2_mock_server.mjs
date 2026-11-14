@@ -67,13 +67,15 @@ function handleRequest(req, res) {
     return;
   }
   const reqUrl = new URL(req.url ?? '/', `https://localhost:${port}`);
+  let responseBytes = null;
+  const alpn = req.stream?.session?.socket?.alpnProtocol ?? req.socket.alpnProtocol;
   if (process.env.BENCHMARK_LOG === '1') {
     res.on('finish', () => console.log(JSON.stringify({
       type: 'server_response', scenario: reqUrl.searchParams.get('scenario'),
       preset: reqUrl.searchParams.get('preset'), trial: reqUrl.searchParams.get('trial'),
       sequence: reqUrl.searchParams.get('seq'), size_kib: reqUrl.searchParams.get('sizeKb'),
-      http_version: req.httpVersion, alpn: req.stream?.session?.socket?.alpnProtocol ?? req.socket.alpnProtocol,
-      status: res.statusCode, response_bytes: res.getHeader('content-length') ?? null,
+      http_version: req.httpVersion, alpn,
+      status: res.statusCode, response_bytes: responseBytes,
     })));
   }
   if (reqUrl.pathname === '/health') {
@@ -96,6 +98,7 @@ function handleRequest(req, res) {
   const payload = getJsonPayloadBuffer(Number.isFinite(sizeKb) ? sizeKb : 100);
 
   const send = () => {
+    responseBytes = payload.byteLength;
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'x-http-version': req.httpVersion,
