@@ -44,6 +44,7 @@
   - 設計仕様は `architectures/<feature>.md`、運用規約は `guidelines/<topic>.md` に集約する。
 - **`example/`**:
   - 起動ファイルは `lib/main.dart` 1 本に集約する。実行モードの違いは引数や環境定義で分岐する。
+  - iOS / macOS 共通のネイティブ層単体テスト（XCTest）は `example/darwin/RunnerTests/` に一本化し、`example/ios/Runner.xcodeproj` および `example/macos/Runner.xcodeproj` の双方から参照する（OS 別の二重管理を禁止する）。
 - **`tool/`**:
   - 支援スクリプトは `tool/<category>/`、検証用データは `data/<platform>/` に格納する。
 

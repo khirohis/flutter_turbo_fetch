@@ -22,7 +22,7 @@
 | 階層 | 対象ディレクトリ | モック方針 | 主な検証責務 |
 | :--- | :--- | :--- | :--- |
 | **Dart 層単体テスト** | `test/` | Pigeon `TurboFetchHostApi` を Fake 化 | リクエスト/レスポンス変換、`ResponseType` デコード、Isolate 分岐（24KiB）、エラーマッピング、キャンセル伝播、クローズ状態遷移 |
-| **ネイティブ層単体テスト** | `android/`<br>`example/ios/RunnerTests/`<br>`example/macos/RunnerTests/`<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
+| **ネイティブ層単体テスト** | `android/`<br>`example/darwin/RunnerTests/`（iOS / macOS 共通）<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
 | **統合テスト (E2E)** | `example/integration_test/` | 実通信環境 / 実機 / シミュレータ | プラットフォームチャネルを介した実 HTTP/2 通信およびベンチマーク基盤の結合動作 |
 
 ### Dart 層テストのファイル構成
@@ -33,6 +33,15 @@
 - `transformer_test.dart`: `TurboTransformer` の型変換、Isolate 分岐、セマフォ並行制御。
 - `options_test.dart`: `TurboOptions` の引数・mapper 型安全性。
 - `turbo_benchmark_test.dart`: Dart 層マイクロベンチマークおよびパフォーマンステスト。
+
+### Darwin（iOS / macOS）ネイティブ層テストの構成と CI 検証
+
+- **単一ソース配置**: `sharedDarwinSource: true` の方針に合わせ、XCTest 3 ファイル（`FlutterTurboFetchPluginTest.swift`, `TurboSessionManagerTest.swift`, `TurboHttpExecutorTest.swift`）を `example/darwin/RunnerTests/` に一本化し、`example/ios/Runner.xcodeproj` と `example/macos/Runner.xcodeproj` 双方の `RunnerTests` ターゲットから共通参照する（iOS / macOS の import 差分は `#if os(iOS) ... #elseif os(macOS) ... #endif` で吸収する）。
+- **CI ビルド & `xcrun` 実行方針**: GitHub Actions（`.github/workflows/verify-darwin.yml`、`macos-latest`、手動トリガー `workflow_dispatch` で `all` / `ios` / `macos` を選択可能）にて、iOS・macOS 双方の Debug ビルド（Flutter SPM 生成物の構築を含む）および `xcrun xcodebuild test -only-testing:RunnerTests` を実行して全テストケースの合格を検証する。
+  - **iOS**: `flutter build ios --simulator --debug` 後に `xcrun simctl` で利用可能な最新 iPhone Simulator の UDID を動的取得し、`CODE_SIGNING_ALLOWED=NO` でテストを実行する（機種名のハードコード禁止）。
+  - **macOS**: `flutter build macos --debug` 後に Apple Silicon + App Sandbox 環境の `TEST_HOST` 起動に合わせ Ad-hoc 署名（`CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGN_STYLE=Manual`）でテストを実行する。
+  - **失敗時の証跡保存**: テスト失敗時は `.xcresult` バンドルを GitHub Actions Artifact として保存する。
+- **Xcode Debug 構成の留意点**: `@testable import flutter_turbo_fetch` 経由の `internal` シンボル参照がリンク時に削除されないよう、テスト対象の Debug 構成では `DEAD_CODE_STRIPPING = NO` を維持する。
 
 ---
 
