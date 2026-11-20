@@ -25,6 +25,19 @@ plugins {
     id("com.android.library")
 }
 
+val androidEngine: String = (
+    providers.gradleProperty("flutter_turbo_fetch.androidEngine").orNull
+        ?: rootProject.findProperty("flutter_turbo_fetch.androidEngine")?.toString()
+        ?: "okhttp"
+    ).trim().lowercase()
+
+if (androidEngine != "okhttp" && androidEngine != "cronet") {
+    throw GradleException(
+        "Unsupported value for 'flutter_turbo_fetch.androidEngine': '$androidEngine'. " +
+            "Expected 'okhttp' or 'cronet'."
+    )
+}
+
 android {
     namespace = "io.github.khirohis.flutter_turbo_fetch"
 
@@ -37,10 +50,16 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDirs("src/main/kotlin")
+            java.srcDirs(
+                "src/main/kotlin",
+                if (androidEngine == "cronet") "src/cronet/kotlin" else "src/okhttp/kotlin"
+            )
         }
         getByName("test") {
-            java.srcDirs("src/test/kotlin")
+            java.srcDirs(
+                "src/test/kotlin",
+                if (androidEngine == "cronet") "src/testCronet/kotlin" else "src/testOkhttp/kotlin"
+            )
         }
     }
 
@@ -73,7 +92,11 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    if (androidEngine == "cronet") {
+        implementation("org.chromium.net:cronet-api:143.7445.0")
+    } else {
+        implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    }
     testImplementation("org.jetbrains.kotlin:kotlin-test")
-    testImplementation("org.mockito:mockito-core:5.0.0")
+    testImplementation("org.mockito:mockito-core:5.14.2")
 }

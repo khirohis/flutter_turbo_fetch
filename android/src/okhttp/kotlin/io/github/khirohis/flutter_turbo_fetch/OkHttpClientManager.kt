@@ -17,7 +17,7 @@ import javax.net.ssl.X509TrustManager
  * OkHttp client and connection pool manager responsible for maintaining fixed HTTP/2 dispatcher limits,
  * post-shutdown recovery, and per-request client derivation (timeouts, redirects, and TLS).
  */
-internal open class TurboClientManager(
+internal open class OkHttpClientManager(
     private val clientFactory: (Dispatcher) -> OkHttpClient = ::createDefaultBaseClient
 ) {
     constructor(baseClient: OkHttpClient) : this({ targetDispatcher ->

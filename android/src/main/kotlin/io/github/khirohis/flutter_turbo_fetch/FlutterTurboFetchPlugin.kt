@@ -8,11 +8,11 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
  * Flutter plugin interface layer bridging Pigeon HostApi and main-thread callback dispatch.
  */
 class FlutterTurboFetchPlugin internal constructor(
-    private val executor: TurboHttpExecutor = TurboHttpExecutor()
+    private val executor: TurboHttpExecutor = createDefaultTurboHttpExecutor()
 ) : FlutterPlugin,
     TurboFetchHostApi {
 
-    constructor() : this(TurboHttpExecutor())
+    constructor() : this(createDefaultTurboHttpExecutor())
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -25,7 +25,7 @@ class FlutterTurboFetchPlugin internal constructor(
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        executor.ensureReady()
+        executor.ensureReady(flutterPluginBinding.applicationContext)
         TurboFetchHostApi.setUp(flutterPluginBinding.binaryMessenger, this)
     }
 
