@@ -254,11 +254,12 @@ final class TurboHttpExecutorTest: XCTestCase {
 
   func testCancel_cancelsInFlightRequest() {
     let requestStarted = expectation(description: "Request started in URLProtocol")
+    let allowFinish = XCTestExpectation(description: "Allow URLProtocol to finish")
     let resultReceived = expectation(description: "Cancel result received")
 
     let executor = createMockedExecutor { request in
       requestStarted.fulfill()
-      Thread.sleep(forTimeInterval: 5.0)
+      _ = XCTWaiter.wait(for: [allowFinish], timeout: 5.0)
       let response = HTTPURLResponse(
         url: request.url!,
         statusCode: 200,
@@ -268,6 +269,7 @@ final class TurboHttpExecutorTest: XCTestCase {
       return (response, Data("ok".utf8))
     }
     defer { executor.shutdown() }
+    defer { allowFinish.fulfill() }
 
     var capturedResponse: TurboHttpResponse?
     var callCount = 0

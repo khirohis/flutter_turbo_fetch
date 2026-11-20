@@ -197,6 +197,26 @@ internal final class TurboSessionTaskDelegate: NSObject, URLSessionTaskDelegate 
     }
   }
 
+  internal struct TaskTimerSnapshot: Equatable {
+    let isBodySendCompleted: Bool
+    let hasConnectTimer: Bool
+    let hasSendTimer: Bool
+    let hasReceiveTimer: Bool
+  }
+
+  internal func taskTimerSnapshot(for task: URLSessionTask) -> TaskTimerSnapshot? {
+    let taskKey = ObjectIdentifier(task)
+    lock.lock()
+    defer { lock.unlock() }
+    guard let context = contextsByTaskKey[taskKey] else { return nil }
+    return TaskTimerSnapshot(
+      isBodySendCompleted: context.isBodySendCompleted,
+      hasConnectTimer: context.connectTimer != nil,
+      hasSendTimer: context.sendTimer != nil,
+      hasReceiveTimer: context.receiveTimer != nil
+    )
+  }
+
   private func handleConnectTimerFired(for taskKey: ObjectIdentifier, task: URLSessionTask) {
     lock.lock()
     guard let context = contextsByTaskKey[taskKey], context.timedOutErrorCode == nil else {
