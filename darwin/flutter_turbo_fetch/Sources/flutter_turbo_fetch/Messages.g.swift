@@ -75,7 +75,6 @@ struct TurboHttpRequest {
   var receiveTimeoutMs: Int64? = nil
   var sendTimeoutMs: Int64? = nil
   var followRedirects: Bool
-  var maxRequestsPerHost: Int64
   var allowBadCertificates: Bool
   var maxResponseBytes: Int64? = nil
 
@@ -91,9 +90,8 @@ struct TurboHttpRequest {
     let receiveTimeoutMs: Int64? = nilOrValue(pigeonVar_list[6])
     let sendTimeoutMs: Int64? = nilOrValue(pigeonVar_list[7])
     let followRedirects = pigeonVar_list[8] as! Bool
-    let maxRequestsPerHost = pigeonVar_list[9] as! Int64
-    let allowBadCertificates = pigeonVar_list[10] as! Bool
-    let maxResponseBytes: Int64? = nilOrValue(pigeonVar_list[11])
+    let allowBadCertificates = pigeonVar_list[9] as! Bool
+    let maxResponseBytes: Int64? = nilOrValue(pigeonVar_list[10])
 
     return TurboHttpRequest(
       requestId: requestId,
@@ -105,7 +103,6 @@ struct TurboHttpRequest {
       receiveTimeoutMs: receiveTimeoutMs,
       sendTimeoutMs: sendTimeoutMs,
       followRedirects: followRedirects,
-      maxRequestsPerHost: maxRequestsPerHost,
       allowBadCertificates: allowBadCertificates,
       maxResponseBytes: maxResponseBytes
     )
@@ -121,7 +118,6 @@ struct TurboHttpRequest {
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRequestsPerHost,
       allowBadCertificates,
       maxResponseBytes,
     ]

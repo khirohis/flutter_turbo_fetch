@@ -118,8 +118,6 @@ static void on_execute_request(
       flutter_turbo_fetch_turbo_http_request_get_send_timeout_ms(request);
   gboolean follow_redirects =
       flutter_turbo_fetch_turbo_http_request_get_follow_redirects(request);
-  int64_t max_conns =
-      flutter_turbo_fetch_turbo_http_request_get_max_requests_per_host(request);
   gboolean allow_bad_certs =
       flutter_turbo_fetch_turbo_http_request_get_allow_bad_certificates(request);
   int64_t* max_bytes =
@@ -128,7 +126,7 @@ static void on_execute_request(
   flutter_turbo_fetch::TurboHttpRequest cpp_req(
       req_id ? req_id : "", url ? url : "", method ? method : "GET",
       std::move(cpp_headers), cpp_body_ptr, conn_timeout, recv_timeout,
-      send_timeout, follow_redirects, max_conns, allow_bad_certs, max_bytes);
+      send_timeout, follow_redirects, allow_bad_certs, max_bytes);
 
   g_object_ref(response_handle);
   self->cpp_plugin->Execute(

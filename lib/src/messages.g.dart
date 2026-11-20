@@ -26,7 +26,6 @@ class TurboHttpRequest {
     this.receiveTimeoutMs,
     this.sendTimeoutMs,
     required this.followRedirects,
-    required this.maxRequestsPerHost,
     required this.allowBadCertificates,
     this.maxResponseBytes,
   });
@@ -49,8 +48,6 @@ class TurboHttpRequest {
 
   bool followRedirects;
 
-  int maxRequestsPerHost;
-
   bool allowBadCertificates;
 
   int? maxResponseBytes;
@@ -66,7 +63,6 @@ class TurboHttpRequest {
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRequestsPerHost,
       allowBadCertificates,
       maxResponseBytes,
     ];
@@ -84,9 +80,8 @@ class TurboHttpRequest {
       receiveTimeoutMs: result[6] as int?,
       sendTimeoutMs: result[7] as int?,
       followRedirects: result[8]! as bool,
-      maxRequestsPerHost: result[9]! as int,
-      allowBadCertificates: result[10]! as bool,
-      maxResponseBytes: result[11] as int?,
+      allowBadCertificates: result[9]! as bool,
+      maxResponseBytes: result[10] as int?,
     );
   }
 }

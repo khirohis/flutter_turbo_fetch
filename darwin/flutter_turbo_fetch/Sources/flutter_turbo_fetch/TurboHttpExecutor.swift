@@ -86,8 +86,7 @@ internal class TurboHttpExecutor {
       return
     }
 
-    let requestedPerHost = max(1, Int(request.maxRequestsPerHost))
-    let session = sessionManager.acquireSession(maxConnectionsPerHost: requestedPerHost)
+    let session = sessionManager.acquireSession()
 
     // Use completionHandler API (never URLSessionDataDelegate) so CFNetwork concatenates chunks in C/C++ layer.
     var createdTask: URLSessionDataTask?

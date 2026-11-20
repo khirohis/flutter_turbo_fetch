@@ -14,7 +14,7 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
- * OkHttp client and connection pool manager responsible for thread-safe dispatcher scaling,
+ * OkHttp client and connection pool manager responsible for maintaining fixed HTTP/2 dispatcher limits,
  * post-shutdown recovery, and per-request client derivation (timeouts, redirects, and TLS).
  */
 internal open class TurboClientManager(
@@ -42,22 +42,13 @@ internal open class TurboClientManager(
     }
 
     @Synchronized
-    internal fun ensureClient(requestedPerHost: Int): OkHttpClient {
+    internal fun ensureClient(): OkHttpClient {
         ensureReady()
-        if (requestedPerHost > dispatcher.maxRequests) {
-            dispatcher.maxRequests = requestedPerHost
-        } else if (dispatcher.maxRequests > DEFAULT_MAX_REQUESTS && requestedPerHost <= DEFAULT_MAX_REQUESTS) {
-            dispatcher.maxRequests = DEFAULT_MAX_REQUESTS
-        }
-        if (dispatcher.maxRequestsPerHost != requestedPerHost) {
-            dispatcher.maxRequestsPerHost = requestedPerHost
-        }
         return baseClient
     }
 
     open fun acquireClient(request: TurboHttpRequest): OkHttpClient {
-        val requestedPerHost = request.maxRequestsPerHost.toInt().coerceAtLeast(1)
-        val sharedClient = ensureClient(requestedPerHost)
+        val sharedClient = ensureClient()
 
         val clientBuilder = sharedClient.newBuilder()
             .followRedirects(request.followRedirects)

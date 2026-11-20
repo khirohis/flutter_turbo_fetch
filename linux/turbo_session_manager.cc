@@ -1,6 +1,5 @@
 #include "turbo_session_manager.h"
 
-#include <algorithm>
 #include <atomic>
 
 namespace flutter_turbo_fetch {
@@ -71,11 +70,8 @@ void TurboSessionManager::InitializeShareHandleLocked() {
   is_shutdown_ = false;
 }
 
-CURLSH* TurboSessionManager::AcquireShareHandle(int64_t max_requests_per_host) {
+CURLSH* TurboSessionManager::AcquireShareHandle() {
   std::lock_guard<std::mutex> lock(mutex_);
-
-  const int64_t safe_limit = std::max<int64_t>(1, max_requests_per_host);
-  current_max_per_host_ = safe_limit;
 
   if (share_handle_ == nullptr || is_shutdown_) {
     InitializeShareHandleLocked();
@@ -96,11 +92,6 @@ void TurboSessionManager::Shutdown() {
 bool TurboSessionManager::IsShutdown() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return is_shutdown_;
-}
-
-int64_t TurboSessionManager::current_max_per_host() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return current_max_per_host_;
 }
 
 }  // namespace flutter_turbo_fetch

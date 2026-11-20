@@ -36,14 +36,12 @@ TurboHttpRequest::TurboHttpRequest(
   const std::string& method,
   const EncodableMap& headers,
   bool follow_redirects,
-  int64_t max_requests_per_host,
   bool allow_bad_certificates)
  : request_id_(request_id),
     url_(url),
     method_(method),
     headers_(headers),
     follow_redirects_(follow_redirects),
-    max_requests_per_host_(max_requests_per_host),
     allow_bad_certificates_(allow_bad_certificates) {}
 
 TurboHttpRequest::TurboHttpRequest(
@@ -56,7 +54,6 @@ TurboHttpRequest::TurboHttpRequest(
   const int64_t* receive_timeout_ms,
   const int64_t* send_timeout_ms,
   bool follow_redirects,
-  int64_t max_requests_per_host,
   bool allow_bad_certificates,
   const int64_t* max_response_bytes)
  : request_id_(request_id),
@@ -68,7 +65,6 @@ TurboHttpRequest::TurboHttpRequest(
     receive_timeout_ms_(receive_timeout_ms ? std::optional<int64_t>(*receive_timeout_ms) : std::nullopt),
     send_timeout_ms_(send_timeout_ms ? std::optional<int64_t>(*send_timeout_ms) : std::nullopt),
     follow_redirects_(follow_redirects),
-    max_requests_per_host_(max_requests_per_host),
     allow_bad_certificates_(allow_bad_certificates),
     max_response_bytes_(max_response_bytes ? std::optional<int64_t>(*max_response_bytes) : std::nullopt) {}
 
@@ -169,15 +165,6 @@ void TurboHttpRequest::set_follow_redirects(bool value_arg) {
 }
 
 
-int64_t TurboHttpRequest::max_requests_per_host() const {
-  return max_requests_per_host_;
-}
-
-void TurboHttpRequest::set_max_requests_per_host(int64_t value_arg) {
-  max_requests_per_host_ = value_arg;
-}
-
-
 bool TurboHttpRequest::allow_bad_certificates() const {
   return allow_bad_certificates_;
 }
@@ -202,7 +189,7 @@ void TurboHttpRequest::set_max_response_bytes(int64_t value_arg) {
 
 EncodableList TurboHttpRequest::ToEncodableList() const {
   EncodableList list;
-  list.reserve(12);
+  list.reserve(11);
   list.push_back(EncodableValue(request_id_));
   list.push_back(EncodableValue(url_));
   list.push_back(EncodableValue(method_));
@@ -212,7 +199,6 @@ EncodableList TurboHttpRequest::ToEncodableList() const {
   list.push_back(receive_timeout_ms_ ? EncodableValue(*receive_timeout_ms_) : EncodableValue());
   list.push_back(send_timeout_ms_ ? EncodableValue(*send_timeout_ms_) : EncodableValue());
   list.push_back(EncodableValue(follow_redirects_));
-  list.push_back(EncodableValue(max_requests_per_host_));
   list.push_back(EncodableValue(allow_bad_certificates_));
   list.push_back(max_response_bytes_ ? EncodableValue(*max_response_bytes_) : EncodableValue());
   return list;
@@ -225,8 +211,7 @@ TurboHttpRequest TurboHttpRequest::FromEncodableList(const EncodableList& list) 
     std::get<std::string>(list[2]),
     std::get<EncodableMap>(list[3]),
     std::get<bool>(list[8]),
-    std::get<int64_t>(list[9]),
-    std::get<bool>(list[10]));
+    std::get<bool>(list[9]));
   auto& encodable_body = list[4];
   if (!encodable_body.IsNull()) {
     decoded.set_body(std::get<std::vector<uint8_t>>(encodable_body));
@@ -243,7 +228,7 @@ TurboHttpRequest TurboHttpRequest::FromEncodableList(const EncodableList& list) 
   if (!encodable_send_timeout_ms.IsNull()) {
     decoded.set_send_timeout_ms(std::get<int64_t>(encodable_send_timeout_ms));
   }
-  auto& encodable_max_response_bytes = list[11];
+  auto& encodable_max_response_bytes = list[10];
   if (!encodable_max_response_bytes.IsNull()) {
     decoded.set_max_response_bytes(std::get<int64_t>(encodable_max_response_bytes));
   }

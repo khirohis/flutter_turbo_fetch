@@ -27,7 +27,6 @@ G_DECLARE_FINAL_TYPE(FlutterTurboFetchTurboHttpRequest, flutter_turbo_fetch_turb
  * receive_timeout_ms: field in this object.
  * send_timeout_ms: field in this object.
  * follow_redirects: field in this object.
- * max_requests_per_host: field in this object.
  * allow_bad_certificates: field in this object.
  * max_response_bytes: field in this object.
  *
@@ -35,7 +34,7 @@ G_DECLARE_FINAL_TYPE(FlutterTurboFetchTurboHttpRequest, flutter_turbo_fetch_turb
  *
  * Returns: a new #FlutterTurboFetchTurboHttpRequest
  */
-FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request_new(const gchar* request_id, const gchar* url, const gchar* method, FlValue* headers, const uint8_t* body, size_t body_length, int64_t* connect_timeout_ms, int64_t* receive_timeout_ms, int64_t* send_timeout_ms, gboolean follow_redirects, int64_t max_requests_per_host, gboolean allow_bad_certificates, int64_t* max_response_bytes);
+FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request_new(const gchar* request_id, const gchar* url, const gchar* method, FlValue* headers, const uint8_t* body, size_t body_length, int64_t* connect_timeout_ms, int64_t* receive_timeout_ms, int64_t* send_timeout_ms, gboolean follow_redirects, gboolean allow_bad_certificates, int64_t* max_response_bytes);
 
 /**
  * flutter_turbo_fetch_turbo_http_request_get_request_id
@@ -127,16 +126,6 @@ int64_t* flutter_turbo_fetch_turbo_http_request_get_send_timeout_ms(FlutterTurbo
  * Returns: the field value.
  */
 gboolean flutter_turbo_fetch_turbo_http_request_get_follow_redirects(FlutterTurboFetchTurboHttpRequest* object);
-
-/**
- * flutter_turbo_fetch_turbo_http_request_get_max_requests_per_host
- * @object: a #FlutterTurboFetchTurboHttpRequest.
- *
- * Gets the value of the maxRequestsPerHost field of @object.
- *
- * Returns: the field value.
- */
-int64_t flutter_turbo_fetch_turbo_http_request_get_max_requests_per_host(FlutterTurboFetchTurboHttpRequest* object);
 
 /**
  * flutter_turbo_fetch_turbo_http_request_get_allow_bad_certificates
