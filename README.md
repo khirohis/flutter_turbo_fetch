@@ -5,13 +5,13 @@
 
 A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
-`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` / iOS & macOS `URLSession` / Windows `WinHTTP` / Linux `libcurl`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
+`flutter_turbo_fetch` replaces traditional Dart-based HTTP streaming bottlenecks with **platform-native batch reception** (Android `OkHttp3` or optional `Cronet` / iOS & macOS `URLSession` / Windows `WinHTTP` / Linux `libcurl`) and **zero-copy Isolate offloading** (`TransferableTypedData` + semaphore-governed `Isolate.run`). It guarantees a silky-smooth 60/120 FPS UI thread even under heavy parallel HTTP/2 JSON, text, or binary workloads.
 
 ---
 
 ## ✨ Features
 
-- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3, URLSession, WinHTTP, & libcurl).
+- **Native HTTP/2 Batch Reception**: Zero per-chunk FFI overhead via OS-level buffering (OkHttp3 / Cronet, URLSession, WinHTTP, & libcurl).
 - **Non-Blocking UI Thread**: Eliminates jank on large payloads (>= 24KB) through zero-copy `TransferableTypedData` offloading.
 - **In-Worker Model Mapping**: Directly parses and instantiates domain models inside worker Isolates.
 - **Full Dio Compatibility**: Drop-in replacement supporting all 4 standard `ResponseType`s.
@@ -25,7 +25,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Flutter** | `>= 3.24.0` | Supported |
 | **Dart** | `>= 3.5.0` | Supported |
 | **Dio** | `^5.4.0` | Supported |
-| **Android** | `minSdk = 24` (Android 7.0+) • `okhttp:4.12.0` | Tested & Benchmarked |
+| **Android** | `minSdk = 24` (Android 7.0+) • `OkHttp3` (default) or `Cronet` | Tested & Benchmarked |
 | **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested & Benchmarked (iPhone 17, Release) |
 | **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
@@ -71,6 +71,22 @@ Ensure internet permission is declared in your app's `android/app/src/main/Andro
 ```
 
 > **R8 / ProGuard**: Rules for `OkHttp3` are automatically bundled. No manual configuration is required unless using strict R8 full mode.
+
+#### Optional: Using Cronet on Android
+
+By default, Android uses `OkHttp3`. To switch to `Cronet` at build time—while **completely excluding `OkHttp3`** from your APK/AAB—add the following property to your app's `android/gradle.properties`:
+
+```properties
+flutter_turbo_fetch.androidEngine=cronet
+```
+
+1. **Add a Cronet Provider Dependency**: Because `flutter_turbo_fetch` depends only on the Cronet API artifact, add your preferred provider implementation in `android/app/build.gradle(.kts)`:
+   - **Google Play Services (minimal APK size)**: `implementation("com.google.android.gms:play-services-cronet:<version>")` (recommended; also call `CronetProviderInstaller.installProvider(context)` on app startup before making requests).
+   - **Standalone Embedded (works without GMS, larger APK size)**: `implementation("org.chromium.net:cronet-embedded:<version>")` (or `cronet-bundled` for newer `500.x` artifacts).
+2. **Cronet-Specific Limitations**:
+   - `allowBadCertificates: true` is **not supported** by Cronet's standard API and fails immediately with `DioExceptionType.unknown`; use Android's Network Security Config XML for local self-signed certificates.
+   - Non-empty request bodies **must** include a `Content-Type` header; requests with a non-empty body and no `Content-Type` fail with `DioExceptionType.connectionError`.
+   - When `followRedirects: false` is set, 3xx responses return their status code and headers (including `Location`) with an empty response body (`Uint8List(0)`).
 
 ### iOS
 
@@ -160,7 +176,7 @@ Configured once on the `Dio` instance to manage transport security:
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `allowBadCertificates` | `bool` | `false` | Allows self-signed certificates for local development and mock servers. |
+| `allowBadCertificates` | `bool` | `false` | Allows self-signed certificates for local development and mock servers. (Not supported with Android Cronet; use Android Network Security Config instead.) |
 
 ### `TurboTransformer`
 

@@ -7,7 +7,7 @@
 ## 1. 一気通貫パイプライン構造
 
 ```text
-[ネイティブ層: Android (OkHttp3) / iOS & macOS (URLSession) / Windows (WinHTTP) / Linux (libcurl)]
+[ネイティブ層: Android (OkHttp3 / Cronet) / iOS & macOS (URLSession) / Windows (WinHTTP) / Linux (libcurl)]
   ├─ OS バックグラウンドスレッドで HTTP/2 多重化通信・TLS 復号・チャンク結合を完結
   ├─ maxResponseBytes 指定時は上限超過時に切り詰めずエラー返却（ストリーム読み出し時は即時中断）
   └─ 完成した単一の生バイト配列 (Uint8List) を 1 リクエストにつき 1 回のみ Dart へ返却

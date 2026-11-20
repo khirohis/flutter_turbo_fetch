@@ -17,7 +17,7 @@
   - すべての `ResponseType`（`stream` を含む）をネイティブ一括受信で処理し、別アダプタへのフォールバックは行わない。
   - 受信した `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で単一チャンクストリームとしてラップして返却する。レスポンスヘッダのキーは小文字に正規化する。
 - **設定・キャンセル・ライフサイクル**:
-  - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）。
+  - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`。Android Cronet では非サポート）。
   - リクエストごとに一意な `requestId` を採番し、`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す。
   - `close({bool force = false})`: クローズ後は新規 `fetch()` に対して `StateError` をスローする。`force: true` の場合は管理中の実行中リクエストを即座にキャンセルする。
 
