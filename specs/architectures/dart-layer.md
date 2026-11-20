@@ -8,7 +8,7 @@
 
 ### 1.1 責務と入出力契約
 
-- **対応プラットフォーム**: Android / iOS / macOS / Windows / Linux。非対応環境ではコンストラクタで `UnsupportedError` をスローする（テスト用に `hostApi` が注入された場合を除く）。
+- **対応プラットフォーム**: Android / iOS / macOS / Windows / Linux。非対応環境では `fetch()` 呼び出し時に `UnsupportedError` をスローする（テスト用に `hostApi` が注入された場合を除く）。
 - **リクエスト変換**:
   - ヘッダ値が `Iterable` の場合は `', '` 区切り文字列に結合する。
   - リクエストボディ（`Stream<Uint8List>?`）は `BytesBuilder(copy: false)` で単一の `Uint8List` に集約してネイティブへ渡す。
@@ -16,8 +16,7 @@
 - **レスポンス変換**:
   - すべての `ResponseType`（`stream` を含む）をネイティブ一括受信で処理し、別アダプタへのフォールバックは行わない。
   - 受信した `Uint8List` を `ResponseBody.fromBytes(bytes, statusCode, headers: ...)` で単一チャンクストリームとしてラップして返却する。レスポンスヘッダのキーは小文字に正規化する。
-- **並行制御・キャンセル・ライフサイクル**:
-  - `maxRequestsPerHost`: 1 ホストあたりの最大同時リクエスト数（デフォルト `32`）。
+- **設定・キャンセル・ライフサイクル**:
   - `allowBadCertificates`: 自己署名証明書の許可（ローカル検証用、デフォルト `false`）。
   - リクエストごとに一意な `requestId` を採番し、`cancelFuture` 発火時にネイティブの `cancelRequest(requestId)` を呼び出す。
   - `close({bool force = false})`: クローズ後は新規 `fetch()` に対して `StateError` をスローする。`force: true` の場合は管理中の実行中リクエストを即座にキャンセルする。
@@ -54,14 +53,14 @@
 
 | `ResponseType` | 一次デコード方式 | 空ボディ（0 byte）時 | 閾値未満（Main Isolate） | 閾値以上（Worker Isolate オフロード） |
 | :--- | :--- | :--- | :--- | :--- |
-| **`stream`** | ストリーム消費なし（`ResponseBody` 維持） | そのまま返却（または `mapper`） | Main Isolate で O(1) 返却（指定時は `mapper(responseBody)`） | オフロードしない（常に Main Isolate で O(1) 返却） |
-| **`bytes`** | `BytesBuilder(copy: false)` | `Uint8List(0)`（または `mapper`） | Main Isolate で O(1) 返却（指定時は `mapper(bytes)`） | `mapper` 未指定時は Main Isolate で O(1) 返却。<br>`mapper` 指定時のみ Worker Isolate で `mapper(bytes)` を実行 |
+| **`stream`** | ストリーム消費なし（`ResponseBody` 維持） | そのまま返却（または `mapper`） | Main Isolate で `O(1)` 返却（指定時は `mapper(responseBody)`） | オフロードしない（常に Main Isolate で `O(1)` 返却） |
+| **`bytes`** | `BytesBuilder(copy: false)` | `Uint8List(0)`（または `mapper`） | Main Isolate で `O(1)` 返却（指定時は `mapper(bytes)`） | `mapper` 未指定時は Main Isolate で `O(1)` 返却。<br>`mapper` 指定時のみ Worker Isolate で `mapper(bytes)` を実行 |
 | **`plain`** | `utf8.decode(bytes, allowMalformed: true)` | `''`（または `mapper('')`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
 | **`json`** | `utf8.decoder.fuse(json.decoder)`<br>（中間 `String` 生成なし） | `null`（または `mapper(null)`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
 
 ### 3.2 Isolate オフロードとセマフォ制御
 
 - **ゼロコピー往復転送**:
-  - 閾値以上のオフロード時は、入力バイト列を `TransferableTypedData` で Worker Isolate へ $O(1)$ 転送し、一次デコードと `mapper` を同一 Worker 内で連続実行した上で、最終成果物のみを `Isolate.run`（`Isolate.exit`）で $O(1)$ 返却する。
+  - 閾値以上のオフロード時は、入力バイト列を `TransferableTypedData` で Worker Isolate へ `O(1)` 転送し、一次デコードと `mapper` を同一 Worker 内で連続実行した上で、最終成果物のみを `Isolate.run`（`Isolate.exit`）で `O(1)` 返却する。
 - **同時起動 Isolate 数の制限（`maxConcurrentIsolates`）**:
   - セマフォにより同時起動数を制限する。デフォルト値は `math.max(2, Platform.numberOfProcessors - 2)`（最小保証定数 `defaultMinConcurrentIsolates = 2`）とし、UI / Raster スレッド用の CPU コアを保護する。

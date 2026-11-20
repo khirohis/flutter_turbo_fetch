@@ -8,7 +8,7 @@
 
 - **クライアント共有とリクエスト単位派生（`TurboClientManager`）**:
   - 単一のベース `OkHttpClient`（`Dispatcher` / `ConnectionPool`）を共有する。
-  - `Dispatcher.maxRequestsPerHost`（デフォルト `32`）が全体上限 `maxRequests`（デフォルト `64`）を超える場合は `maxRequests` も同値へ自動引き上げし、64 以下に戻った際はデフォルト（`64`）へ戻す。
+  - OkHttp 標準の `Dispatcher.maxRequestsPerHost`（`5`）による HTTP/2 多重化の頭打ちを防ぐため、内部固定設定として `Dispatcher.maxRequestsPerHost = 32` / `Dispatcher.maxRequests = 64` を維持する。
   - タイムアウト、リダイレクト追従（`followRedirects` / `followSslRedirects`）、および `allowBadCertificates` 時の全信頼 `X509TrustManager` + `HostnameVerifier` は、`sharedClient.newBuilder()` による軽量な派生クライアントで適用する。
 - **送信フェーズ追跡とストリーム先読み上限判定（`TurboHttpExecutor`）**:
   - リクエストボディ送信中は `RequestBody.writeTo(sink)` 内で `isSendingBody` フラグを立て、タイムアウト発生時に `sendTimeout` と `receiveTimeout` を識別する。
