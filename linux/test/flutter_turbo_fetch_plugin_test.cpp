@@ -16,7 +16,7 @@ TURBO_TEST(FlutterTurboFetchPlugin_ExecuteAndCancelDelegateToExecutor) {
 
   const int64_t timeout_ms = 5000;
   TurboHttpRequest req("test-plugin-req", "https://example.com/api", "GET", {},
-                       nullptr, &timeout_ms, &timeout_ms, &timeout_ms, true, 32,
+                       nullptr, &timeout_ms, &timeout_ms, &timeout_ms, true,
                        false, nullptr);
 
   std::atomic<bool> called{false};

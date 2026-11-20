@@ -65,7 +65,6 @@ internal class TurboHttpExecutorTest {
             receiveTimeoutMs = 5000L,
             sendTimeoutMs = 5000L,
             followRedirects = true,
-            maxRequestsPerHost = 32L,
             allowBadCertificates = false,
             maxResponseBytes = maxResponseBytes
         )

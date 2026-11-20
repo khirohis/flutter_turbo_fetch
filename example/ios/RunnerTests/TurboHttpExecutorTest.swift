@@ -35,7 +35,6 @@ final class TurboHttpExecutorTest: XCTestCase {
       receiveTimeoutMs: receiveTimeoutMs,
       sendTimeoutMs: sendTimeoutMs,
       followRedirects: true,
-      maxRequestsPerHost: 32,
       allowBadCertificates: false,
       maxResponseBytes: maxResponseBytes
     )
@@ -45,9 +44,8 @@ final class TurboHttpExecutorTest: XCTestCase {
     handler: @escaping (URLRequest) throws -> (URLResponse, Data?)
   ) -> TurboHttpExecutor {
     MockURLProtocol.requestHandler = handler
-    let sessionManager = TurboSessionManager { maxPerHost, delegate in
+    let sessionManager = TurboSessionManager { delegate in
       let config = URLSessionConfiguration.ephemeral
-      config.httpMaximumConnectionsPerHost = maxPerHost
       config.protocolClasses = [MockURLProtocol.self]
       return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }

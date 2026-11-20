@@ -10,8 +10,7 @@ import XCTest
 
 final class FlutterTurboFetchPluginTest: XCTestCase {
   private func createRequest(
-    requestId: String = "req-1",
-    maxRequestsPerHost: Int64 = 32
+    requestId: String = "req-1"
   ) -> TurboHttpRequest {
     return TurboHttpRequest(
       requestId: requestId,
@@ -23,7 +22,6 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
       receiveTimeoutMs: 5000,
       sendTimeoutMs: 5000,
       followRedirects: true,
-      maxRequestsPerHost: maxRequestsPerHost,
       allowBadCertificates: false,
       maxResponseBytes: nil
     )

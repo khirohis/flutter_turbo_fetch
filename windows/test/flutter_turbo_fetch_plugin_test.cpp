@@ -40,7 +40,7 @@ TURBO_TEST(FlutterTurboFetchPlugin_ExecuteAndCancelDelegateToExecutor) {
   const int64_t timeout_ms = 5000;
   TurboHttpRequest request("req-cancel-test", "https://example.com/data", "GET",
                            flutter::EncodableMap{}, nullptr, &timeout_ms,
-                           &timeout_ms, &timeout_ms, true, 32, false, nullptr);
+                           &timeout_ms, &timeout_ms, true, false, nullptr);
 
   std::optional<TurboHttpResponse> received_response;
   plugin.ExecuteRequest(request, [&](ErrorOr<TurboHttpResponse> reply) {

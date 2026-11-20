@@ -4,47 +4,35 @@ import XCTest
 @testable import flutter_turbo_fetch
 
 final class TurboSessionManagerTest: XCTestCase {
-  func testAcquireSession_reusesSessionAndScalesLimitsDynamically() {
+  func testAcquireSession_reusesSingleSharedSessionWithOsDefaults() {
     let manager = TurboSessionManager()
     defer { manager.shutdown() }
 
-    // Default scale (32)
-    let session1 = manager.acquireSession(maxConnectionsPerHost: 32)
-    XCTAssertEqual(32, session1.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(32, manager.currentMaxConnectionsPerHost)
+    let session1 = manager.acquireSession()
+    XCTAssertFalse(manager.isShutdown)
+    XCTAssertEqual(
+      URLSessionConfiguration.default.httpMaximumConnectionsPerHost,
+      session1.configuration.httpMaximumConnectionsPerHost
+    )
 
-    // Same limit reuses existing URLSession instance
-    let session1Same = manager.acquireSession(maxConnectionsPerHost: 32)
-    XCTAssertTrue(session1 === session1Same)
-
-    // Scale up to 64 recreates URLSession with updated limit
-    let session2 = manager.acquireSession(maxConnectionsPerHost: 64)
-    XCTAssertFalse(session1 === session2)
-    XCTAssertEqual(64, session2.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(64, manager.currentMaxConnectionsPerHost)
-
-    // Scale down to 16 recreates URLSession with updated limit
-    let session3 = manager.acquireSession(maxConnectionsPerHost: 16)
-    XCTAssertFalse(session2 === session3)
-    XCTAssertEqual(16, session3.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(16, manager.currentMaxConnectionsPerHost)
+    // Repeated acquisition reuses the same URLSession instance
+    let session2 = manager.acquireSession()
+    XCTAssertTrue(session1 === session2)
   }
 
   func testAcquireSession_recoversAfterShutdown() {
     let manager = TurboSessionManager()
 
-    let initialSession = manager.acquireSession(maxConnectionsPerHost: 32)
+    let initialSession = manager.acquireSession()
     XCTAssertFalse(manager.isShutdown)
 
     manager.shutdown()
     XCTAssertTrue(manager.isShutdown)
 
     // Re-acquiring after shutdown creates a fresh URLSession instance
-    let recoveredSession = manager.acquireSession(maxConnectionsPerHost: 48)
+    let recoveredSession = manager.acquireSession()
     XCTAssertFalse(initialSession === recoveredSession)
     XCTAssertFalse(manager.isShutdown)
-    XCTAssertEqual(48, recoveredSession.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(48, manager.currentMaxConnectionsPerHost)
 
     manager.shutdown()
   }
@@ -54,12 +42,14 @@ final class TurboSessionManagerTest: XCTestCase {
     defer { manager.shutdown() }
 
     let url = URL(string: "https://example.com/test")!
-    let sessionA = manager.acquireSession(maxConnectionsPerHost: 8)
+    let sessionA = manager.acquireSession()
     let taskA = sessionA.dataTask(with: url)
 
-    // Switching maxConnectionsPerHost creates a new URLSession whose first task also gets taskIdentifier == 1
-    let sessionB = manager.acquireSession(maxConnectionsPerHost: 16)
+    // Recreating URLSession after shutdown yields a new session whose first task also gets taskIdentifier == 1
+    manager.shutdown()
+    let sessionB = manager.acquireSession()
     let taskB = sessionB.dataTask(with: url)
+    XCTAssertEqual(taskA.taskIdentifier, taskB.taskIdentifier)
 
     manager.registerTask(
       task: taskA,
@@ -92,19 +82,6 @@ final class TurboSessionManagerTest: XCTestCase {
 
     taskA.cancel()
     taskB.cancel()
-  }
-
-  func testAcquireSession_nonPositiveLimit_clampsToOne() {
-    let manager = TurboSessionManager()
-    defer { manager.shutdown() }
-
-    let sessionZero = manager.acquireSession(maxConnectionsPerHost: 0)
-    XCTAssertEqual(1, sessionZero.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(1, manager.currentMaxConnectionsPerHost)
-
-    let sessionNeg = manager.acquireSession(maxConnectionsPerHost: -10)
-    XCTAssertEqual(1, sessionNeg.configuration.httpMaximumConnectionsPerHost)
-    XCTAssertEqual(1, manager.currentMaxConnectionsPerHost)
   }
 }
 

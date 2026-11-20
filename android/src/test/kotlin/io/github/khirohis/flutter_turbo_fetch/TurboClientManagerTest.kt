@@ -14,7 +14,6 @@ internal class TurboClientManagerTest {
         receiveTimeoutMs: Long? = 4000L,
         sendTimeoutMs: Long? = 5000L,
         followRedirects: Boolean = false,
-        maxRequestsPerHost: Long = 32L,
         allowBadCertificates: Boolean = false
     ): TurboHttpRequest {
         return TurboHttpRequest(
@@ -27,43 +26,37 @@ internal class TurboClientManagerTest {
             receiveTimeoutMs = receiveTimeoutMs,
             sendTimeoutMs = sendTimeoutMs,
             followRedirects = followRedirects,
-            maxRequestsPerHost = maxRequestsPerHost,
             allowBadCertificates = allowBadCertificates,
             maxResponseBytes = null
         )
     }
 
     @Test
-    fun ensureClient_scalesDispatcherLimitsDynamically() {
+    fun ensureClient_reusesSharedClientWithFixedDispatcherLimits() {
         val manager = TurboClientManager()
 
-        // Default scale (requestedPerHost = 32 -> maxRequests = 64, maxRequestsPerHost = 32)
-        val defaultClient = manager.ensureClient(32)
-        assertEquals(64, defaultClient.dispatcher.maxRequests)
-        assertEquals(32, defaultClient.dispatcher.maxRequestsPerHost)
+        val firstClient = manager.ensureClient()
+        assertEquals(64, firstClient.dispatcher.maxRequests)
+        assertEquals(32, firstClient.dispatcher.maxRequestsPerHost)
 
-        // Scale up above DEFAULT_MAX_REQUESTS (requestedPerHost = 100 -> maxRequests = 100, maxRequestsPerHost = 100)
-        val scaledUpClient = manager.ensureClient(100)
-        assertEquals(100, scaledUpClient.dispatcher.maxRequests)
-        assertEquals(100, scaledUpClient.dispatcher.maxRequestsPerHost)
-
-        // Scale back down when requestedPerHost <= 64 (requestedPerHost = 16 -> maxRequests = 64, maxRequestsPerHost = 16)
-        val scaledDownClient = manager.ensureClient(16)
-        assertEquals(64, scaledDownClient.dispatcher.maxRequests)
-        assertEquals(16, scaledDownClient.dispatcher.maxRequestsPerHost)
+        val secondClient = manager.ensureClient()
+        assertSame(firstClient, secondClient)
+        assertEquals(64, secondClient.dispatcher.maxRequests)
+        assertEquals(32, secondClient.dispatcher.maxRequestsPerHost)
     }
 
     @Test
     fun ensureClient_andEnsureReady_recoverAfterShutdown() {
         val manager = TurboClientManager()
-        val initialClient = manager.ensureClient(32)
+        val initialClient = manager.ensureClient()
         manager.shutdown()
         assertTrue(initialClient.dispatcher.executorService.isShutdown)
 
         manager.ensureReady()
-        val recoveredClient = manager.ensureClient(48)
+        val recoveredClient = manager.ensureClient()
         assertFalse(recoveredClient.dispatcher.executorService.isShutdown)
-        assertEquals(48, recoveredClient.dispatcher.maxRequestsPerHost)
+        assertEquals(64, recoveredClient.dispatcher.maxRequests)
+        assertEquals(32, recoveredClient.dispatcher.maxRequestsPerHost)
     }
 
     @Test
@@ -74,7 +67,6 @@ internal class TurboClientManagerTest {
             receiveTimeoutMs = 2500L,
             sendTimeoutMs = 3500L,
             followRedirects = false,
-            maxRequestsPerHost = 40L,
             allowBadCertificates = true
         )
 
@@ -84,7 +76,6 @@ internal class TurboClientManagerTest {
         assertEquals(3500, derivedClient.writeTimeoutMillis)
         assertFalse(derivedClient.followRedirects)
         assertFalse(derivedClient.followSslRedirects)
-        assertEquals(40, derivedClient.dispatcher.maxRequestsPerHost)
         assertNotNull(derivedClient.x509TrustManager)
 
         // Verify insecure TLS instances are shared across requests to preserve ConnectionPool reuse
@@ -99,24 +90,11 @@ internal class TurboClientManagerTest {
         val customBaseClient = OkHttpClient.Builder().build()
         val manager = TurboClientManager(customBaseClient)
 
-        val client = manager.ensureClient(48)
-        assertEquals(48, client.dispatcher.maxRequestsPerHost)
+        val client = manager.ensureClient()
+        assertFalse(client.dispatcher.executorService.isShutdown)
 
         manager.shutdown()
         assertTrue(client.dispatcher.executorService.isShutdown)
-    }
-
-    @Test
-    fun acquireClient_withZeroOrNegativeMaxRequestsPerHost_coercesToOneSafely() {
-        val manager = TurboClientManager()
-
-        // Zero limit coerces to 1
-        val clientZero = manager.acquireClient(createRequest(maxRequestsPerHost = 0L))
-        assertEquals(1, clientZero.dispatcher.maxRequestsPerHost)
-
-        // Negative limit coerces to 1
-        val clientNegative = manager.acquireClient(createRequest(maxRequestsPerHost = -10L))
-        assertEquals(1, clientNegative.dispatcher.maxRequestsPerHost)
     }
 
     @Test
