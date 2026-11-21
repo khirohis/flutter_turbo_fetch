@@ -37,11 +37,13 @@
 ### Darwin（iOS / macOS）ネイティブ層テストの構成と CI 検証
 
 - **単一ソース配置**: `sharedDarwinSource: true` の方針に合わせ、XCTest 3 ファイル（`FlutterTurboFetchPluginTest.swift`, `TurboSessionManagerTest.swift`, `TurboHttpExecutorTest.swift`）を `example/darwin/RunnerTests/` に一本化し、`example/ios/Runner.xcodeproj` と `example/macos/Runner.xcodeproj` 双方の `RunnerTests` ターゲットから共通参照する（iOS / macOS の import 差分は `#if os(iOS) ... #elseif os(macOS) ... #endif` で吸収する）。
-- **CI ビルド & `xcrun` 実行方針**: GitHub Actions（`.github/workflows/verify-darwin.yml`、`macos-latest`、手動トリガー `workflow_dispatch` で `all` / `ios` / `macos` を選択可能）にて、iOS・macOS 双方の Debug ビルド（Flutter SPM 生成物の構築を含む）および `xcrun xcodebuild test -only-testing:RunnerTests` を実行して全テストケースの合格を検証する。
+- **CI ビルド & `xcrun` 実行方針**: GitHub Actions（`.github/workflows/verify-darwin.yml`、`macos-latest`、手動トリガー `workflow_dispatch` で `all` / `ios` / `macos` を選択可能）にて、iOS・macOS 双方の Debug ビルド（Flutter SPM 生成物の構築を含む）および `xcrun xcodebuild test -only-testing:RunnerTests -parallel-testing-enabled NO` を実行して全テストケースの合格を検証する。
   - **iOS**: `flutter build ios --simulator --debug` 後に `xcrun simctl` で利用可能な最新 iPhone Simulator の UDID を動的取得し、`CODE_SIGNING_ALLOWED=NO` でテストを実行する（機種名のハードコード禁止）。
-  - **macOS**: `flutter build macos --debug` 後に Apple Silicon + App Sandbox 環境の `TEST_HOST` 起動に合わせ Ad-hoc 署名（`CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGN_STYLE=Manual`）でテストを実行する。
+  - **macOS**: `flutter build macos --debug` 後に Apple Silicon + App Sandbox 環境の `TEST_HOST` 起動に合わせ Ad-hoc 署名（`CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual`）でテストを実行する（`CODE_SIGNING_REQUIRED=NO` を渡すと Flutter 側の `xcode_backend.dart` が `App.framework` 等の埋め込み署名をスキップし Xcode 本体署名で失敗するため指定しない）。
   - **失敗時の証跡保存**: テスト失敗時は `.xcresult` バンドルを GitHub Actions Artifact として保存する。
-- **Xcode Debug 構成の留意点**: `@testable import flutter_turbo_fetch` 経由の `internal` シンボル参照がリンク時に削除されないよう、テスト対象の Debug 構成では `DEAD_CODE_STRIPPING = NO` を維持する。
+- **Xcode 構成の留意点**:
+  - `@testable import flutter_turbo_fetch` 経由の `internal` シンボル参照がリンク時に削除されないよう、テスト対象の Debug 構成では `DEAD_CODE_STRIPPING = NO` を維持する。
+  - `RunnerTests` は共有モック状態および App Sandbox 付き `TEST_HOST` 起動の決定論的安定性を優先し、iOS / macOS 双方の `Runner.xcscheme` で `parallelizable = "NO"`（CI 側も `-parallel-testing-enabled NO`）を維持する。
 
 ---
 
