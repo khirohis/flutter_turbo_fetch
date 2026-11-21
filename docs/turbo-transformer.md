@@ -44,13 +44,12 @@ import 'package:dio/dio.dart';
 
 typedef TurboResponseMapper<T> = T Function(dynamic data);
 
-/// Key used to store and retrieve the custom response mapper from RequestOptions.extra.
+/// Key used by TurboTransformer to extract the custom response mapper from extra.
 const String turboMapperExtraKey = '_turbo_response_mapper';
 
-/// Key used to store and retrieve the maximum response byte limit from RequestOptions.extra.
+/// Key used by TurboHttpAdapter to extract the maximum response bytes limit from extra.
 const String turboMaxResponseBytesExtraKey = '_turbo_max_response_bytes';
 
-/// Extended Dio [Options] supporting custom isolate model mapping and response safety limits.
 class TurboOptions<T> extends Options {
   TurboOptions({
     TurboResponseMapper<T>? mapper,
@@ -66,7 +65,7 @@ class TurboOptions<T> extends Options {
     super.validateStatus,
     super.receiveDataWhenStatusError,
     super.followRedirects,
-    super.maxRedirects, // Note: Ignored as native OkHttp/URLSession/WinHTTP/libcurl handle redirects internally
+    super.maxRedirects,
     super.persistentConnection,
     super.requestEncoder,
     super.responseDecoder,
@@ -83,6 +82,9 @@ class TurboOptions<T> extends Options {
   }
 
   /// Factory constructor for JSON payloads.
+  ///
+  /// Automatically binds [responseType] to [ResponseType.json] and feeds the
+  /// decoded JSON structure (Map or List) into [mapper].
   factory TurboOptions.json({
     required T Function(dynamic json) mapper,
     int? maxResponseBytes,
@@ -125,6 +127,9 @@ class TurboOptions<T> extends Options {
   }
 
   /// Factory constructor for raw binary payloads (e.g. Protobuf, MessagePack, FlatBuffers).
+  ///
+  /// Automatically binds [responseType] to [ResponseType.bytes] and statically
+  /// types the [mapper] argument as [Uint8List].
   factory TurboOptions.bytes({
     required T Function(Uint8List bytes) mapper,
     int? maxResponseBytes,
@@ -167,6 +172,9 @@ class TurboOptions<T> extends Options {
   }
 
   /// Factory constructor for plain text payloads (e.g. CSV, YAML, custom text formats).
+  ///
+  /// Automatically binds [responseType] to [ResponseType.plain] and statically
+  /// types the [mapper] argument as [String].
   factory TurboOptions.plain({
     required T Function(String text) mapper,
     int? maxResponseBytes,
@@ -225,8 +233,6 @@ import 'turbo_options.dart';
 /// Fused UTF-8 and JSON decoder that bypasses intermediate String allocations.
 final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder);
 
-/// High-performance Dio Transformer with threshold-based zero-copy Isolate offloading
-/// and semaphore concurrency governance.
 class TurboTransformer extends BackgroundTransformer {
   /// Default byte threshold (24KiB) above which parsing is offloaded to a worker Isolate.
   static const int defaultIsolateThresholdBytes = 24 * 1024;
@@ -234,6 +240,7 @@ class TurboTransformer extends BackgroundTransformer {
   /// Default minimum number of concurrent worker Isolates.
   static const int defaultMinConcurrentIsolates = 2;
 
+  /// Semaphore to constrain concurrent Isolates and prevent OS thread saturation.
   final _Semaphore _semaphore;
 
   /// Byte threshold above which parsing is offloaded to a worker Isolate (default: [defaultIsolateThresholdBytes]).
@@ -379,7 +386,6 @@ class TurboTransformer extends BackgroundTransformer {
   }
 }
 
-/// Lightweight asynchronous semaphore for concurrency throttling.
 class _Semaphore {
   final int maxConcurrent;
   int _permits;

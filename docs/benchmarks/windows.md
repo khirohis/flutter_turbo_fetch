@@ -84,7 +84,7 @@ Windows exhibits dramatic **Inverted Concurrency Scaling**:
 1. **Kernel-Assisted SChannel TLS & Shared `HINTERNET` Session**:
    `TurboSessionManager` shares a single HTTP/2-enabled `HINTERNET` session across requests. Once the TLS 1.3 / HTTP/2 connection is established, concurrent `WinHttpOpenRequest` / `WinHttpSendRequest` calls multiplex over the existing connection without repeating TLS handshakes.
 2. **Windows OS Thread Pool (`TP_POOL`) Efficiency**:
-   Executing synchronous WinHTTP reads in 64KiB blocks across the OS Thread Pool (bounded to 32 threads) allows all 10 concurrent worker streams in Scenario C to read and concatenate socket buffers in parallel across CPU cores, completely off the Dart Main Isolate.
+   Executing synchronous WinHTTP reads in 64KiB blocks across the OS Thread Pool (bounded to 64 threads) allows all 10 concurrent worker streams in Scenario C to read and concatenate socket buffers in parallel across CPU cores, completely off the Dart Main Isolate.
 3. **Elimination of Dart Event-Loop Bottlenecks**:
    While `(2) dio_http2` slowed down from **516 ms** (Scenario A) to **789 ms** (Scenario C) due to single-threaded Dart HTTP/2 frame parsing and 64KiB flow-control stalls, `(3) TurboFetch` accelerated to **50 ms** (**15.8x faster** than `dio_http2` and **3.5x faster** than `IO`).
 

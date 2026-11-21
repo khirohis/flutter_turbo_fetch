@@ -42,19 +42,19 @@ Parsing JSON in native code (Kotlin / Swift / C++) cannot directly allocate Dart
 
 ### 3.2 Why OkHttp instead of Cronet on Android?
 
-`OkHttp3` avoids the dynamic GMS loading delays inherent to Cronet, defaults its HTTP/2 initial window size to an expanded **16MiB**, and completes chunk assembly in native memory with optimal speed using `Okio`'s shared segment pool via `response.body.bytes()`. (Cronet is only considered when HTTP/3 QUIC support is a strict business requirement).
+`OkHttp3` avoids the dynamic GMS loading delays inherent to Cronet, defaults its HTTP/2 initial window size to an expanded **16MiB**, and completes chunk assembly in native memory with optimal speed using `Okio`'s shared segment pool via `response.body.bytes()` (or bounded lookahead via `BufferedSource.request(...)` when `maxResponseBytes` is specified to abort oversized responses early). (Cronet is only considered when HTTP/3 QUIC support is a strict business requirement).
 
-### 3.3 Why avoid `NSURLSessionDataDelegate` on iOS?
+### 3.3 Why avoid `NSURLSessionDataDelegate` on iOS / macOS?
 
-The delegate pattern incurs cross-thread, cross-language signaling overhead for every `didReceiveResponse:` and `didReceiveData:` invocation. By adopting `dataTask(with:completionHandler:)`, header negotiation through chunk concatenation are handled entirely within Apple's native CFNetwork pipeline (C/C++ background engine), while maintaining direct request cancellation via `URLSessionDataTask`.
+The delegate pattern incurs cross-thread, cross-language signaling overhead for every `didReceiveResponse:` and `didReceiveData:` invocation. By adopting `dataTask(with:completionHandler:)` across the shared Darwin (`iOS` / `macOS`) implementation, header negotiation through chunk concatenation is handled entirely within Apple's native CFNetwork pipeline (C/C++ background engine), while maintaining direct request cancellation via `URLSessionDataTask`.
 
 ### 3.4 Why `WinHTTP` (`winhttp.dll`) with OS Thread Pool on Windows?
 
 Windows provides `WinHTTP` as a system-level C API baked directly into the OS (`winhttp.dll`, zero external binary footprint). Enabling `WINHTTP_PROTOCOL_FLAG_HTTP2` on a shared `HINTERNET` session unlocks kernel-assisted SChannel TLS decryption and HTTP/2 multiplexing across concurrent requests. Running synchronous `WinHTTP` calls inside a bounded Windows Thread Pool (`TP_POOL`) eliminates the complex state-machine and `HANDLE_CLOSING` use-after-free hazards of `WINHTTP_FLAG_ASYNC`, while allowing instant cross-thread cancellation via `WinHttpCloseHandle` and direct native buffer assembly into `std::vector<uint8_t>`.
 
-### 3.5 Why `libcurl` with Worker Thread Pool on Linux?
+### 3.5 Why `libcurl` with Background Worker Threads on Linux?
 
-On Linux, `libcurl` is the de facto system networking library, linking against OpenSSL and `nghttp2` to provide full HTTP/2 multiplexing with zero custom protocol reimplementation. Sharing a `CURLSH*` handle across threads enables shared DNS cache, TLS session resumption, and connection pooling. Executing `curl_easy_perform` requests in a bounded C++17 worker thread pool prevents OS thread starvation, while `CURLOPT_XFERINFOFUNCTION` delivers immediate cross-thread cancellation without handle teardown races. Completed responses are assembled into contiguous `std::vector<uint8_t>` buffers and dispatched to Dart via Pigeon GObject integration.
+On Linux, `libcurl` is the de facto system networking library, linking against OpenSSL and `nghttp2` to provide full HTTP/2 multiplexing with zero custom protocol reimplementation. Sharing a `CURLSH*` handle across threads enables shared DNS cache, TLS session resumption, and connection pooling. Executing synchronous `curl_easy_perform` calls on background C++17 worker threads keeps blocking network I/O completely off the GTK/Flutter main loop, while `CURLOPT_XFERINFOFUNCTION` delivers immediate cross-thread cancellation without handle teardown races. Completed responses are assembled into contiguous `std::vector<uint8_t>` buffers and dispatched back to the GTK main thread via `g_idle_add` and Pigeon GObject integration.
 
 ### 3.6 Why semaphore-governed `Isolate.run` instead of persistent worker pools (`SendPort.send`)?
 
@@ -66,7 +66,7 @@ Persistent worker pools require returning results via `SendPort.send(result)`, w
 
 ### Option A: Pigeon (`StandardMessageCodec` + Type-Safe Code Generation) — **Adopted**
 
-- Returns completed byte arrays as `byte[]` on Android, `FlutterStandardTypedData(bytes: Data)` on iOS/macOS, `std::vector<uint8_t>` on Windows (C++), and `GBytes*` on Linux (GObject) in a single IPC exchange.
+- Returns completed byte arrays as `byte[]` on Android, `FlutterStandardTypedData(bytes: Data)` on iOS/macOS, `std::vector<uint8_t>` on Windows (C++), and `const uint8_t*` (`FlValue` uint8 list) on Linux (GObject) in a single IPC exchange.
 - Because data is transferred **once per request** rather than once per chunk, Channel serialization and copy overhead (~0.02ms to 0.05ms for 100KiB) is negligible.
 - Provides superior thread safety, asynchronous background callback support, and compile-time type safety.
 
