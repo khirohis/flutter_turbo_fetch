@@ -71,7 +71,7 @@ Because `(1) IO` and `(2) dio_http2` resolve `fetch()` upon header arrival and p
 ### 3.2 Validation of the 24KiB Hybrid Isolate Threshold (Scenario A)
 
 - In Scenario A, `TurboTransformer` achieved an average parse time of **8.3 ms (P95: 20.2 ms)**, compared to `152.1 ms` for `IO` and `227.1 ms` for `dio_http2`.
-- Payloads under 24KiB (`5, 10, 15, 20 KiB`) are decoded synchronously on the Main Isolate using fused `JsonUtf8Decoder`, avoiding the 1–2 ms Isolate spawn overhead on Android, while payloads `>= 25 KiB` are offloaded via zero-copy `Isolate.run`.
+- Payloads under 24KiB (`5, 10, 15, 20 KiB`) are decoded synchronously on the Main Isolate using fused UTF-8/JSON decoding (`utf8.decoder.fuse(json.decoder)`), avoiding the 1–2 ms Isolate spawn overhead on Android, while payloads `>= 25 KiB` are offloaded via zero-copy `Isolate.run`.
 - While `(1) IO` experienced a severe UI freeze of **197.2 ms** Max Frame Duration in Scenario A, `(3) TurboFetch` capped Max Frame Duration at **44.2 ms** and completed all 90 requests in **2,344 ms** (2.7x faster than IO, 4.4x faster than `dio_http2`).
 
 ### 3.3 OkHttp3 HTTP/2 Multiplexing & Inverted Concurrency Scaling (Scenario C)

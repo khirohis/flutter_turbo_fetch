@@ -1,6 +1,6 @@
 # Dart 層仕様（`TurboHttpAdapter` / `TurboTransformer` / `TurboOptions`）
 
-> リファレンス実装および利用コード例については [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照。
+> アーキテクチャ解説・概念スニペットおよび利用例については [`docs/turbo-transformer.md`](../../docs/turbo-transformer.md) を参照（実装の正本は [`lib/src/turbo_options.dart`](../../lib/src/turbo_options.dart) / [`lib/src/turbo_transformer.dart`](../../lib/src/turbo_transformer.dart)）。
 
 ---
 

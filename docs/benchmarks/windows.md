@@ -71,7 +71,7 @@ Comparing the combined **Effective Total Latency per Request (Avg Net Time + Avg
 
 - Across all three scenarios on Windows, `TurboTransformer` maintained an average Parse Time between **1.2 ms and 1.7 ms** (with P95 between **4.6 ms and 6.2 ms**).
 - By contrast, `(1) IO` required **5.3 ms to 12.5 ms** and `(2) dio_http2` degraded from **16.6 ms to 71.9 ms** (P95: **92.1 ms**) as concurrency and payload size increased.
-- Because `TurboHttpExecutor` pre-allocates contiguous `std::vector<uint8_t>` buffers using `Content-Length` hints and delivers the complete payload in a single Pigeon `EncodableValue` transfer, Dart's `JsonUtf8Decoder` operates at peak native memory bandwidth without stream listener allocations.
+- Because `TurboHttpExecutor` pre-allocates contiguous `std::vector<uint8_t>` buffers using `Content-Length` hints and delivers the complete payload in a single Pigeon `EncodableValue` transfer, Dart's fused decoder (`utf8.decoder.fuse(json.decoder)`) operates at peak native memory bandwidth without stream listener allocations.
 
 ### 3.3 WinHTTP HTTP/2 Multiplexing & Inverted Concurrency Scaling (`118 ms -> 62 ms -> 50 ms`)
 
