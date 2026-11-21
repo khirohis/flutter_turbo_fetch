@@ -17,16 +17,10 @@ class TurboHttpAdapter implements HttpClientAdapter {
   final _activeRequests = <String, void Function()>{};
   bool _closed = false;
 
-  /// Maximum number of concurrent requests per host (default: 32).
-  /// If a value exceeding Android OkHttp Dispatcher's default maxRequests (64)
-  /// is specified, maxRequests is automatically scaled up to match on the native side.
-  final int maxRequestsPerHost;
-
   /// Whether to allow self-signed or invalid certificates for local testing (default: false).
   final bool allowBadCertificates;
 
   TurboHttpAdapter({
-    this.maxRequestsPerHost = 32,
     this.allowBadCertificates = false,
     TurboFetchHostApi? hostApi,
   })  : _hostApi = hostApi ?? TurboFetchHostApi(),
@@ -108,7 +102,6 @@ class TurboHttpAdapter implements HttpClientAdapter {
         receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
         sendTimeoutMs: options.sendTimeout?.inMilliseconds,
         followRedirects: options.followRedirects,
-        maxRequestsPerHost: maxRequestsPerHost,
         allowBadCertificates: allowBadCertificates,
         maxResponseBytes: maxResponseBytes,
       );

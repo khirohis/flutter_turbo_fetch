@@ -57,7 +57,6 @@ data class TurboHttpRequest (
   val receiveTimeoutMs: Long? = null,
   val sendTimeoutMs: Long? = null,
   val followRedirects: Boolean,
-  val maxRequestsPerHost: Long,
   val allowBadCertificates: Boolean,
   val maxResponseBytes: Long? = null
 )
@@ -73,10 +72,9 @@ data class TurboHttpRequest (
       val receiveTimeoutMs = pigeonVar_list[6] as Long?
       val sendTimeoutMs = pigeonVar_list[7] as Long?
       val followRedirects = pigeonVar_list[8] as Boolean
-      val maxRequestsPerHost = pigeonVar_list[9] as Long
-      val allowBadCertificates = pigeonVar_list[10] as Boolean
-      val maxResponseBytes = pigeonVar_list[11] as Long?
-      return TurboHttpRequest(requestId, url, method, headers, body, connectTimeoutMs, receiveTimeoutMs, sendTimeoutMs, followRedirects, maxRequestsPerHost, allowBadCertificates, maxResponseBytes)
+      val allowBadCertificates = pigeonVar_list[9] as Boolean
+      val maxResponseBytes = pigeonVar_list[10] as Long?
+      return TurboHttpRequest(requestId, url, method, headers, body, connectTimeoutMs, receiveTimeoutMs, sendTimeoutMs, followRedirects, allowBadCertificates, maxResponseBytes)
     }
   }
   fun toList(): List<Any?> {
@@ -90,7 +88,6 @@ data class TurboHttpRequest (
       receiveTimeoutMs,
       sendTimeoutMs,
       followRedirects,
-      maxRequestsPerHost,
       allowBadCertificates,
       maxResponseBytes,
     )

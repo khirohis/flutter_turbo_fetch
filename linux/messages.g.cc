@@ -16,7 +16,6 @@ struct _FlutterTurboFetchTurboHttpRequest {
   int64_t* receive_timeout_ms;
   int64_t* send_timeout_ms;
   gboolean follow_redirects;
-  int64_t max_requests_per_host;
   gboolean allow_bad_certificates;
   int64_t* max_response_bytes;
 };
@@ -43,7 +42,7 @@ static void flutter_turbo_fetch_turbo_http_request_class_init(FlutterTurboFetchT
   G_OBJECT_CLASS(klass)->dispose = flutter_turbo_fetch_turbo_http_request_dispose;
 }
 
-FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request_new(const gchar* request_id, const gchar* url, const gchar* method, FlValue* headers, const uint8_t* body, size_t body_length, int64_t* connect_timeout_ms, int64_t* receive_timeout_ms, int64_t* send_timeout_ms, gboolean follow_redirects, int64_t max_requests_per_host, gboolean allow_bad_certificates, int64_t* max_response_bytes) {
+FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request_new(const gchar* request_id, const gchar* url, const gchar* method, FlValue* headers, const uint8_t* body, size_t body_length, int64_t* connect_timeout_ms, int64_t* receive_timeout_ms, int64_t* send_timeout_ms, gboolean follow_redirects, gboolean allow_bad_certificates, int64_t* max_response_bytes) {
   FlutterTurboFetchTurboHttpRequest* self = FLUTTER_TURBO_FETCH_TURBO_HTTP_REQUEST(g_object_new(flutter_turbo_fetch_turbo_http_request_get_type(), nullptr));
   self->request_id = g_strdup(request_id);
   self->url = g_strdup(url);
@@ -79,7 +78,6 @@ FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request_new(co
     self->send_timeout_ms = nullptr;
   }
   self->follow_redirects = follow_redirects;
-  self->max_requests_per_host = max_requests_per_host;
   self->allow_bad_certificates = allow_bad_certificates;
   if (max_response_bytes != nullptr) {
     self->max_response_bytes = static_cast<int64_t*>(malloc(sizeof(int64_t)));
@@ -137,11 +135,6 @@ gboolean flutter_turbo_fetch_turbo_http_request_get_follow_redirects(FlutterTurb
   return self->follow_redirects;
 }
 
-int64_t flutter_turbo_fetch_turbo_http_request_get_max_requests_per_host(FlutterTurboFetchTurboHttpRequest* self) {
-  g_return_val_if_fail(FLUTTER_TURBO_FETCH_IS_TURBO_HTTP_REQUEST(self), 0);
-  return self->max_requests_per_host;
-}
-
 gboolean flutter_turbo_fetch_turbo_http_request_get_allow_bad_certificates(FlutterTurboFetchTurboHttpRequest* self) {
   g_return_val_if_fail(FLUTTER_TURBO_FETCH_IS_TURBO_HTTP_REQUEST(self), FALSE);
   return self->allow_bad_certificates;
@@ -163,7 +156,6 @@ static FlValue* flutter_turbo_fetch_turbo_http_request_to_list(FlutterTurboFetch
   fl_value_append_take(values, self->receive_timeout_ms != nullptr ? fl_value_new_int(*self->receive_timeout_ms) : fl_value_new_null());
   fl_value_append_take(values, self->send_timeout_ms != nullptr ? fl_value_new_int(*self->send_timeout_ms) : fl_value_new_null());
   fl_value_append_take(values, fl_value_new_bool(self->follow_redirects));
-  fl_value_append_take(values, fl_value_new_int(self->max_requests_per_host));
   fl_value_append_take(values, fl_value_new_bool(self->allow_bad_certificates));
   fl_value_append_take(values, self->max_response_bytes != nullptr ? fl_value_new_int(*self->max_response_bytes) : fl_value_new_null());
   return values;
@@ -209,17 +201,15 @@ static FlutterTurboFetchTurboHttpRequest* flutter_turbo_fetch_turbo_http_request
   FlValue* value8 = fl_value_get_list_value(values, 8);
   gboolean follow_redirects = fl_value_get_bool(value8);
   FlValue* value9 = fl_value_get_list_value(values, 9);
-  int64_t max_requests_per_host = fl_value_get_int(value9);
+  gboolean allow_bad_certificates = fl_value_get_bool(value9);
   FlValue* value10 = fl_value_get_list_value(values, 10);
-  gboolean allow_bad_certificates = fl_value_get_bool(value10);
-  FlValue* value11 = fl_value_get_list_value(values, 11);
   int64_t* max_response_bytes = nullptr;
   int64_t max_response_bytes_value;
-  if (fl_value_get_type(value11) != FL_VALUE_TYPE_NULL) {
-    max_response_bytes_value = fl_value_get_int(value11);
+  if (fl_value_get_type(value10) != FL_VALUE_TYPE_NULL) {
+    max_response_bytes_value = fl_value_get_int(value10);
     max_response_bytes = &max_response_bytes_value;
   }
-  return flutter_turbo_fetch_turbo_http_request_new(request_id, url, method, headers, body, body_length, connect_timeout_ms, receive_timeout_ms, send_timeout_ms, follow_redirects, max_requests_per_host, allow_bad_certificates, max_response_bytes);
+  return flutter_turbo_fetch_turbo_http_request_new(request_id, url, method, headers, body, body_length, connect_timeout_ms, receive_timeout_ms, send_timeout_ms, follow_redirects, allow_bad_certificates, max_response_bytes);
 }
 
 struct _FlutterTurboFetchTurboHttpResponse {

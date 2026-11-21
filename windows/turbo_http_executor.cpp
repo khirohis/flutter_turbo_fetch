@@ -284,8 +284,7 @@ TurboHttpResponse TurboHttpExecutor::PerformWinHttpRequest(
     const std::wstring& formatted_headers,
     const TurboHttpRequest& request,
     RequestContext& ctx) {
-  HINTERNET session =
-      session_manager_.AcquireSession(request.max_requests_per_host());
+  HINTERNET session = session_manager_.AcquireSession();
   if (session == nullptr) {
     DWORD err = GetLastError();
     return MakeErrorResponse(

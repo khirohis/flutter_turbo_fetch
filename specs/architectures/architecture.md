@@ -9,7 +9,7 @@
 ```text
 [ネイティブ層: Android (OkHttp3) / iOS & macOS (URLSession) / Windows (WinHTTP) / Linux (libcurl)]
   ├─ OS バックグラウンドスレッドで HTTP/2 多重化通信・TLS 復号・チャンク結合を完結
-  ├─ maxResponseBytes 指定時は上限超過を検知した時点で通信を中断しエラー返却
+  ├─ maxResponseBytes 指定時は上限超過時に切り詰めずエラー返却（ストリーム読み出し時は即時中断）
   └─ 完成した単一の生バイト配列 (Uint8List) を 1 リクエストにつき 1 回のみ Dart へ返却
         │
         ▼ (Pigeon / StandardMessageCodec による 1 往復転送)
@@ -34,9 +34,3 @@
 | **ネイティブ通信層**<br>(Android / Darwin / Windows / Linux) | `FlutterTurboFetchPlugin`<br>`TurboHttpExecutor`<br>`TurboClientManager` / `TurboSessionManager` | リクエスト情報を受け取り、OS バックグラウンドで一括受信した結合済みバイト配列・ステータス・ヘッダを返す |
 | **Dart Adapter 層** | `TurboHttpAdapter`<br>(`HttpClientAdapter`) | `RequestOptions` とボディストリームをネイティブへ渡し、返却された `Uint8List` を単一チャンクの `ResponseBody` としてラップする |
 | **Dart Transform 層** | `TurboTransformer` + `TurboOptions`<br>(`BackgroundTransformer`) | 単一チャンク `ResponseBody` から `ResponseType` に応じた一次デコードおよび `mapper` 後処理を実行する |
-
----
-
-## 3. ディレクトリ構成・配置ルール
-
-ルート階層の責務分離および各ディレクトリ配下のファイル配置ルールについては、[`specs/guidelines/directory-structure.md`](../guidelines/directory-structure.md) を参照。

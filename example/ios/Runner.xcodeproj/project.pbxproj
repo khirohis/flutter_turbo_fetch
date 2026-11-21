@@ -86,7 +86,8 @@
 				331C807C294A618700263BE5 /* TurboSessionManagerTest.swift */,
 				331C807E294A618700263BE5 /* TurboHttpExecutorTest.swift */,
 			);
-			path = RunnerTests;
+			name = RunnerTests;
+			path = ../darwin/RunnerTests;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -481,6 +482,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

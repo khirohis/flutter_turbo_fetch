@@ -19,11 +19,11 @@
   - ※ Web は非サポート（`UnsupportedError`）
 - **主要技術スタック**:
   - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
-  - **通信ブリッジ**: `pigeon`（型安全コード生成・`StandardMessageCodec`）
-  - **Android**: Kotlin, `com.squareup.okhttp3:okhttp:4.12.0`（HTTP/2 共有クライアント）
-  - **iOS / macOS (Darwin)**: Swift, `URLSession`（CFNetwork completionHandler 一括受信）
-  - **Windows**: C++17, `WinHTTP`（`winhttp.dll` HTTP/2 共有セッション + OS スレッドプール）
-  - **Linux**: C++17, `libcurl`（OpenSSL / nghttp2 バックエンド、HTTP/2 共有接続 + ワーカースレッドプール）
+  - **通信ブリッジ**: `pigeon`
+  - **Android**: Kotlin, `OkHttp3`
+  - **iOS / macOS (Darwin)**: Swift, `URLSession`
+  - **Windows**: C++17, `WinHTTP`
+  - **Linux**: C++17, `libcurl`
 
 ---
 

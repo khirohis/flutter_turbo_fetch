@@ -335,7 +335,7 @@ TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
     return TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg);
   }
 
-  CURLSH* share = session_manager_.AcquireShareHandle(request.max_requests_per_host());
+  CURLSH* share = session_manager_.AcquireShareHandle();
   if (share != nullptr) {
     curl_easy_setopt(curl, CURLOPT_SHARE, share);
   }

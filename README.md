@@ -156,11 +156,10 @@ print('User: ${user.name}');
 
 ### `TurboHttpAdapter`
 
-Configured once on the `Dio` instance to manage connection pools and transport security:
+Configured once on the `Dio` instance to manage transport security:
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `maxRequestsPerHost` | `int` | `32` | Maximum concurrent HTTP/2 requests per host. On Android, OkHttp's dispatcher maxRequests is automatically scaled if greater than 64. |
 | `allowBadCertificates` | `bool` | `false` | Allows self-signed certificates for local development and mock servers. |
 
 ### `TurboTransformer`

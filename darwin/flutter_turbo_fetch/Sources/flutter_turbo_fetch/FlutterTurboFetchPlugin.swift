@@ -27,8 +27,12 @@ public class FlutterTurboFetchPlugin: NSObject, FlutterPlugin, TurboFetchHostApi
   }
 
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    detach(binaryMessenger: Self.messenger(from: registrar))
+  }
+
+  internal func detach(binaryMessenger: FlutterBinaryMessenger) {
     TurboFetchHostApiSetup.setUp(
-      binaryMessenger: Self.messenger(from: registrar),
+      binaryMessenger: binaryMessenger,
       api: nil
     )
     executor.shutdown()

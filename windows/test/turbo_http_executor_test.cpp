@@ -27,7 +27,7 @@ TurboHttpRequest CreateRequest(
   const int64_t timeout_ms = 5000;
   return TurboHttpRequest(
       request_id, url, method, headers, body, &timeout_ms, &timeout_ms,
-      &timeout_ms, true, 32, false,
+      &timeout_ms, true, false,
       max_response_bytes.has_value() ? &(*max_response_bytes) : nullptr);
 }
 

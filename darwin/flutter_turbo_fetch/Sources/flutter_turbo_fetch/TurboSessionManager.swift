@@ -37,28 +37,19 @@ internal final class TaskContext {
   }
 }
 
-/// Shared URLSession and connection pool manager responsible for thread-safe connection scaling,
-/// post-shutdown recovery, and per-task delegate policy management.
+/// Shared URLSession and connection pool manager responsible for post-shutdown recovery
+/// and per-task delegate policy management.
 internal final class TurboSessionManager {
-  static let defaultMaxRequestsPerHost = 32
-
   private let lock = NSLock()
   private var sharedSession: URLSession?
-  private var _currentMaxConnectionsPerHost: Int = TurboSessionManager.defaultMaxRequestsPerHost
   private let sessionDelegate = TurboSessionTaskDelegate()
-  private let sessionFactory: (Int, URLSessionTaskDelegate) -> URLSession
+  private let sessionFactory: (URLSessionTaskDelegate) -> URLSession
 
   init(
-    sessionFactory: @escaping (Int, URLSessionTaskDelegate) -> URLSession =
+    sessionFactory: @escaping (URLSessionTaskDelegate) -> URLSession =
       TurboSessionManager.createDefaultSession
   ) {
     self.sessionFactory = sessionFactory
-  }
-
-  var currentMaxConnectionsPerHost: Int {
-    lock.lock()
-    defer { lock.unlock() }
-    return _currentMaxConnectionsPerHost
   }
 
   var isShutdown: Bool {
@@ -67,23 +58,17 @@ internal final class TurboSessionManager {
     return sharedSession == nil
   }
 
-  /// Acquires the shared URLSession configured with the requested maximum connections per host.
-  /// Automatically recreates the session if the limit changes or if previously shut down.
-  func acquireSession(maxConnectionsPerHost: Int) -> URLSession {
-    let safeMax = max(1, maxConnectionsPerHost)
+  /// Acquires the shared URLSession configured with OS defaults.
+  /// Automatically recreates the session if previously shut down.
+  func acquireSession() -> URLSession {
     lock.lock()
     defer { lock.unlock() }
 
-    if let existing = sharedSession, safeMax == _currentMaxConnectionsPerHost {
+    if let existing = sharedSession {
       return existing
     }
 
-    if let oldSession = sharedSession {
-      oldSession.finishTasksAndInvalidate()
-    }
-
-    _currentMaxConnectionsPerHost = safeMax
-    let newSession = sessionFactory(safeMax, sessionDelegate)
+    let newSession = sessionFactory(sessionDelegate)
     sharedSession = newSession
     return newSession
   }
@@ -127,12 +112,13 @@ internal final class TurboSessionManager {
   }
 
   private static func createDefaultSession(
-    maxConnectionsPerHost: Int,
     delegate: URLSessionTaskDelegate
   ) -> URLSession {
-    let config = URLSessionConfiguration.default
-    config.httpMaximumConnectionsPerHost = maxConnectionsPerHost
-    return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+    return URLSession(
+      configuration: URLSessionConfiguration.default,
+      delegate: delegate,
+      delegateQueue: nil
+    )
   }
 }
 
@@ -209,6 +195,26 @@ internal final class TurboSessionTaskDelegate: NSObject, URLSessionTaskDelegate 
     for ctx in allContexts {
       ctx.cancelAllTimers()
     }
+  }
+
+  internal struct TaskTimerSnapshot: Equatable {
+    let isBodySendCompleted: Bool
+    let hasConnectTimer: Bool
+    let hasSendTimer: Bool
+    let hasReceiveTimer: Bool
+  }
+
+  internal func taskTimerSnapshot(for task: URLSessionTask) -> TaskTimerSnapshot? {
+    let taskKey = ObjectIdentifier(task)
+    lock.lock()
+    defer { lock.unlock() }
+    guard let context = contextsByTaskKey[taskKey] else { return nil }
+    return TaskTimerSnapshot(
+      isBodySendCompleted: context.isBodySendCompleted,
+      hasConnectTimer: context.connectTimer != nil,
+      hasSendTimer: context.sendTimer != nil,
+      hasReceiveTimer: context.receiveTimer != nil
+    )
   }
 
   private func handleConnectTimerFired(for taskKey: ObjectIdentifier, task: URLSessionTask) {

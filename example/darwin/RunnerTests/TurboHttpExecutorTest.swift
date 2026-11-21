@@ -35,7 +35,6 @@ final class TurboHttpExecutorTest: XCTestCase {
       receiveTimeoutMs: receiveTimeoutMs,
       sendTimeoutMs: sendTimeoutMs,
       followRedirects: true,
-      maxRequestsPerHost: 32,
       allowBadCertificates: false,
       maxResponseBytes: maxResponseBytes
     )
@@ -45,9 +44,8 @@ final class TurboHttpExecutorTest: XCTestCase {
     handler: @escaping (URLRequest) throws -> (URLResponse, Data?)
   ) -> TurboHttpExecutor {
     MockURLProtocol.requestHandler = handler
-    let sessionManager = TurboSessionManager { maxPerHost, delegate in
+    let sessionManager = TurboSessionManager { delegate in
       let config = URLSessionConfiguration.ephemeral
-      config.httpMaximumConnectionsPerHost = maxPerHost
       config.protocolClasses = [MockURLProtocol.self]
       return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
@@ -256,11 +254,12 @@ final class TurboHttpExecutorTest: XCTestCase {
 
   func testCancel_cancelsInFlightRequest() {
     let requestStarted = expectation(description: "Request started in URLProtocol")
+    let allowFinish = XCTestExpectation(description: "Allow URLProtocol to finish")
     let resultReceived = expectation(description: "Cancel result received")
 
     let executor = createMockedExecutor { request in
       requestStarted.fulfill()
-      Thread.sleep(forTimeInterval: 5.0)
+      _ = XCTWaiter.wait(for: [allowFinish], timeout: 5.0)
       let response = HTTPURLResponse(
         url: request.url!,
         statusCode: 200,
@@ -270,6 +269,7 @@ final class TurboHttpExecutorTest: XCTestCase {
       return (response, Data("ok".utf8))
     }
     defer { executor.shutdown() }
+    defer { allowFinish.fulfill() }
 
     var capturedResponse: TurboHttpResponse?
     var callCount = 0

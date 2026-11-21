@@ -21,7 +21,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
-		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
+		331C80E4294CF71000263BE5 /* FlutterTurboFetchPluginTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80E1294CF71000263BE5 /* FlutterTurboFetchPluginTest.swift */; };
+		331C80E5294CF71000263BE5 /* TurboSessionManagerTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80E2294CF71000263BE5 /* TurboSessionManagerTest.swift */; };
+		331C80E6294CF71000263BE5 /* TurboHttpExecutorTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80E3294CF71000263BE5 /* TurboHttpExecutorTest.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
@@ -62,7 +64,9 @@
 
 /* Begin PBXFileReference section */
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
+		331C80E1294CF71000263BE5 /* FlutterTurboFetchPluginTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlutterTurboFetchPluginTest.swift; sourceTree = "<group>"; };
+		331C80E2294CF71000263BE5 /* TurboSessionManagerTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurboSessionManagerTest.swift; sourceTree = "<group>"; };
+		331C80E3294CF71000263BE5 /* TurboHttpExecutorTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurboHttpExecutorTest.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
 		33CC10ED2044A3C60003C045 /* flutter_turbo_fetch_example.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "flutter_turbo_fetch_example.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -106,9 +110,12 @@
 		331C80D6294CF71000263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
-				331C80D7294CF71000263BE5 /* RunnerTests.swift */,
+				331C80E1294CF71000263BE5 /* FlutterTurboFetchPluginTest.swift */,
+				331C80E2294CF71000263BE5 /* TurboSessionManagerTest.swift */,
+				331C80E3294CF71000263BE5 /* TurboHttpExecutorTest.swift */,
 			);
-			path = RunnerTests;
+			name = RunnerTests;
+			path = ../darwin/RunnerTests;
 			sourceTree = "<group>";
 		};
 		33BA886A226E78AF003329D5 /* Configs */ = {
@@ -350,7 +357,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */,
+				331C80E4294CF71000263BE5 /* FlutterTurboFetchPluginTest.swift in Sources */,
+				331C80E5294CF71000263BE5 /* TurboSessionManagerTest.swift in Sources */,
+				331C80E6294CF71000263BE5 /* TurboHttpExecutorTest.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -401,6 +410,8 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.khirohis.flutterTurboFetchExample.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/flutter_turbo_fetch_example.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/flutter_turbo_fetch_example";
 			};
@@ -539,7 +550,7 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CODE_SIGN_IDENTITY = "-";
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
+				DEAD_CODE_STRIPPING = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

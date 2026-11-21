@@ -33,7 +33,6 @@ class TurboHttpRequest {
     this.receiveTimeoutMs,
     this.sendTimeoutMs,
     required this.followRedirects,
-    required this.maxRequestsPerHost,
     required this.allowBadCertificates,
     this.maxResponseBytes,
   });
@@ -47,7 +46,6 @@ class TurboHttpRequest {
   final int? receiveTimeoutMs;
   final int? sendTimeoutMs;
   final bool followRedirects;
-  final int maxRequestsPerHost;
   final bool allowBadCertificates;
   final int? maxResponseBytes;
 }

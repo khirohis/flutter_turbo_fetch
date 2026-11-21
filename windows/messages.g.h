@@ -67,7 +67,6 @@ class TurboHttpRequest {
     const std::string& method,
     const flutter::EncodableMap& headers,
     bool follow_redirects,
-    int64_t max_requests_per_host,
     bool allow_bad_certificates);
 
   // Constructs an object setting all fields.
@@ -81,7 +80,6 @@ class TurboHttpRequest {
     const int64_t* receive_timeout_ms,
     const int64_t* send_timeout_ms,
     bool follow_redirects,
-    int64_t max_requests_per_host,
     bool allow_bad_certificates,
     const int64_t* max_response_bytes);
 
@@ -116,9 +114,6 @@ class TurboHttpRequest {
   bool follow_redirects() const;
   void set_follow_redirects(bool value_arg);
 
-  int64_t max_requests_per_host() const;
-  void set_max_requests_per_host(int64_t value_arg);
-
   bool allow_bad_certificates() const;
   void set_allow_bad_certificates(bool value_arg);
 
@@ -141,7 +136,6 @@ class TurboHttpRequest {
   std::optional<int64_t> receive_timeout_ms_;
   std::optional<int64_t> send_timeout_ms_;
   bool follow_redirects_;
-  int64_t max_requests_per_host_;
   bool allow_bad_certificates_;
   std::optional<int64_t> max_response_bytes_;
 

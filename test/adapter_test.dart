@@ -27,7 +27,6 @@ void main() {
           ),
         );
         final adapter = TurboHttpAdapter(
-          maxRequestsPerHost: 48,
           allowBadCertificates: true,
           hostApi: fakeApi,
         );
@@ -63,7 +62,6 @@ void main() {
         expect(sent.receiveTimeoutMs, 10000);
         expect(sent.sendTimeoutMs, 7000);
         expect(sent.followRedirects, isFalse);
-        expect(sent.maxRequestsPerHost, 48);
         expect(sent.allowBadCertificates, isTrue);
 
         expect(responseBody.statusCode, 201);

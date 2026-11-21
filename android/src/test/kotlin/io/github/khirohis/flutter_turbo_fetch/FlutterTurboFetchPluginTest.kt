@@ -13,8 +13,7 @@ import kotlin.test.assertTrue
 
 internal class FlutterTurboFetchPluginTest {
     private fun createRequest(
-        requestId: String = "req-1",
-        maxRequestsPerHost: Long = 32L
+        requestId: String = "req-1"
     ): TurboHttpRequest {
         return TurboHttpRequest(
             requestId = requestId,
@@ -26,7 +25,6 @@ internal class FlutterTurboFetchPluginTest {
             receiveTimeoutMs = 5000L,
             sendTimeoutMs = 5000L,
             followRedirects = true,
-            maxRequestsPerHost = maxRequestsPerHost,
             allowBadCertificates = false,
             maxResponseBytes = null
         )

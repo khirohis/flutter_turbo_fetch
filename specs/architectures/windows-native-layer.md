@@ -9,8 +9,7 @@
 - **Pigeon ブリッジ連携とライフサイクル（`FlutterTurboFetchPluginCApi`）**:
   - Pigeon 生成 C++ コード（`windows/messages.g.h` / `messages.g.cpp`）を参照し、Windows C API 経由で登録を行う。
 - **共有セッション管理（`TurboSessionManager`）**:
-  - OS 自動プロキシ（`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY`）および HTTP/2（`WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL`）を有効化した単一の同期 `HINTERNET` セッションを共有する。
-  - `WINHTTP_OPTION_MAX_CONNS_PER_SERVER`（デフォルト `32`）により同時接続数を動的に更新する。
+  - OS 自動プロキシ（`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY`）および HTTP/2（`WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL`）を有効化した単一の同期 `HINTERNET` セッションを共有する（同時接続数および HTTP/2 多重化は OS 標準制御に委ねる）。
 - **OS スレッドプール実行とハンドル・フェーズ管理（`TurboHttpExecutor`）**:
   - OS スレッドプール（`TP_POOL`）のワーカースレッド上で同期 WinHTTP API を実行し、`hConnect` / `hRequest` ハンドルは RAII で確実に解放する。
   - キャンセル時は `RequestContext` の排他ロック下で `WinHttpCloseHandle(hRequest)` を呼び出し、待機中の同期通信を即座に中断させる。

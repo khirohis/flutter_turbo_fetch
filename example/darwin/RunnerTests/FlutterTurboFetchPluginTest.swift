@@ -10,8 +10,7 @@ import XCTest
 
 final class FlutterTurboFetchPluginTest: XCTestCase {
   private func createRequest(
-    requestId: String = "req-1",
-    maxRequestsPerHost: Int64 = 32
+    requestId: String = "req-1"
   ) -> TurboHttpRequest {
     return TurboHttpRequest(
       requestId: requestId,
@@ -23,7 +22,6 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
       receiveTimeoutMs: 5000,
       sendTimeoutMs: 5000,
       followRedirects: true,
-      maxRequestsPerHost: maxRequestsPerHost,
       allowBadCertificates: false,
       maxResponseBytes: nil
     )
@@ -98,7 +96,7 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
     XCTAssertTrue(executed, "postToMain should execute synchronously when already on main thread")
   }
 
-  func testDetachFromEngine_delegatesShutdownToExecutor() {
+  func testDetach_clearsPigeonHandlersAndDelegatesShutdownToExecutor() {
     final class LifecycleTrackingExecutor: TurboHttpExecutor {
       var shutdownCalled = false
 
@@ -107,11 +105,55 @@ final class FlutterTurboFetchPluginTest: XCTestCase {
       }
     }
 
+    let executeChannel = "dev.flutter.pigeon.flutter_turbo_fetch.TurboFetchHostApi.executeRequest"
+    let cancelChannel = "dev.flutter.pigeon.flutter_turbo_fetch.TurboFetchHostApi.cancelRequest"
+
+    let fakeMessenger = FakeFlutterBinaryMessenger()
     let fakeExecutor = LifecycleTrackingExecutor()
     let plugin = FlutterTurboFetchPlugin(executor: fakeExecutor)
 
-    fakeExecutor.shutdown()
-    XCTAssertTrue(fakeExecutor.shutdownCalled, "Executor shutdown must be invoked")
+    TurboFetchHostApiSetup.setUp(binaryMessenger: fakeMessenger, api: plugin)
+    XCTAssertEqual(true, fakeMessenger.registeredHandlers[executeChannel])
+    XCTAssertEqual(true, fakeMessenger.registeredHandlers[cancelChannel])
+
+    plugin.detach(binaryMessenger: fakeMessenger)
+
+    XCTAssertTrue(fakeExecutor.shutdownCalled, "Executor shutdown must be invoked on detach")
+    XCTAssertEqual(
+      false,
+      fakeMessenger.registeredHandlers[executeChannel],
+      "executeRequest Pigeon channel handler must be cleared on detach"
+    )
+    XCTAssertEqual(
+      false,
+      fakeMessenger.registeredHandlers[cancelChannel],
+      "cancelRequest Pigeon channel handler must be cleared on detach"
+    )
   }
+}
+
+private final class FakeFlutterBinaryMessenger: NSObject, FlutterBinaryMessenger {
+  private(set) var registeredHandlers: [String: Bool] = [:]
+  private var nextConnectionId: FlutterBinaryMessengerConnection = 1
+
+  func send(onChannel channel: String, message: Data?) {}
+
+  func send(
+    onChannel channel: String,
+    message: Data?,
+    binaryReply callback: FlutterBinaryReply?
+  ) {}
+
+  func setMessageHandlerOnChannel(
+    _ channel: String,
+    binaryMessageHandler handler: FlutterBinaryMessageHandler?
+  ) -> FlutterBinaryMessengerConnection {
+    registeredHandlers[channel] = (handler != nil)
+    let connection = nextConnectionId
+    nextConnectionId += 1
+    return connection
+  }
+
+  func cleanUpConnection(_ connection: FlutterBinaryMessengerConnection) {}
 }
 

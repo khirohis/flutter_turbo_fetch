@@ -32,7 +32,6 @@ class TurboHttpRequest {
       const int64_t* receive_timeout_ms = nullptr,
       const int64_t* send_timeout_ms = nullptr,
       bool follow_redirects = true,
-      int64_t max_requests_per_host = 32,
       bool allow_bad_certificates = false,
       const int64_t* max_response_bytes = nullptr)
       : request_id_(std::move(request_id)),
@@ -44,7 +43,6 @@ class TurboHttpRequest {
         receive_timeout_ms_(receive_timeout_ms ? std::make_optional(*receive_timeout_ms) : std::nullopt),
         send_timeout_ms_(send_timeout_ms ? std::make_optional(*send_timeout_ms) : std::nullopt),
         follow_redirects_(follow_redirects),
-        max_requests_per_host_(max_requests_per_host),
         allow_bad_certificates_(allow_bad_certificates),
         max_response_bytes_(max_response_bytes ? std::make_optional(*max_response_bytes) : std::nullopt) {}
 
@@ -57,7 +55,6 @@ class TurboHttpRequest {
   const int64_t* receive_timeout_ms() const { return receive_timeout_ms_.has_value() ? &(*receive_timeout_ms_) : nullptr; }
   const int64_t* send_timeout_ms() const { return send_timeout_ms_.has_value() ? &(*send_timeout_ms_) : nullptr; }
   bool follow_redirects() const { return follow_redirects_; }
-  int64_t max_requests_per_host() const { return max_requests_per_host_; }
   bool allow_bad_certificates() const { return allow_bad_certificates_; }
   const int64_t* max_response_bytes() const { return max_response_bytes_.has_value() ? &(*max_response_bytes_) : nullptr; }
 
@@ -71,7 +68,6 @@ class TurboHttpRequest {
   std::optional<int64_t> receive_timeout_ms_;
   std::optional<int64_t> send_timeout_ms_;
   bool follow_redirects_ = true;
-  int64_t max_requests_per_host_ = 32;
   bool allow_bad_certificates_ = false;
   std::optional<int64_t> max_response_bytes_;
 };
