@@ -1,3 +1,9 @@
+## 0.1.0
+
+* **Breaking Change — Simplified Public API**: Removed `maxRequestsPerHost` from `TurboHttpAdapter` and all native session managers (`Android`, `iOS`/`macOS`, `Windows`, `Linux`), relying on each platform's native HTTP/2 connection and multiplexing defaults. When upgrading from `0.0.x`, simply remove the `maxRequestsPerHost` argument from `TurboHttpAdapter(...)`.
+* **Unified Darwin Tests & CI**: Consolidated iOS and macOS `XCTest` suites under shared `example/darwin/RunnerTests/`, added deterministic cancellation, delegate, and detach coverage, and unified Darwin CI verification across iOS and macOS.
+* **Documentation & Guide Refresh**: Restructured `docs/turbo-transformer.md` into JSON usage examples and conceptual sketches, aligned all platform design/benchmark docs with the current implementation, and updated `README.md` links for `pub.dev`.
+
 ## 0.0.5
 
 * **Documentation & Tuning Guide**: Added performance tuning guidelines for high-end Apple Silicon devices (tested on iPhone, noting that macOS may also benefit), detailing the sweet spot for `isolateThresholdBytes` (128KiB–256KiB) and concurrency settings to safeguard 120 FPS UI frame budgets.
