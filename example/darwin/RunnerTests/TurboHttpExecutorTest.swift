@@ -290,7 +290,7 @@ final class TurboHttpExecutorTest: XCTestCase {
   }
 
   func testCancel_immediatelyAfterExecute_cancelsSafelyAndInvokesCallbackExactlyOnce() {
-    let allowFinish = expectation(description: "Allow URLProtocol to finish")
+    let allowFinish = XCTestExpectation(description: "Allow URLProtocol to finish")
     let resultReceived = expectation(description: "Immediate cancel result received")
 
     let executor = createMockedExecutor { request in
@@ -304,6 +304,7 @@ final class TurboHttpExecutorTest: XCTestCase {
       return (response, Data("ok".utf8))
     }
     defer { executor.shutdown() }
+    defer { allowFinish.fulfill() }
 
     var capturedResponse: TurboHttpResponse?
     var callCount = 0
@@ -316,7 +317,6 @@ final class TurboHttpExecutorTest: XCTestCase {
 
     // Cancel immediately right after execute (testing race before/during request dispatch)
     executor.cancel(requestId: "race-cancel")
-    allowFinish.fulfill()
 
     wait(for: [resultReceived], timeout: 5.0)
     XCTAssertEqual("cancel", capturedResponse?.errorCode)
@@ -327,7 +327,7 @@ final class TurboHttpExecutorTest: XCTestCase {
 
   func testShutdown_cancelsInFlightRequestsAndCleansUpActiveTasks() {
     let requestStarted = expectation(description: "Request started in URLProtocol")
-    let allowFinish = expectation(description: "Allow URLProtocol to finish")
+    let allowFinish = XCTestExpectation(description: "Allow URLProtocol to finish")
     let resultReceived = expectation(description: "Shutdown cancel result received")
 
     let executor = createMockedExecutor { request in
@@ -341,6 +341,7 @@ final class TurboHttpExecutorTest: XCTestCase {
       )!
       return (response, Data("ok".utf8))
     }
+    defer { allowFinish.fulfill() }
 
     var capturedResponse: TurboHttpResponse?
     var callCount = 0
@@ -354,7 +355,6 @@ final class TurboHttpExecutorTest: XCTestCase {
     wait(for: [requestStarted], timeout: 5.0)
     // Shutdown cancels all active tasks and cleans up state
     executor.shutdown()
-    allowFinish.fulfill()
 
     wait(for: [resultReceived], timeout: 5.0)
     XCTAssertEqual("cancel", capturedResponse?.errorCode)
