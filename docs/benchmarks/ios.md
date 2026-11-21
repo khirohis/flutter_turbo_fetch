@@ -115,7 +115,7 @@ In median total wall-clock time, TurboFetch was slightly slower than `IOHttpClie
 
 1. **Apple Silicon Single-Core Decoding Speed**:
    - iPhone 17's CPU cores decode JSON synchronously on the Main Isolate in **under 0.2 ms for <= 20KiB** and **under 0.7 ms for 100KiB**.
-   - `TurboTransformer`'s default hybrid threshold of **24KiB** dispatches requests >= 25KiB to worker Isolates. For payloads between 25KiB and 100KiB, the Isolate dispatch and semaphore queueing overhead (0.9–1.9 ms) exceeded the pure decoding time on Main Isolate, temporarily inflating Parse Time.
+   - `TurboTransformer`'s default hybrid threshold of **24KiB** dispatches requests >= 25KiB to Worker Isolates. For payloads between 25KiB and 100KiB, the Isolate dispatch and semaphore queueing overhead (0.9–1.9 ms) exceeded the pure decoding time on the Main Isolate, temporarily inflating Parse Time.
 2. **Ultra-Low Latency Wi-Fi LAN (RTT 1–2 ms)**:
    - Over a 1–2 ms local Wi-Fi connection, TCP connection setup and head-of-line blocking penalties for HTTP/1.1 are negligible.
    - For larger payloads (120KiB–200KiB), however, TurboFetch's pure network transmission time was **up to 13% faster** than IO (42.7 ms vs. 49.1 ms at 200KiB), proving native HTTP/2 multiplexing throughput advantages.
@@ -125,7 +125,7 @@ In median total wall-clock time, TurboFetch was slightly slower than `IOHttpClie
 ## 4. Reproducing the Benchmark
 
 ### 4.1 Prerequisites
-1. Physical iPhone with iOS 17+ and Developer Mode enabled.
+1. Physical iPhone with iOS 17+ (required by `xcrun devicectl`) and Developer Mode enabled.
 2. Mac and iPhone connected to the same Wi-Fi LAN (`<LAN_IP>`).
 3. FVM Flutter 3.47.8 and Xcode 15+.
 

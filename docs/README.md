@@ -13,5 +13,5 @@ For internal specifications and agent instructions (maintained in Japanese), ref
   Detailed analysis of the three fundamental bottlenecks in mobile networking, evaluation of existing `pub.dev` packages, and technical justification of the four core design principles.
 - **[Benchmark Results & Analysis (`benchmark-results.md`)](benchmark-results.md)**:
   Cross-platform executive summary and common evaluation methodology, accompanied by platform-specific empirical benchmark reports under `docs/benchmarks/` (Android, Windows, iOS, etc.).
-- **[TurboTransformer Reference (`turbo-transformer.md`)](turbo-transformer.md)**:
-  Architecture and implementation breakdown of zero-copy Isolate transformations, fused decoders, and semaphore concurrency governance.
+- **[TurboTransformer & TurboOptions Guide (`turbo-transformer.md`)](turbo-transformer.md)**:
+  Architecture overview, JSON usage examples, and conceptual sketches of zero-copy Isolate transformations, fused decoders, and semaphore concurrency governance.

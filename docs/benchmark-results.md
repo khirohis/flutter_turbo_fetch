@@ -110,10 +110,10 @@ Because `BenchmarkTimingAdapter` and `BenchmarkTimingTransformer` instrument Dio
   - `HttpClientAdapter.fetch()` resolves as soon as **initial HTTP response headers** arrive.
   - Reading and reassembling response body chunks from the TCP/TLS socket occurs downstream inside `Transformer.transformResponse`. Consequently, **socket transfer and HTTP/2 frame processing latency are recorded inside Parse Time**. Under high concurrency (Scenario C), `dio_http2` suffers severe Parse Time inflation because 10 parallel HTTP/2 streams compete on Dart's single event loop and hit the hardcoded 64KiB flow-control window.
 - **(3) TurboFetch (Platform Native Batch Model)**:
-  - The OS native layer (`OkHttp` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` on Linux) receives, decompresses, and concatenates all HTTP/2 `DATA` frames in background OS threads, returning a single contiguous `Uint8List` via Pigeon before `fetch()` resolves.
-  - Consequently, **network transmission, TLS decryption, full body download, native buffer assembly, and Pigeon IPC are all accounted for within Net Time**, while **Parse Time strictly measures in-memory fused UTF-8/JSON decoding (`JsonUtf8Decoder`), zero-copy Isolate handoff, and semaphore queuing**.
+  - The OS native layer (`OkHttp3` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` on Linux) receives, decompresses, and concatenates all HTTP/2 `DATA` frames in background OS threads, returning a single contiguous `Uint8List` via Pigeon before `fetch()` resolves.
+  - Consequently, **network transmission, TLS decryption, full body download, native buffer assembly, and Pigeon IPC are all accounted for within Net Time**, while in **Part A (`ResponseType.json`)**, **Parse Time strictly measures in-memory fused UTF-8/JSON decoding (`utf8.decoder.fuse(json.decoder)`), zero-copy Isolate handoff, and semaphore queuing** (in **Part B (`ResponseType.bytes`)**, JSON decoding is skipped and the assembled `Uint8List` is returned directly).
 
-Evaluating **Effective Total Latency (Net Time + Parse Time)** alongside **Total Wall Time** provides a strictly apples-to-apples comparison across both models.
+Evaluating **Effective Total Latency (Net Time + Parse Time)** alongside **Total Wall Time** provides a strictly apples-to-apples comparison across both models in Part A.
 
 ### 3.2 The "Jank Frames (%)" Denominator Paradox vs. Max Frame Duration
 
@@ -133,27 +133,19 @@ A defining characteristic observed on both Android and Windows is **Inverted Con
 
 Even as payload sizes quadrupled (up to 200KiB) and total transferred volume increased more than 4x, total completion time **decreased** as worker concurrency scaled from 3 to 10. This confirms that:
 
-1. Native HTTP/2 connection multiplexing (`OkHttp` / `WinHTTP`) eliminates socket contention,
+1. Native HTTP/2 connection multiplexing (`OkHttp3` / `WinHTTP`) eliminates socket contention,
 2. The **24KiB hybrid threshold** avoids Isolate spawn overhead on small payloads while offloading heavy JSON payloads via zero-copy `Isolate.run`, and
 3. **Semaphore concurrency governance (`maxConcurrentIsolates`)** prevents Isolate thread storms and keeps Peak RSS memory growth bounded (~10–15 MiB delta).
 
 ### 3.4 Hardware Characteristics & Latency Dynamics on High-Performance Hardware (iOS / Apple Silicon)
 
-The iPhone 17 physical-device benchmark revealed subtle trade-offs when operating on high-performance mobile hardware:
-
-1. **Massive HTTP/2 Superiority over Pure Dart (`dio_http2`)**:
-   TurboFetch outperforms `dio_http2` by **1.6x in Scenario A, 3.2x in Scenario B, and 5.8x (82.7% faster) in Scenario C**. Pure Dart HTTP/2 struggles under stream multiplexing and single-thread event loop contention, whereas native `URLSession` manages multiplexing and flow control with near-zero Dart thread overhead.
-2. **Dynamics vs. `IOHttpClientAdapter` on Apple Silicon**:
-   In median wall-clock time, TurboFetch was slightly slower than `IOHttpClientAdapter` (+3.9% in A, +11.1% in B, +5.7% in C). Detailed request-level profiling explains why:
-   - **Single-Core JSON Decoding**: iPhone 17's CPU cores decode JSON synchronously on the Main Isolate in **< 0.2 ms for <= 20KiB** and **< 0.7 ms for 100KiB**.
-   - **The 24KiB Isolate Boundary**: Payloads >= 25KiB trigger `TurboTransformer`'s Isolate dispatch. For payloads between 25KiB and 100KiB, the Isolate spawn and semaphore scheduling overhead (0.9–1.9 ms) exceeded the raw Main Isolate decoding speed, temporarily inflating Parse Time.
-   - **Ultra-Low Latency Wi-Fi LAN (RTT 1–2 ms)**: In local testing, HTTP/1.1 head-of-line blocking penalties are minimal. For payloads >= 120KiB, however, TurboFetch's pure network transmission was **up to 13% faster** than IO (42.7 ms vs. 49.1 ms at 200KiB), proving native HTTP/2 throughput gains as volume scales.
+The iPhone 17 physical-device benchmark demonstrates **1.6x–5.8x faster median execution than `dio_http2`**, while trailing `IOHttpClientAdapter` slightly (+3.9% to +11.1%) in ultra-low-latency Wi-Fi LAN tests where fast single-core Main Isolate decoding outpaces Worker Isolate dispatch between 25KiB and 100KiB. See the [iOS Benchmark Report §3](benchmarks/ios.md#3-technical-analysis-ios--urlsession) for the full request-level profiling breakdown.
 
 #### 3.4.1 Practical Tuning Recommendations for High-End Hardware
 
 Based on empirical evidence from the iPhone 17 physical-device study, developers targeting modern high-end devices can maximize throughput with two simple adjustments:
 
-- **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship mobile processors, decoding up to 100KiB synchronously on the Main Isolate takes under 0.7ms, and 200KiB takes ~1.0ms—safely below the 8.33ms (120 FPS) frame budget. Raising the threshold to **128KiB–256KiB** matches the physical Isolate break-even point and eliminates worker dispatch overhead, closing the slight gap with `IOHttpClientAdapter` while maintaining non-blocking safety for genuinely massive responses.
+- **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship mobile processors, decoding up to 100KiB synchronously on the Main Isolate takes under 0.7 ms, and 200KiB takes ~1.0 ms—safely below the 8.33 ms (120 FPS) frame budget. Raising the threshold to **128KiB–256KiB** matches the physical Isolate break-even point and eliminates Worker Isolate dispatch overhead, closing the slight gap with `IOHttpClientAdapter` while maintaining non-blocking safety for genuinely massive responses.
 - **Scale `maxConcurrentIsolates` for Burst Concurrency**: Under 10+ parallel worker bursts (Scenario C), increasing semaphore capacity (e.g., to `4`–`6` on 6-core or 8-core CPUs) allows more concurrent decodes without queue stalls.
 
 *(Note: Similar characteristics and tuning may also apply to macOS on Apple Silicon due to the shared Darwin native layer.)*

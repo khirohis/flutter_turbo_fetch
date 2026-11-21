@@ -71,7 +71,7 @@ Comparing the combined **Effective Total Latency per Request (Avg Net Time + Avg
 
 - Across all three scenarios on Windows, `TurboTransformer` maintained an average Parse Time between **1.2 ms and 1.7 ms** (with P95 between **4.6 ms and 6.2 ms**).
 - By contrast, `(1) IO` required **5.3 ms to 12.5 ms** and `(2) dio_http2` degraded from **16.6 ms to 71.9 ms** (P95: **92.1 ms**) as concurrency and payload size increased.
-- Because `TurboHttpExecutor` pre-allocates contiguous `std::vector<uint8_t>` buffers using `Content-Length` hints and delivers the complete payload in a single Pigeon `EncodableValue` transfer, Dart's `JsonUtf8Decoder` operates at peak native memory bandwidth without stream listener allocations.
+- Because `TurboHttpExecutor` pre-allocates contiguous `std::vector<uint8_t>` buffers using `Content-Length` hints and delivers the complete payload in a single Pigeon `EncodableValue` transfer, Dart's fused decoder (`utf8.decoder.fuse(json.decoder)`) operates at peak native memory bandwidth without stream listener allocations.
 
 ### 3.3 WinHTTP HTTP/2 Multiplexing & Inverted Concurrency Scaling (`118 ms -> 62 ms -> 50 ms`)
 
@@ -84,7 +84,7 @@ Windows exhibits dramatic **Inverted Concurrency Scaling**:
 1. **Kernel-Assisted SChannel TLS & Shared `HINTERNET` Session**:
    `TurboSessionManager` shares a single HTTP/2-enabled `HINTERNET` session across requests. Once the TLS 1.3 / HTTP/2 connection is established, concurrent `WinHttpOpenRequest` / `WinHttpSendRequest` calls multiplex over the existing connection without repeating TLS handshakes.
 2. **Windows OS Thread Pool (`TP_POOL`) Efficiency**:
-   Executing synchronous WinHTTP reads in 64KiB blocks across the OS Thread Pool (bounded to 32 threads) allows all 10 concurrent worker streams in Scenario C to read and concatenate socket buffers in parallel across CPU cores, completely off the Dart Main Isolate.
+   Executing synchronous WinHTTP reads in 64KiB blocks across the OS Thread Pool (bounded to 64 threads) allows all 10 concurrent worker streams in Scenario C to read and concatenate socket buffers in parallel across CPU cores, completely off the Dart Main Isolate.
 3. **Elimination of Dart Event-Loop Bottlenecks**:
    While `(2) dio_http2` slowed down from **516 ms** (Scenario A) to **789 ms** (Scenario C) due to single-threaded Dart HTTP/2 frame parsing and 64KiB flow-control stalls, `(3) TurboFetch` accelerated to **50 ms** (**15.8x faster** than `dio_http2` and **3.5x faster** than `IO`).
 

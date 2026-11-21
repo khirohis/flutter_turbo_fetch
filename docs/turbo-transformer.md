@@ -1,6 +1,6 @@
-# TurboTransformer & TurboOptions: Architecture & Reference Guide (`turbo-transformer.md`)
+# TurboTransformer & TurboOptions: Architecture & Usage Guide (`turbo-transformer.md`)
 
-This document provides architectural details, design rationale, and the reference implementation for `TurboTransformer` and `TurboOptions`, as specified in [`specs/architectures/dart-layer.md`](../specs/architectures/dart-layer.md).
+This document provides architectural highlights, JSON usage examples, and conceptual sketches for `TurboTransformer` and `TurboOptions`, as specified in [`specs/architectures/dart-layer.md`](../specs/architectures/dart-layer.md).
 
 ---
 
@@ -11,9 +11,9 @@ This document provides architectural details, design rationale, and the referenc
 - **`ResponseType.stream` (`ResponseBody`)**:
   `TurboHttpAdapter` receives and concatenates response bytes in the OS background, wrapping the result in a single-chunk `ResponseBody.fromBytes` (backed by `Stream.value(bytes)`). `TurboTransformer` returns this `ResponseBody` directly in $O(1)$ without falling back to a separate adapter or draining the stream, maintaining 100% type compatibility with Dio.
 - **`ResponseType.bytes` (`Uint8List`)**:
-  Because the native layer yields a pre-assembled byte array in a single chunk, `TurboTransformer` extracts the buffer via `BytesBuilder(copy: false)` with zero re-allocation. If `TurboOptions(mapper: ...)` is provided (e.g., custom binary decoders/protobuf), mapping is automatically offloaded to an Isolate for payloads exceeding the size threshold.
+  Because the native layer yields a pre-assembled byte array in a single chunk, `TurboTransformer` extracts the buffer via `BytesBuilder(copy: false)` with zero re-allocation. If `TurboOptions(mapper: ...)` is provided (e.g., custom binary decoders/protobuf), mapping is automatically offloaded to a Worker Isolate for payloads meeting or exceeding the size threshold.
 - **`ResponseType.plain` (`String`)**:
-  While Dio's standard `BackgroundTransformer` synchronously executes `utf8.decode` on the Main Isolate even for large text responses, `TurboTransformer` offloads text decoding to an Isolate whenever the payload meets or exceeds the threshold.
+  While Dio's standard `BackgroundTransformer` synchronously executes `utf8.decode` on the Main Isolate even for large text responses, `TurboTransformer` offloads text decoding to a Worker Isolate whenever the payload meets or exceeds the threshold.
 - **`ResponseType.json` (`dynamic`)**:
   Fuses UTF-8 decoding and JSON decoding (`utf8.decoder.fuse(json.decoder)`), converting raw bytes directly into the target object graph without intermediate multi-megabyte `String` allocations.
 - **Post-Processing & Object Mapping via `TurboOptions(mapper: ...)`**:
@@ -21,7 +21,7 @@ This document provides architectural details, design rationale, and the referenc
 
 ### 2. Threshold-Based Offloading (Default 24KiB)
 
-Spawning an Isolate via `Isolate.run` incurs a baseline overhead of approximately 0.5ms to 1.5ms. For small payloads (< 24KiB), direct decoding on the Main Isolate is faster (< 0.5ms) and avoids unnecessary thread context switches. Payloads >= 24KiB are offloaded to keep the Main UI thread free of frame drops.
+Spawning an Isolate via `Isolate.run` incurs a baseline overhead of approximately 0.5 ms to 1.5 ms. For small payloads (< 24KiB), direct decoding on the Main Isolate is faster (< 0.5 ms) and avoids unnecessary thread context switches. Payloads >= 24KiB are offloaded to keep the Main UI thread free of frame drops.
 
 ### 3. Bidirectional $O(1)$ Zero-Copy (`TransferableTypedData` + `Isolate.run`)
 
@@ -34,376 +34,150 @@ Spawning unconstrained Isolates during bursts of 10 to 20 concurrent network req
 
 ---
 
-## 2. Reference Implementation
+## 2. Usage Examples (JSON)
 
-### `lib/src/turbo_options.dart`
+`TurboOptions` inherits Dio's default `ResponseType.json`. Payloads >= 24KiB are automatically offloaded to a Worker Isolate with zero-copy transfer.
+
+### 2.1 Without a Mapper (Raw Decoded JSON)
+
+Use standard Dio requests (or `TurboOptions` without `mapper`) when you only need decoded JSON (`Map<String, dynamic>` / `List<dynamic>`). Fused UTF-8 and JSON decoding still executes inside a Worker Isolate above the threshold:
 
 ```dart
-import 'dart:typed_data';
-import 'package:dio/dio.dart';
+final dio = Dio()
+  ..httpClientAdapter = TurboHttpAdapter()
+  ..transformer = TurboTransformer();
 
-typedef TurboResponseMapper<T> = T Function(dynamic data);
+// ResponseType.json is the default; payloads >= 24KiB decode in a Worker Isolate.
+final response = await dio.get<Map<String, dynamic>>(
+  'https://api.example.com/users/1',
+  options: TurboOptions(maxResponseBytes: 10 * 1024 * 1024),
+);
 
-/// Key used to store and retrieve the custom response mapper from RequestOptions.extra.
-const String turboMapperExtraKey = '_turbo_response_mapper';
+final Map<String, dynamic> rawJson = response.data!;
+```
 
-/// Key used to store and retrieve the maximum response byte limit from RequestOptions.extra.
-const String turboMaxResponseBytesExtraKey = '_turbo_max_response_bytes';
+### 2.2 With a Mapper (In-Isolate Model Instantiation)
 
-/// Extended Dio [Options] supporting custom isolate model mapping and response safety limits.
+Pass a `mapper` via `TurboOptions.json<T>` to run JSON decoding **and** domain model instantiation inside the same Worker Isolate, returning only the final typed object to the Main Isolate in $O(1)$:
+
+```dart
+final response = await dio.get<UserModel>(
+  'https://api.example.com/users/1',
+  options: TurboOptions.json<UserModel>(
+    mapper: (json) => UserModel.fromJson(json as Map<String, dynamic>),
+    maxResponseBytes: 10 * 1024 * 1024,
+  ),
+);
+
+final UserModel user = response.data!;
+```
+
+> [!TIP]
+> Because `mapper` executes inside `Isolate.run` for payloads >= 24KiB, it must be a top-level function, `static` method, or pure closure that does not capture mutable external state.
+
+---
+
+## 3. Core Mechanics (Conceptual Sketches)
+
+> [!NOTE]
+> The code snippets below are simplified conceptual sketches intended to illustrate the core pipeline mechanics—they are **not** runnable or verbatim copies of the production code, and do not need to track minor implementation edits. For the authoritative implementation, refer directly to [`lib/src/turbo_options.dart`](../lib/src/turbo_options.dart) and [`lib/src/turbo_transformer.dart`](../lib/src/turbo_transformer.dart).
+
+### 3.1 Options Propagation (`TurboOptions` -> `RequestOptions.extra`)
+
+`TurboOptions` attaches `mapper` and `maxResponseBytes` to reserved keys in Dio's `Options.extra`. Typed factory constructors (`.json`, `.bytes`, `.plain`) bind `responseType` and narrow the `mapper` parameter type at compile time:
+
+```dart
 class TurboOptions<T> extends Options {
   TurboOptions({
-    TurboResponseMapper<T>? mapper,
+    T Function(dynamic data)? mapper,
     int? maxResponseBytes,
-    super.method,
-    super.sendTimeout,
-    super.receiveTimeout,
-    super.extra,
-    super.headers,
-    super.preserveHeaderCase,
     super.responseType = ResponseType.json,
-    super.contentType,
-    super.validateStatus,
-    super.receiveDataWhenStatusError,
-    super.followRedirects,
-    super.maxRedirects, // Note: Ignored as native OkHttp/URLSession/WinHTTP/libcurl handle redirects internally
-    super.persistentConnection,
-    super.requestEncoder,
-    super.responseDecoder,
-    super.listFormat,
-  }) : super() {
-    if (mapper != null || maxResponseBytes != null) {
-      extra = <String, Object?>{
-        ...?extra,
-        if (mapper != null) turboMapperExtraKey: mapper,
-        if (maxResponseBytes != null)
-          turboMaxResponseBytesExtraKey: maxResponseBytes,
-      };
+    // ... standard Dio Options parameters forwarded via super
+  }) {
+    extra = {
+      ...?extra,
+      if (mapper != null) turboMapperExtraKey: mapper,
+      if (maxResponseBytes != null) turboMaxResponseBytesExtraKey: maxResponseBytes,
+    };
+  }
+
+  factory TurboOptions.json({required T Function(dynamic json) mapper, /* ... */}) =>
+      TurboOptions<T>(mapper: mapper, responseType: ResponseType.json, /* ... */);
+
+  // Similarly: TurboOptions.bytes (Uint8List -> T) and TurboOptions.plain (String -> T)
+}
+```
+
+### 3.2 `ResponseType` Dispatch & 24KiB Hybrid Offloading
+
+`TurboTransformer` extracts the single-chunk native buffer with `BytesBuilder(copy: false)` and dispatches by `ResponseType` and payload size:
+
+```dart
+final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder); // No intermediate String
+
+class TurboTransformer extends BackgroundTransformer {
+  Future<dynamic> transformResponse(RequestOptions options, ResponseBody body) {
+    return switch (options.responseType) {
+      ResponseType.stream => _returnStreamInO1(options, body),
+      ResponseType.bytes  => _transformBytes(options, body), // Offload only if mapper != null && >= threshold
+      ResponseType.plain  => _transformPayload(options, body, empty: '', decode: (b) => utf8.decode(b, allowMalformed: true)),
+      ResponseType.json   => _transformPayload(options, body, empty: null, decode: _jsonUtf8Decoder.convert),
+    };
+  }
+
+  Future<dynamic> _transformPayload(/* ... */) async {
+    final bytes = await _readZeroCopy(body.stream); // BytesBuilder(copy: false)
+    if (bytes.isEmpty) return mapper != null ? mapper(empty) : empty;
+
+    dynamic process(Uint8List raw) {
+      final decoded = decode(raw);
+      return mapper != null ? mapper(decoded) : decoded;
     }
-  }
 
-  /// Factory constructor for JSON payloads.
-  factory TurboOptions.json({
-    required T Function(dynamic json) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: mapper,
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.json,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
-  }
-
-  /// Factory constructor for raw binary payloads (e.g. Protobuf, MessagePack, FlatBuffers).
-  factory TurboOptions.bytes({
-    required T Function(Uint8List bytes) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: (dynamic data) => mapper(data as Uint8List),
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.bytes,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
-  }
-
-  /// Factory constructor for plain text payloads (e.g. CSV, YAML, custom text formats).
-  factory TurboOptions.plain({
-    required T Function(String text) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: (dynamic data) => mapper(data as String),
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.plain,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
+    return bytes.lengthInBytes < isolateThresholdBytes
+        ? process(bytes)            // Fast synchronous path on Main Isolate
+        : _offload(bytes, process); // Worker Isolate offload
   }
 }
 ```
 
-### `lib/src/turbo_transformer.dart`
+### 3.3 Bidirectional $O(1)$ Zero-Copy Offload
+
+Raw bytes enter the Worker Isolate via `TransferableTypedData`, and the decoded/mapped result exits via `Isolate.run` (`Isolate.exit`), avoiding heap deep copies in both directions:
 
 ```dart
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io' show Platform;
-import 'dart:isolate';
-import 'dart:math' as math;
-import 'dart:typed_data';
-import 'package:dio/dio.dart';
-import 'turbo_options.dart';
-
-/// Fused UTF-8 and JSON decoder that bypasses intermediate String allocations.
-final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder);
-
-/// High-performance Dio Transformer with threshold-based zero-copy Isolate offloading
-/// and semaphore concurrency governance.
-class TurboTransformer extends BackgroundTransformer {
-  /// Default byte threshold (24KiB) above which parsing is offloaded to a worker Isolate.
-  static const int defaultIsolateThresholdBytes = 24 * 1024;
-
-  /// Default minimum number of concurrent worker Isolates.
-  static const int defaultMinConcurrentIsolates = 2;
-
-  final _Semaphore _semaphore;
-
-  /// Byte threshold above which parsing is offloaded to a worker Isolate (default: [defaultIsolateThresholdBytes]).
-  final int isolateThresholdBytes;
-
-  /// Maximum number of concurrently running worker Isolates.
-  final int maxConcurrentIsolates;
-
-  TurboTransformer({
-    int isolateThresholdBytes = defaultIsolateThresholdBytes,
-    int? maxConcurrentIsolates,
-  }) : this._(
-         isolateThresholdBytes: isolateThresholdBytes,
-         maxConcurrentIsolates:
-             maxConcurrentIsolates ??
-             math.max(
-               defaultMinConcurrentIsolates,
-               Platform.numberOfProcessors - 2,
-             ),
-       );
-
-  TurboTransformer._({
-    required this.isolateThresholdBytes,
-    required this.maxConcurrentIsolates,
-  }) : _semaphore = _Semaphore(maxConcurrentIsolates);
-
-  @override
-  Future transformResponse(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) {
-    switch (options.responseType) {
-      case ResponseType.stream:
-        return _transformStream(options, responseBody);
-      case ResponseType.bytes:
-        return _transformBytes(options, responseBody);
-      case ResponseType.plain:
-        return _transformPlain(options, responseBody);
-      case ResponseType.json:
-        return _transformJson(options, responseBody);
-    }
-  }
-
-  dynamic Function(dynamic)? _extractMapper(RequestOptions options) {
-    return options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
-  }
-
-  Future<dynamic> _transformStream(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
-    return mapper != null ? mapper(responseBody) : responseBody;
-  }
-
-  Future<dynamic> _transformBytes(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
-    final bytes = await _readBytes(responseBody.stream);
-    if (mapper == null) {
-      return bytes;
-    }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      return mapper(bytes);
-    }
-    return await _offload(bytes, mapper);
-  }
-
-  Future<dynamic> _transformPlain(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) {
-    return _transformPayload(
-      options,
-      responseBody,
-      emptyValue: '',
-      decode: (bytes) => utf8.decode(bytes, allowMalformed: true),
-    );
-  }
-
-  Future<dynamic> _transformJson(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) {
-    return _transformPayload(
-      options,
-      responseBody,
-      emptyValue: null,
-      decode: _jsonUtf8Decoder.convert,
-    );
-  }
-
-  /// Common pipeline for decodable payloads (plain text and JSON).
-  Future<dynamic> _transformPayload(
-    RequestOptions options,
-    ResponseBody responseBody, {
-    required dynamic emptyValue,
-    required dynamic Function(Uint8List bytes) decode,
-  }) async {
-    final mapper = _extractMapper(options);
-    final bytes = await _readBytes(responseBody.stream);
-
-    if (bytes.isEmpty) {
-      return mapper != null ? mapper(emptyValue) : emptyValue;
-    }
-
-    dynamic process(Uint8List rawBytes) {
-      final decoded = decode(rawBytes);
-      return mapper != null ? mapper(decoded) : decoded;
-    }
-
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      return process(bytes);
-    }
-    return await _offload(bytes, process);
-  }
-
-  /// Offloads [action] to a worker Isolate using bidirectional O(1) zero-copy transfer.
-  Future<R> _offload<R>(
-    Uint8List bytes,
-    R Function(Uint8List rawBytes) action,
-  ) async {
-    return await _semaphore.withResource(() async {
-      // Inbound: O(1) zero-copy transfer of raw byte buffer
-      final transferable = TransferableTypedData.fromList([bytes]);
-
-      // Outbound: Isolate.run uses Isolate.exit to transfer parsed object tree in O(1)
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        return action(rawBytes);
-      });
+Future<R> _offload<R>(Uint8List bytes, R Function(Uint8List) action) {
+  return _semaphore.withResource(() async {
+    final transferable = TransferableTypedData.fromList([bytes]); // Inbound O(1)
+    return Isolate.run(() {                                       // Outbound O(1) via Isolate.exit
+      final rawBytes = transferable.materialize().asUint8List();
+      return action(rawBytes);
     });
-  }
-
-  Future<Uint8List> _readBytes(Stream<Uint8List> stream) async {
-    final bytesBuilder = BytesBuilder(copy: false);
-    await for (final chunk in stream) {
-      bytesBuilder.add(chunk);
-    }
-    return bytesBuilder.takeBytes();
-  }
+  });
 }
+```
 
-/// Lightweight asynchronous semaphore for concurrency throttling.
+### 3.4 Semaphore Concurrency Governance
+
+A lightweight async semaphore bounds concurrent `Isolate.run` executions (defaulting to `max(2, Platform.numberOfProcessors - 2)`) to prevent thread saturation during request bursts:
+
+```dart
 class _Semaphore {
-  final int maxConcurrent;
   int _permits;
   final _queue = <Completer<void>>[];
-
-  _Semaphore(this.maxConcurrent) : _permits = maxConcurrent;
 
   Future<T> withResource<T>(Future<T> Function() action) async {
     if (_permits > 0) {
       _permits--;
     } else {
-      final completer = Completer<void>();
-      _queue.add(completer);
-      await completer.future;
+      final gate = Completer<void>();
+      _queue.add(gate);
+      await gate.future;
     }
-
     try {
       return await action();
     } finally {
-      if (_queue.isNotEmpty) {
-        _queue.removeAt(0).complete();
-      } else {
-        _permits++;
-      }
+      _queue.isNotEmpty ? _queue.removeAt(0).complete() : _permits++;
     }
   }
 }
