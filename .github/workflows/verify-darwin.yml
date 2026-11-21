@@ -1,0 +1,138 @@
+name: Verify Darwin (iOS / macOS)
+
+# Manual trigger only to avoid unnecessary macOS runner credit usage.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target Darwin platform to build and test'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - ios
+          - macos
+
+permissions:
+  contents: read
+
+jobs:
+  verify_ios:
+    name: Build & Test iOS (Simulator)
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'ios' }}
+    runs-on: macos-latest # Apple Silicon (M-series) runner
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: '.fvmrc'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          cd example
+          flutter pub get
+
+      - name: Build iOS Example (Simulator Debug)
+        run: |
+          cd example
+          flutter build ios --simulator --debug
+
+      - name: Run iOS RunnerTests
+        run: |
+          set -euo pipefail
+          SIMULATOR_UDID=$(
+            xcrun simctl list devices available iPhone \
+              | grep -oiE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}' \
+              | tail -n 1 || true
+          )
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "Error: No available iPhone Simulator found." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using iPhone Simulator UDID: $SIMULATOR_UDID"
+
+          RESULT_BUNDLE="example/build/ios-RunnerTests.xcresult"
+          mkdir -p example/build
+          rm -rf "$RESULT_BUNDLE"
+
+          xcrun xcodebuild test \
+            -workspace example/ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -only-testing:RunnerTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RESULT_BUNDLE" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload iOS xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-RunnerTests-xcresult
+          path: example/build/ios-RunnerTests.xcresult
+          if-no-files-found: ignore
+
+  verify_macos:
+    name: Build & Test macOS
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+    runs-on: macos-latest # Apple Silicon (M-series) runner
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: '.fvmrc'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          cd example
+          flutter pub get
+
+      - name: Build macOS Example (Debug)
+        run: |
+          cd example
+          flutter build macos --debug
+
+      - name: Run macOS RunnerTests
+        run: |
+          set -euo pipefail
+          RESULT_BUNDLE="example/build/macos-RunnerTests.xcresult"
+          mkdir -p example/build
+          rm -rf "$RESULT_BUNDLE"
+
+          # Use ad-hoc signing without CODE_SIGNING_REQUIRED=NO so Flutter's xcode_backend.dart
+          # also ad-hoc signs embedded App.framework / FlutterMacOS.framework under App Sandbox.
+          xcrun xcodebuild test \
+            -workspace example/macos/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            -only-testing:RunnerTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RESULT_BUNDLE" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual
+
+      - name: Upload macOS xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-RunnerTests-xcresult
+          path: example/build/macos-RunnerTests.xcresult
+          if-no-files-found: ignore
