@@ -34,7 +34,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 
 > [!NOTE]
 >
-> - **iOS Status**: A physical-device Release [benchmark report](docs/benchmarks/ios.md) documents measured tradeoffs and protocol details.
+> - **iOS Status**: A physical-device Release [benchmark report](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/ios.md) documents measured tradeoffs and protocol details.
 > - **macOS & Linux Status**: Native implementations are complete and unit/integration-tested; formal end-to-end performance benchmarking reports are pending.
 > - **Web**: Web is not supported due to native OS transport requirements.
 
@@ -53,7 +53,7 @@ Or add them directly to your `pubspec.yaml`:
 ```yaml
 dependencies:
   dio: ^5.4.0
-  flutter_turbo_fetch: ^0.0.4
+  flutter_turbo_fetch: ^0.1.0
 ```
 
 ---
@@ -204,7 +204,7 @@ Compared to traditional HTTP/1.1 and streaming Dart adapters, `flutter_turbo_fet
 To run benchmarks locally or view full empirical metrics on physical/emulator hardware:
 
 - **Microbenchmarks**: Run `flutter test test/turbo_benchmark_test.dart`
-- **iOS Physical Device**: [iOS Benchmark Report](docs/benchmarks/ios.md) documents empirical measurements on an iPhone 17 (Release mode). TurboFetch delivers **1.6x to 5.8x faster throughput than pure Dart HTTP/2 (`dio_http2`)** under a controlled split-pipeline protocol.
+- **iOS Physical Device**: [iOS Benchmark Report](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/ios.md) documents empirical measurements on an iPhone 17 (Release mode). TurboFetch delivers **1.6x to 5.8x faster throughput than pure Dart HTTP/2 (`dio_http2`)** under a controlled split-pipeline protocol.
 - **End-to-End Suite**: Uses a local Node.js HTTP/2 mock server with self-signed TLS (`allowBadCertificates: true`). See [`example/`](https://github.com/khirohis/flutter_turbo_fetch/tree/main/example) for server setup and [Benchmark Results](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmark-results.md) for detailed metrics.
 
 ---
@@ -215,7 +215,7 @@ For in-depth architecture and design rationale, see the [docs/](https://github.c
 
 - [Design Rationale & Bottleneck Analysis](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/design-rationale.md): Technical justifications behind avoiding stream FFI, native JSON parsing, and persistent worker pools.
 - [Benchmark Results & Performance Analysis](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmark-results.md): Cross-platform empirical measurements, split-pipeline analysis, and hardware evaluations on Android, Windows, and iOS.
-- [TurboTransformer Implementation Reference](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/turbo-transformer.md): In-depth guide to zero-copy Isolate transformations and semaphore governance.
+- [TurboTransformer & TurboOptions Guide](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/turbo-transformer.md): Architecture overview, JSON usage examples, and conceptual sketches of zero-copy Isolate transformations and semaphore governance.
 
 For internal development specifications and agent directives (maintained in Japanese), refer to [specs/](https://github.com/khirohis/flutter_turbo_fetch/tree/main/specs).
 
