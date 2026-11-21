@@ -40,10 +40,10 @@ jobs:
           cd example
           flutter pub get
 
-      - name: Build iOS Example (Simulator Debug)
+      - name: Prepare iOS Example (Simulator Debug config)
         run: |
           cd example
-          flutter build ios --simulator --debug
+          flutter build ios --simulator --debug --config-only
 
       - name: Run iOS RunnerTests
         run: |
@@ -74,12 +74,46 @@ jobs:
             -resultBundlePath "$RESULT_BUNDLE" \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload iOS xcresult on failure
-        if: failure()
+      - name: Collect iOS diagnostics on failure or cancel
+        if: failure() || cancelled()
+        run: |
+          DIAG_DIR="example/build/ios-diagnostics"
+          mkdir -p "$DIAG_DIR"
+          {
+            echo "=== Timestamp (UTC) ==="
+            date -u +"%Y-%m-%dT%H:%M:%SZ"
+            echo ""
+            echo "=== Simulator devices ==="
+            xcrun simctl list devices || true
+            echo ""
+            echo "=== Simulator runtimes ==="
+            xcrun simctl list runtimes || true
+            echo ""
+            echo "=== Recent DiagnosticReports (user) ==="
+            ls -lt "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | head -n 30 || true
+            echo ""
+            echo "=== Recent DiagnosticReports (system) ==="
+            ls -lt /Library/Logs/DiagnosticReports 2>/dev/null | head -n 30 || true
+          } | tee "$DIAG_DIR/simulator-status.txt"
+
+          # Copy relevant crash/hang reports if present
+          for dir in "$HOME/Library/Logs/DiagnosticReports" "/Library/Logs/DiagnosticReports"; do
+            if [ -d "$dir" ]; then
+              find "$dir" -maxdepth 2 -type f \
+                \( -name '*Runner*' -o -name '*xctest*' -o -name '*testmanagerd*' -o -name '*CoreSimulator*' \) \
+                \( -name '*.ips' -o -name '*.crash' -o -name '*.diag' \) \
+                -exec cp -p {} "$DIAG_DIR/" \; 2>/dev/null || true
+            fi
+          done
+
+      - name: Upload iOS test artifacts on failure or cancel
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-RunnerTests-xcresult
-          path: example/build/ios-RunnerTests.xcresult
+          name: ios-RunnerTests-artifacts
+          path: |
+            example/build/ios-RunnerTests.xcresult
+            example/build/ios-diagnostics
           if-no-files-found: ignore
 
   verify_macos:
@@ -104,10 +138,10 @@ jobs:
           cd example
           flutter pub get
 
-      - name: Build macOS Example (Debug)
+      - name: Prepare macOS Example (Debug config)
         run: |
           cd example
-          flutter build macos --debug
+          flutter build macos --debug --config-only
 
       - name: Run macOS RunnerTests
         run: |
@@ -129,8 +163,8 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGN_STYLE=Manual
 
-      - name: Upload macOS xcresult on failure
-        if: failure()
+      - name: Upload macOS xcresult on failure or cancel
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: macos-RunnerTests-xcresult
