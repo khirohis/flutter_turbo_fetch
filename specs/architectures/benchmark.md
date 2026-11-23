@@ -31,7 +31,7 @@
 ### 1.3 計測プロトコル体系
 
 1. **分割パイプライン厳密プロトコル（標準プロトコル）**:
-   - **適用方針**: iOS 実機検証で確立した共通標準仕様。今後の Linux / macOS 計測および Android（`OkHttp3` / `Cronet` 個別計測）・Windows 再計測でも本プロトコルを採用する（集計・可視化は `tool/benchmark/` の共通 CLI ツールを使用）。
+   - **適用方針**: iOS 実機検証で確立した共通標準仕様。Windows 再計測および今後の Linux / macOS 計測・Android（`OkHttp3` / `Cronet` 個別計測）でも本プロトコルを採用する（集計は `tool/benchmark/` の共通 CLI ツールを使用）。
    - **計測方式**: 全方式で `ResponseType.bytes` により全バイト受信完了までを **Net Time**、受信済み生バイト列に対するデコード・オフロード待ち時間を **Parse Time** として厳密に分離計測する。
    - **統計・監査**: **ウォームアップ 1 試行 ＋ 本測定 10 試行（N=10）** をラウンドロビン順で実行して熱スロットリングやキャッシュ偏りを排除し、サーバー側の独立イベントログと 1 リクエスト単位で照合・監査する。
    - **構造化ログ・メタデータ共通仕様**:
@@ -43,7 +43,7 @@
      - **ローカル TLS 検証条件**: `okhttp` 計測では従来通り `BENCHMARK_LOCAL_TLS=true`（`allowBadCertificates: true`）を使用する。`cronet` 計測では `allowBadCertificates = true` 非サポートのため `BENCHMARK_LOCAL_TLS=false` とし、Android Network Security Config によりローカルベンチマーク用自己署名証明書を信頼させて計測する。
      - **証跡・レポート配置**: 生データは `tool/benchmark/data/android/<YYYY-MM-DD>-<engine>-*.csv`（例: `2026-11-23-okhttp-raw.csv`, `2026-11-23-cronet-raw.csv`）に保存し、公開レポートは `docs/benchmarks/android.md` 1 本に `OkHttp3` / `Cronet` 双方の実測結果と直接比較を統合する。
 2. **通常パイプラインプロトコル（補助・従来計測）**:
-   - **適用環境**: 従来の Android（API 36 Emulator）・Windows（Win11 Desktop）計測、および実利用時の総合所要時間の補助収集。
+   - **適用環境**: 従来の Android（API 36 Emulator）計測、および実利用時の総合所要時間の補助収集。
    - **特徴・制約**: `ResponseType.json` のまま `fetch()` 開始〜ヘッダ受領を Net Time、ボディ受信＋デコードを Parse Time として計測するため、ストリーミング型（IO / dio_http2）では Parse Time にダウンロード時間が混入する。
 
 ---
@@ -106,3 +106,14 @@
            --dart-define=BENCHMARK_SOURCE_SHA=$(git rev-parse HEAD)
          ```
        - ビルドした APK を `adb install -r build/app/outputs/flutter-apk/app-release.apk` で配置して実行し、`adb logcat`（`TURBO_BENCHMARK` 行）または端末内 `turbo-benchmark.jsonl` とサーバーログを `python tool/benchmark/export_benchmark.py <device_log> <server_log> tool/benchmark/data/android/<YYYY-MM-DD>-<engine>` へ渡して検証・集計する。
+     - **Windows Desktop（ローカルループバック）**:
+       - 一時ディレクトリ（例: `%TEMP%`）に SAN（`DNS:localhost,IP:127.0.0.1`）付きの自己署名証明書を生成し、`HOST=127.0.0.1 PORT=8443 REQUIRE_TLS=1 BENCHMARK_LOG=1` でモックサーバーを起動してログを保存する。
+       - `example/` ディレクトリで Release ビルドを実行する：
+         ```powershell
+         fvm flutter build windows --release -t lib/main.dart `
+           --dart-define=BENCHMARK_BASE_URL=https://127.0.0.1:8443 `
+           --dart-define=BENCHMARK_LOCAL_TLS=true `
+           --dart-define=BENCHMARK_ENGINE=winhttp `
+           --dart-define=BENCHMARK_SOURCE_SHA=<HEAD_SHA>
+         ```
+       - `build/windows/x64/runner/Release/flutter_turbo_fetch_example.exe` を起動して `session_complete` まで実行し、`%TEMP%\turbo-benchmark.jsonl` とサーバーログを `python tool/benchmark/export_benchmark.py <device_log> <server_log> tool/benchmark/data/windows/<YYYY-MM-DD>` へ渡して検証・集計する。
