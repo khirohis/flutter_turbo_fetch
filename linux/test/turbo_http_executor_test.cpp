@@ -115,6 +115,10 @@ TURBO_TEST(TurboHttpExecutor_ClassifyError_ClassifiesCertificateAndConnectionErr
       CURLE_HTTP2, false, ExecutionPhase::kConnecting, nullptr);
   ASSERT_EQ(TurboErrorCodes::kConnectionError, code_http2);
 
+  auto [code_http2_stream, msg_http2_stream] = TurboHttpExecutor::ClassifyError(
+      CURLE_HTTP2_STREAM, false, ExecutionPhase::kReceiving, nullptr);
+  ASSERT_EQ(TurboErrorCodes::kConnectionError, code_http2_stream);
+
   auto [code_url, msg_url] = TurboHttpExecutor::ClassifyError(
       CURLE_URL_MALFORMAT, false, ExecutionPhase::kConnecting, nullptr);
   ASSERT_EQ(TurboErrorCodes::kConnectionError, code_url);
@@ -344,6 +348,61 @@ TURBO_TEST(TurboHttpExecutor_Execute_EmptyResponseBody_ReturnsEmptyBodySafely) {
   ASSERT_EQ(static_cast<int64_t>(204), *res.status_code());
   ASSERT_TRUE(res.body() != nullptr);
   ASSERT_EQ(static_cast<size_t>(0), res.body()->size());
+}
+
+TURBO_TEST(TurboHttpExecutor_Execute_HighConcurrencyBatch_CancelsSafelyAndInvokesEachCallbackOnce) {
+  TurboSessionManager session_manager;
+  TurboHttpExecutor executor(session_manager);
+
+  constexpr int kConcurrency = 16;
+  std::atomic<int> callback_count{0};
+  std::atomic<int> cancel_error_count{0};
+  std::mutex mtx;
+  std::condition_variable cv;
+
+  for (int i = 0; i < kConcurrency; ++i) {
+    auto req = CreateRequest("req-concurrent-" + std::to_string(i),
+                             "https://example.com/concurrent/" + std::to_string(i),
+                             "GET");
+    executor.Execute(req, [&](TurboHttpResponse response) {
+      if (response.error_code() != nullptr &&
+          *response.error_code() == TurboErrorCodes::kCancel) {
+        cancel_error_count.fetch_add(1);
+      }
+      if (callback_count.fetch_add(1) + 1 == kConcurrency) {
+        std::lock_guard<std::mutex> lock(mtx);
+        cv.notify_one();
+      }
+    });
+  }
+
+  ASSERT_EQ(static_cast<size_t>(kConcurrency), executor.active_request_count());
+
+  for (int i = 0; i < kConcurrency; ++i) {
+    executor.CancelRequest("req-concurrent-" + std::to_string(i));
+  }
+
+  std::unique_lock<std::mutex> lock(mtx);
+  bool finished = cv.wait_for(lock, std::chrono::seconds(5),
+                              [&] { return callback_count.load() == kConcurrency; });
+  ASSERT_TRUE(finished);
+  ASSERT_EQ(kConcurrency, callback_count.load());
+  ASSERT_EQ(kConcurrency, cancel_error_count.load());
+  ASSERT_EQ(static_cast<size_t>(0), executor.active_request_count());
+}
+
+TURBO_TEST(TurboHttpExecutor_Execute_AfterShutdown_ReturnsCancelImmediately) {
+  TurboSessionManager session_manager;
+  TurboHttpExecutor executor(session_manager);
+
+  executor.Shutdown();
+
+  auto req = CreateRequest("req-after-shutdown", "https://example.com/api", "GET");
+  auto response = ExecuteSync(executor, req);
+
+  ASSERT_TRUE(response.error_code() != nullptr);
+  ASSERT_EQ(TurboErrorCodes::kCancel, *response.error_code());
+  ASSERT_EQ(static_cast<size_t>(0), executor.active_request_count());
 }
 
 }  // namespace test

@@ -4,7 +4,6 @@
 #include <curl/curl.h>
 
 #include <mutex>
-#include <array>
 
 namespace flutter_turbo_fetch {
 
@@ -16,28 +15,28 @@ class TurboSessionManager {
   TurboSessionManager(const TurboSessionManager&) = delete;
   TurboSessionManager& operator=(const TurboSessionManager&) = delete;
 
-  // Acquires the shared CURLSH handle configured with connection, DNS, and TLS
-  // session caching. Automatically recreates the handle if previously shut down.
-  CURLSH* AcquireShareHandle();
+  // Acquires the shared CURLM handle configured with HTTP/2 multiplexing
+  // (CURLPIPE_MULTIPLEX). Automatically recreates the handle if previously shut down.
+  // Note: CURLM operations (except curl_multi_wakeup via Wakeup()) must be
+  // performed exclusively on the single event-loop thread.
+  CURLM* AcquireMultiHandle();
 
-  // Closes the shared CURLSH handle and releases cached connection pools.
+  // Thread-safely wakes up curl_multi_poll() on the event-loop thread if active.
+  void Wakeup();
+
+  // Closes the CURLM handle and releases cached connection pools.
+  // Must be called only after TurboHttpExecutor::Shutdown() has removed all easy
+  // handles and joined the event-loop thread.
   void Shutdown();
 
   bool IsShutdown() const;
 
  private:
-  void InitializeShareHandleLocked();
-
-  static void LockCallback(CURL* handle, curl_lock_data data,
-                           curl_lock_access access, void* userptr);
-  static void UnlockCallback(CURL* handle, curl_lock_data data, void* userptr);
+  void InitializeMultiHandleLocked();
 
   mutable std::mutex mutex_;
-  CURLSH* share_handle_ = nullptr;
+  CURLM* multi_handle_ = nullptr;
   bool is_shutdown_ = false;
-
-  // Mutexes for CURLSH data categories (connect, dns, ssl_session, etc.)
-  std::array<std::mutex, CURL_LOCK_DATA_LAST> share_mutexes_;
 };
 
 }  // namespace flutter_turbo_fetch

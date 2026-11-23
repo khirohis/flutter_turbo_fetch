@@ -76,21 +76,28 @@ void TurboHttpExecutor::CancelRequest(const std::string& request_id) {
 
   if (ctx) {
     ctx->is_cancelled.store(true);
+    session_manager_.Wakeup();
   }
 }
 
 void TurboHttpExecutor::Shutdown() {
-  is_shutdown_.store(true);
-  std::vector<std::shared_ptr<LinuxRequestContext>> requests_to_cancel;
+  std::thread thread_to_join;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    is_shutdown_.store(true);
+    stop_requested_ = true;
     for (auto& [id, ctx] : active_requests_) {
-      requests_to_cancel.push_back(ctx);
+      ctx->is_cancelled.store(true);
+    }
+    if (event_loop_thread_.joinable()) {
+      thread_to_join = std::move(event_loop_thread_);
     }
   }
 
-  for (auto& ctx : requests_to_cancel) {
-    ctx->is_cancelled.store(true);
+  session_manager_.Wakeup();
+
+  if (thread_to_join.joinable()) {
+    thread_to_join.join();
   }
 }
 
@@ -266,6 +273,47 @@ size_t TurboHttpExecutor::WriteCallback(char* ptr, size_t size, size_t nmemb,
   return total_size;
 }
 
+bool TurboHttpExecutor::CheckPhaseTimeout(
+    LinuxRequestContext& ctx, std::chrono::steady_clock::time_point now) {
+  if (ctx.timed_out_error_code != nullptr) {
+    return true;
+  }
+
+  if (ctx.phase == ExecutionPhase::kConnecting) {
+    if (ctx.connect_timeout_ms.has_value() && *ctx.connect_timeout_ms > 0) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         now - ctx.start_time)
+                         .count();
+      if (elapsed > *ctx.connect_timeout_ms) {
+        ctx.timed_out_error_code = TurboErrorCodes::kConnectionTimeout;
+        return true;
+      }
+    }
+  } else if (ctx.phase == ExecutionPhase::kSendingBody) {
+    if (ctx.send_timeout_ms.has_value() && *ctx.send_timeout_ms > 0) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         now - ctx.connect_end_time)
+                         .count();
+      if (elapsed > *ctx.send_timeout_ms) {
+        ctx.timed_out_error_code = TurboErrorCodes::kSendTimeout;
+        return true;
+      }
+    }
+  } else if (ctx.phase == ExecutionPhase::kReceiving) {
+    if (ctx.receive_timeout_ms.has_value() && *ctx.receive_timeout_ms > 0) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         now - ctx.body_send_end_time)
+                         .count();
+      if (elapsed > *ctx.receive_timeout_ms) {
+        ctx.timed_out_error_code = TurboErrorCodes::kReceiveTimeout;
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 int TurboHttpExecutor::XferInfoCallback(void* clientp, curl_off_t /*dltotal*/,
                                         curl_off_t dlnow, curl_off_t /*ultotal*/,
                                         curl_off_t ulnow) {
@@ -283,12 +331,6 @@ int TurboHttpExecutor::XferInfoCallback(void* clientp, curl_off_t /*dltotal*/,
     if (ulnow > 0 || dlnow > 0) {
       ctx->phase = ExecutionPhase::kSendingBody;
       ctx->connect_end_time = now;
-    } else if (ctx->connect_timeout_ms.has_value() && *ctx->connect_timeout_ms > 0) {
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - ctx->start_time).count();
-      if (elapsed > *ctx->connect_timeout_ms) {
-        ctx->timed_out_error_code = TurboErrorCodes::kConnectionTimeout;
-        return 1;
-      }
     }
   }
 
@@ -296,52 +338,29 @@ int TurboHttpExecutor::XferInfoCallback(void* clientp, curl_off_t /*dltotal*/,
     if (dlnow > 0) {
       ctx->phase = ExecutionPhase::kReceiving;
       ctx->body_send_end_time = now;
-    } else if (ctx->send_timeout_ms.has_value() && *ctx->send_timeout_ms > 0) {
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - ctx->connect_end_time).count();
-      if (elapsed > *ctx->send_timeout_ms) {
-        ctx->timed_out_error_code = TurboErrorCodes::kSendTimeout;
-        return 1;
-      }
     }
   }
 
-  if (ctx->phase == ExecutionPhase::kReceiving) {
-    if (ctx->receive_timeout_ms.has_value() && *ctx->receive_timeout_ms > 0) {
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - ctx->body_send_end_time).count();
-      if (elapsed > *ctx->receive_timeout_ms) {
-        ctx->timed_out_error_code = TurboErrorCodes::kReceiveTimeout;
-        return 1;
-      }
-    }
+  if (CheckPhaseTimeout(*ctx, now)) {
+    return 1;
   }
 
   return 0;
 }
 
-TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
-    const TurboHttpRequest& request, LinuxRequestContext& ctx) {
-  const int64_t zero_status = 0;
+CURL* TurboHttpExecutor::CreateEasyHandle(const TurboHttpRequest& request,
+                                          InFlightRequest& in_flight) {
   CURL* curl = curl_easy_init();
   if (curl == nullptr) {
-    const std::string err_code = TurboErrorCodes::kUnknown;
-    const std::string err_msg = "Failed to initialize CURL handle.";
-    return TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg);
+    return nullptr;
   }
 
-  if (!ctx.SetCurlHandle(curl)) {
-    curl_easy_cleanup(curl);
-    const std::string err_code = TurboErrorCodes::kCancel;
-    const std::string err_msg = "Request was cancelled.";
-    return TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg);
-  }
-
-  CURLSH* share = session_manager_.AcquireShareHandle();
-  if (share != nullptr) {
-    curl_easy_setopt(curl, CURLOPT_SHARE, share);
-  }
+  LinuxRequestContext& ctx = *in_flight.ctx;
 
   curl_easy_setopt(curl, CURLOPT_URL, request.url().c_str());
   curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+  curl_easy_setopt(curl, CURLOPT_PIPEWAIT, 1L);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, request.follow_redirects() ? 1L : 0L);
 
   if (request.allow_bad_certificates()) {
@@ -363,23 +382,23 @@ TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
   }
 
   if (request.body() != nullptr && !request.body()->empty()) {
+    in_flight.request_body = *request.body();
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS,
-                     reinterpret_cast<const char*>(request.body()->data()));
+                     reinterpret_cast<const char*>(in_flight.request_body.data()));
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE,
-                     static_cast<curl_off_t>(request.body()->size()));
+                     static_cast<curl_off_t>(in_flight.request_body.size()));
   }
 
-  // Headers
-  struct curl_slist* header_list = nullptr;
+  // Headers (owned by in_flight until handle cleanup)
   for (const auto& [key, val] : request.headers()) {
     std::string header_line = key + ": " + val;
-    header_list = curl_slist_append(header_list, header_line.c_str());
+    in_flight.header_list = curl_slist_append(in_flight.header_list, header_line.c_str());
   }
-  if (header_list != nullptr) {
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+  if (in_flight.header_list != nullptr) {
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, in_flight.header_list);
   }
 
-  // Timeouts
+  // Timeouts and response limit
   if (request.connect_timeout_ms() != nullptr && *request.connect_timeout_ms() > 0) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
                      static_cast<long>(*request.connect_timeout_ms()));
@@ -408,15 +427,12 @@ TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
   ctx.connect_end_time = ctx.start_time;
   ctx.body_send_end_time = ctx.start_time;
 
-  CURLcode res = curl_easy_perform(curl);
+  return curl;
+}
 
-  long status_code = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-
-  if (header_list != nullptr) {
-    curl_slist_free_all(header_list);
-  }
-  curl_easy_cleanup(curl);
+TurboHttpResponse TurboHttpExecutor::BuildFinalResponse(
+    CURL* curl, CURLcode res, LinuxRequestContext& ctx) {
+  const int64_t zero_status = 0;
 
   if (ctx.is_exceeded_limit.load()) {
     const std::string err_code = TurboErrorCodes::kMaxResponseBytesExceeded;
@@ -430,8 +446,196 @@ TurboHttpResponse TurboHttpExecutor::PerformCurlRequest(
     return TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg);
   }
 
+  long status_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
   return ValidateAndAssembleChunks(status_code, "OK", ctx.response_headers,
                                    ctx.response_body, ctx.max_response_bytes);
+}
+
+void TurboHttpExecutor::EnsureEventLoopStartedLocked() {
+  if (event_loop_started_) {
+    return;
+  }
+  CURLM* multi_handle = session_manager_.AcquireMultiHandle();
+  event_loop_started_ = true;
+  event_loop_thread_ =
+      std::thread(&TurboHttpExecutor::RunEventLoop, this, multi_handle);
+}
+
+void TurboHttpExecutor::RunEventLoop(CURLM* multi_handle) {
+  const int64_t zero_status = 0;
+  std::unordered_map<CURL*, std::unique_ptr<InFlightRequest>> in_flight;
+  std::vector<std::pair<std::function<void(TurboHttpResponse)>, TurboHttpResponse>>
+      completed_callbacks;
+
+  auto flush_callbacks = [&]() {
+    for (auto& [cb, response] : completed_callbacks) {
+      cb(std::move(response));
+    }
+    completed_callbacks.clear();
+  };
+
+  while (true) {
+    std::deque<PendingRequest> batch;
+    bool should_stop = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      batch.swap(pending_requests_);
+      should_stop = stop_requested_;
+    }
+
+    // 1. Register new pending requests onto the CURLM handle.
+    for (auto& pending : batch) {
+      const std::string request_id = pending.request.request_id();
+      if (pending.ctx->is_cancelled.load() || should_stop) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(request_id);
+        }
+        const std::string err_code = TurboErrorCodes::kCancel;
+        const std::string err_msg = "Request was cancelled.";
+        completed_callbacks.emplace_back(
+            std::move(pending.on_result),
+            TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg));
+        continue;
+      }
+
+      if (multi_handle == nullptr) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(request_id);
+        }
+        const std::string err_code = TurboErrorCodes::kUnknown;
+        const std::string err_msg = "Failed to initialize CURLM handle.";
+        completed_callbacks.emplace_back(
+            std::move(pending.on_result),
+            TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg));
+        continue;
+      }
+
+      auto in_flight_req = std::make_unique<InFlightRequest>();
+      in_flight_req->request_id = request_id;
+      in_flight_req->ctx = pending.ctx;
+      in_flight_req->on_result = std::move(pending.on_result);
+
+      CURL* easy = CreateEasyHandle(pending.request, *in_flight_req);
+      if (easy == nullptr) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(request_id);
+        }
+        const std::string err_code = TurboErrorCodes::kUnknown;
+        const std::string err_msg = "Failed to initialize CURL handle.";
+        completed_callbacks.emplace_back(
+            std::move(in_flight_req->on_result),
+            TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg));
+        continue;
+      }
+
+      CURLMcode add_res = curl_multi_add_handle(multi_handle, easy);
+      if (add_res != CURLM_OK) {
+        curl_easy_cleanup(easy);
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(request_id);
+        }
+        const std::string err_code = TurboErrorCodes::kUnknown;
+        const std::string err_msg = curl_multi_strerror(add_res);
+        completed_callbacks.emplace_back(
+            std::move(in_flight_req->on_result),
+            TurboHttpResponse(&zero_status, nullptr, nullptr, nullptr, &err_code, &err_msg));
+        continue;
+      }
+
+      in_flight.emplace(easy, std::move(in_flight_req));
+    }
+
+    // 2. Abort any in-flight handles that were cancelled, timed out, or during shutdown.
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = in_flight.begin(); it != in_flight.end();) {
+      CURL* easy = it->first;
+      auto& entry = it->second;
+      bool timed_out = CheckPhaseTimeout(*entry->ctx, now);
+      if (entry->ctx->is_cancelled.load() || should_stop || timed_out) {
+        if (should_stop && !timed_out) {
+          entry->ctx->is_cancelled.store(true);
+        }
+        TurboHttpResponse response =
+            BuildFinalResponse(easy, CURLE_ABORTED_BY_CALLBACK, *entry->ctx);
+        curl_multi_remove_handle(multi_handle, easy);
+        curl_easy_cleanup(easy);
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(entry->request_id);
+        }
+        completed_callbacks.emplace_back(std::move(entry->on_result),
+                                         std::move(response));
+        it = in_flight.erase(it);
+      } else {
+        ++it;
+      }
+    }
+
+    flush_callbacks();
+
+    if (should_stop && in_flight.empty()) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (pending_requests_.empty()) {
+        break;
+      }
+      continue;
+    }
+
+    // 3. Drive active transfers and harvest completed messages.
+    if (multi_handle != nullptr && !in_flight.empty()) {
+      int still_running = 0;
+      curl_multi_perform(multi_handle, &still_running);
+
+      int msgs_left = 0;
+      while (CURLMsg* msg = curl_multi_info_read(multi_handle, &msgs_left)) {
+        if (msg->msg != CURLMSG_DONE) {
+          continue;
+        }
+        CURL* easy = msg->easy_handle;
+        CURLcode res = msg->data.result;
+        auto it = in_flight.find(easy);
+        if (it == in_flight.end()) {
+          curl_multi_remove_handle(multi_handle, easy);
+          curl_easy_cleanup(easy);
+          continue;
+        }
+        auto entry = std::move(it->second);
+        in_flight.erase(it);
+
+        TurboHttpResponse response = BuildFinalResponse(easy, res, *entry->ctx);
+        curl_multi_remove_handle(multi_handle, easy);
+        curl_easy_cleanup(easy);
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          active_requests_.erase(entry->request_id);
+        }
+        completed_callbacks.emplace_back(std::move(entry->on_result),
+                                         std::move(response));
+      }
+
+      flush_callbacks();
+    }
+
+    // 4. Wait efficiently for network I/O or wakeup notifications.
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!pending_requests_.empty() || stop_requested_) {
+        continue;
+      }
+    }
+
+    if (multi_handle != nullptr) {
+      int poll_timeout_ms = in_flight.empty() ? 1000 : 50;
+      curl_multi_poll(multi_handle, nullptr, 0, poll_timeout_ms, nullptr);
+    } else {
+      break;
+    }
+  }
 }
 
 void TurboHttpExecutor::Execute(
@@ -464,18 +668,11 @@ void TurboHttpExecutor::Execute(
       return;
     }
     active_requests_[request.request_id()] = ctx;
+    pending_requests_.push_back(PendingRequest{request, ctx, std::move(on_result)});
+    EnsureEventLoopStartedLocked();
   }
 
-  std::thread([this, request, ctx, on_result = std::move(on_result)]() mutable {
-    TurboHttpResponse response = PerformCurlRequest(request, *ctx);
-
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      active_requests_.erase(request.request_id());
-    }
-
-    on_result(std::move(response));
-  }).detach();
+  session_manager_.Wakeup();
 }
 
 }  // namespace flutter_turbo_fetch

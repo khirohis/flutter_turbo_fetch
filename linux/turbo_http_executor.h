@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -122,8 +123,6 @@ enum class ExecutionPhase {
 };
 
 struct LinuxRequestContext {
-  std::mutex mutex;
-  CURL* curl_handle = nullptr;
   std::atomic<bool> is_cancelled{false};
   std::atomic<bool> is_exceeded_limit{false};
   const char* timed_out_error_code = nullptr;
@@ -140,15 +139,6 @@ struct LinuxRequestContext {
 
   std::string response_headers;
   std::vector<uint8_t> response_body;
-
-  bool SetCurlHandle(CURL* handle) {
-    std::lock_guard<std::mutex> lock(mutex);
-    if (is_cancelled.load()) {
-      return false;
-    }
-    curl_handle = handle;
-    return true;
-  }
 };
 
 class TurboHttpExecutor {
@@ -185,12 +175,38 @@ class TurboHttpExecutor {
       std::optional<int64_t> max_response_bytes);
 
  private:
-  TurboHttpResponse PerformCurlRequest(const TurboHttpRequest& request,
-                                       LinuxRequestContext& ctx);
+  struct PendingRequest {
+    TurboHttpRequest request;
+    std::shared_ptr<LinuxRequestContext> ctx;
+    std::function<void(TurboHttpResponse)> on_result;
+  };
+
+  struct InFlightRequest {
+    std::string request_id;
+    std::shared_ptr<LinuxRequestContext> ctx;
+    std::vector<uint8_t> request_body;
+    struct curl_slist* header_list = nullptr;
+    std::function<void(TurboHttpResponse)> on_result;
+
+    ~InFlightRequest() {
+      if (header_list != nullptr) {
+        curl_slist_free_all(header_list);
+        header_list = nullptr;
+      }
+    }
+  };
+
+  void EnsureEventLoopStartedLocked();
+  void RunEventLoop(CURLM* multi_handle);
+  CURL* CreateEasyHandle(const TurboHttpRequest& request,
+                         InFlightRequest& in_flight);
+  static bool CheckPhaseTimeout(LinuxRequestContext& ctx,
+                                std::chrono::steady_clock::time_point now);
+  static TurboHttpResponse BuildFinalResponse(CURL* curl, CURLcode res,
+                                              LinuxRequestContext& ctx);
 
   static size_t HeaderCallback(char* buffer, size_t size, size_t nitems, void* userdata);
   static size_t WriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata);
-  static size_t ReadCallback(char* buffer, size_t size, size_t nitems, void* userdata);
   static int XferInfoCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                               curl_off_t ultotal, curl_off_t ulnow);
 
@@ -198,6 +214,10 @@ class TurboHttpExecutor {
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<LinuxRequestContext>> active_requests_;
+  std::deque<PendingRequest> pending_requests_;
+  std::thread event_loop_thread_;
+  bool event_loop_started_ = false;
+  bool stop_requested_ = false;
   std::atomic<bool> is_shutdown_{false};
 };
 
