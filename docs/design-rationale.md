@@ -30,7 +30,7 @@ In Flutter applications (`package:dio`), making concurrent HTTP/2 requests for m
 | **`native_dio_adapter`**<br>(`cronet_http` / `cupertino_http`) | Android: Cronet<br>iOS: `URLSessionDataDelegate` | **Dart side**<br>(Fragmented chunk ping-pong) | **Not Adopted**<br>Adherence to `StreamedResponse` causes per-chunk FFI round-trips and iOS header-pause latency that cannot be bypassed. |
 | **`ok_http`** | Android: `OkHttp3` (`jnigen`) | **Dart side**<br>(Stream consumption) | **Not Adopted**<br>Constrained by the streaming model of `package:http`, missing out on the efficiency of batch native aggregation (`response.body.bytes()`). |
 | **`rhttp`** | All platforms: Rust `reqwest` + `tokio` | **Rust side batch concatenation** | **Not Adopted**<br>While offering batch byte assembly in Rust (`Body.bytes`), bundling static Rust binaries inflates app size by several MiB, bypasses platform TLS session caches and system certificate/proxy integration, and introduces Rust toolchain dependencies. |
-| **`flutter_turbo_fetch`**<br>(This plugin) | **Android: `OkHttp3`**<br>**iOS / macOS: `URLSession`**<br>**Windows: `WinHTTP`**<br>**Linux: `libcurl`** | **OS Native Background Batch Reception** | **Adopted Architecture**<br>Leverages platform-standard, lightweight network stacks. Completes chunk assembly entirely in OS background memory and delivers a single, unified `Uint8List` to Dart via Pigeon in one trip. |
+| **`flutter_turbo_fetch`**<br>(This plugin) | **Android: `OkHttp3` (default) / `Cronet` (opt-in)**<br>**iOS / macOS: `URLSession`**<br>**Windows: `WinHTTP`**<br>**Linux: `libcurl` (`curl_multi`)** | **OS Native Background Batch Reception** | **Adopted Architecture**<br>Leverages platform-standard, lightweight network stacks. Completes chunk assembly entirely in OS background memory and delivers a single, unified `Uint8List` to Dart via Pigeon in one trip. |
 
 ---
 
@@ -40,9 +40,11 @@ In Flutter applications (`package:dio`), making concurrent HTTP/2 requests for m
 
 Parsing JSON in native code (Kotlin / Swift / C++) cannot directly allocate Dart heap objects (`Map` / `List`). Doing so would require **double serialization** (native serialization / encoding into binary codecs + Dart deserialization), which is slower than passing raw bytes. The native layer achieves maximum performance by focusing strictly on **batch assembly and single-trip return of raw byte arrays (`Uint8List`)**.
 
-### 3.2 Why OkHttp3 instead of Cronet on Android?
+### 3.2 Why `OkHttp3` as Default and `Cronet` as Build-Time Opt-In on Android?
 
-`OkHttp3` avoids the dynamic GMS loading delays inherent to Cronet, defaults its HTTP/2 initial window size to an expanded **16MiB**, and completes chunk assembly in native memory with optimal speed using `Okio`'s shared segment pool via `response.body.bytes()` (or bounded lookahead via `BufferedSource.request(...)` when `maxResponseBytes` is specified to abort oversized responses early). (Cronet is only considered when HTTP/3 QUIC support is a strict business requirement).
+`OkHttp3` is the default Android engine because it requires zero extra app setup or Google Play Services (GMS) dependency, supports `allowBadCertificates: true` for local development, defaults its HTTP/2 initial window size to an expanded **16MiB**, and completes chunk assembly in native memory with optimal speed using `Okio`'s shared segment pool via `response.body.bytes()` (or bounded lookahead via `BufferedSource.request(...)` when `maxResponseBytes` is specified to abort oversized responses early).
+
+For applications that need maximum native C++ HTTP/2 throughput or HTTP/3 (QUIC) support, `flutter_turbo_fetch` also provides **build-time `Cronet` selection** (`flutter_turbo_fetch.androidEngine=cronet`). Selecting Cronet excludes `OkHttp3` completely from the APK/AAB and lets the app choose its preferred provider (`play-services-cronet` or `cronet-embedded`), while still buffering chunks natively in Kotlin/JVM before a single-trip Pigeon return—avoiding the per-chunk Dart FFI ping-pong of `cronet_http`.
 
 ### 3.3 Why avoid `URLSessionDataDelegate` on iOS / macOS?
 
@@ -52,9 +54,9 @@ Streaming via `URLSessionDataDelegate` incurs cross-thread, cross-language signa
 
 Windows provides `WinHTTP` as a system-level C API baked directly into the OS (`winhttp.dll`, zero external binary footprint). Enabling `WINHTTP_PROTOCOL_FLAG_HTTP2` on a shared `HINTERNET` session unlocks kernel-assisted SChannel TLS decryption and HTTP/2 multiplexing across concurrent requests. Running synchronous `WinHTTP` calls inside a bounded Windows Thread Pool (`TP_POOL`) eliminates the complex state-machine and `HANDLE_CLOSING` use-after-free hazards of `WINHTTP_FLAG_ASYNC`, while allowing instant cross-thread cancellation via `WinHttpCloseHandle` and direct native buffer assembly into `std::vector<uint8_t>`.
 
-### 3.5 Why `libcurl` with Background Worker Threads on Linux?
+### 3.5 Why `libcurl` with a Single-Threaded `curl_multi` Event Loop on Linux?
 
-On Linux, `libcurl` is the de facto system networking library, linking against OpenSSL and `nghttp2` to provide full HTTP/2 multiplexing with zero custom protocol reimplementation. Sharing a `CURLSH*` handle across threads enables shared DNS cache, TLS session resumption, and connection pooling. Executing synchronous `curl_easy_perform` calls on background C++17 worker threads keeps blocking network I/O completely off the GTK/Flutter main loop, while `CURLOPT_XFERINFOFUNCTION` delivers immediate cross-thread cancellation without handle teardown races. Completed responses are assembled into contiguous `std::vector<uint8_t>` buffers and dispatched back to the GTK main thread via `g_idle_add` and Pigeon GObject integration.
+On Linux, `libcurl` is the de facto system networking library, linking against OpenSSL and `nghttp2` to provide full HTTP/2 multiplexing with zero custom protocol reimplementation. Rather than running separate `curl_easy_perform` worker threads with `CURLSH*` (which cannot multiplex concurrent HTTP/2 streams over a single TCP connection), `flutter_turbo_fetch` drives all in-flight transfers through a **single background `curl_multi` event loop** (`CURLM*` with HTTP/2 multiplexing enabled). This keeps all blocking network I/O completely off the GTK/Flutter main loop, maximizes true HTTP/2 stream multiplexing across concurrent requests, and supports deterministic cross-thread cancellation without handle teardown races. Completed responses are assembled into contiguous `std::vector<uint8_t>` buffers and dispatched back to the GTK main thread via `g_idle_add` and Pigeon GObject integration.
 
 ### 3.6 Why semaphore-governed `Isolate.run` instead of persistent worker pools (`SendPort.send`)?
 

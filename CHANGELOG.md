@@ -1,3 +1,9 @@
+## 0.1.1
+
+* **Android Cronet Engine Support (Opt-in)**: Added build-time Cronet engine selection (`flutter_turbo_fetch.androidEngine=cronet` in `android/gradle.properties`) alongside the default `OkHttp3` engine, excluding `OkHttp3` when Cronet is selected and providing full unit test coverage.
+* **Linux HTTP/2 Multiplexing Fix**: Replaced the `CURLSH` + thread-pool design in the Linux native layer with a single-threaded `curl_multi` event loop for reliable HTTP/2 multiplexing and concurrency.
+* **Rigorous Multi-Platform Benchmarks**: Refreshed benchmark reports under the split-pipeline protocol (`N=10` trials with 1:1 server audit) across Android (Pixel 10a — `OkHttp3` & `Cronet`), Windows, and Linux.
+
 ## 0.1.0
 
 * **Breaking Change — Simplified Public API**: Removed `maxRequestsPerHost` from `TurboHttpAdapter` and all native session managers (`Android`, `iOS`/`macOS`, `Windows`, `Linux`), relying on each platform's native HTTP/2 connection and multiplexing defaults. When upgrading from `0.0.x`, simply remove the `maxRequestsPerHost` argument from `TurboHttpAdapter(...)`.
