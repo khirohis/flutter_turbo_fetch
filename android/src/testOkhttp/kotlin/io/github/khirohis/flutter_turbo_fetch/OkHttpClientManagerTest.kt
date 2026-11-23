@@ -8,7 +8,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-internal class TurboClientManagerTest {
+internal class OkHttpClientManagerTest {
     private fun createRequest(
         connectTimeoutMs: Long? = 3000L,
         receiveTimeoutMs: Long? = 4000L,
@@ -33,7 +33,7 @@ internal class TurboClientManagerTest {
 
     @Test
     fun ensureClient_reusesSharedClientWithFixedDispatcherLimits() {
-        val manager = TurboClientManager()
+        val manager = OkHttpClientManager()
 
         val firstClient = manager.ensureClient()
         assertEquals(64, firstClient.dispatcher.maxRequests)
@@ -47,7 +47,7 @@ internal class TurboClientManagerTest {
 
     @Test
     fun ensureClient_andEnsureReady_recoverAfterShutdown() {
-        val manager = TurboClientManager()
+        val manager = OkHttpClientManager()
         val initialClient = manager.ensureClient()
         manager.shutdown()
         assertTrue(initialClient.dispatcher.executorService.isShutdown)
@@ -61,7 +61,7 @@ internal class TurboClientManagerTest {
 
     @Test
     fun acquireClient_appliesPerRequestTimeoutsRedirectsAndInsecureTls() {
-        val manager = TurboClientManager()
+        val manager = OkHttpClientManager()
         val request = createRequest(
             connectTimeoutMs = 1500L,
             receiveTimeoutMs = 2500L,
@@ -88,7 +88,7 @@ internal class TurboClientManagerTest {
     @Test
     fun secondaryConstructor_withBaseClient_sharesManagedDispatcher() {
         val customBaseClient = OkHttpClient.Builder().build()
-        val manager = TurboClientManager(customBaseClient)
+        val manager = OkHttpClientManager(customBaseClient)
 
         val client = manager.ensureClient()
         assertFalse(client.dispatcher.executorService.isShutdown)
@@ -99,7 +99,7 @@ internal class TurboClientManagerTest {
 
     @Test
     fun acquireClient_withNullTimeouts_preservesOkHttpDefaults() {
-        val manager = TurboClientManager()
+        val manager = OkHttpClientManager()
         val request = createRequest(
             connectTimeoutMs = null,
             receiveTimeoutMs = null,
@@ -113,4 +113,3 @@ internal class TurboClientManagerTest {
         assertEquals(10_000, client.writeTimeoutMillis)
     }
 }
-

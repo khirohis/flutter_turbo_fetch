@@ -15,7 +15,7 @@
   - `url` / `method` / `headers`（`Map<String?, String?>`） / `body`（nullable `Uint8List`）
   - `connectTimeoutMs` / `receiveTimeoutMs` / `sendTimeoutMs`: 各フェーズのタイムアウト（ミリ秒）
   - `followRedirects`: リダイレクト追従設定（真偽値）
-  - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証用、デフォルト `false`）
+  - `allowBadCertificates`: 自己署名証明書等の許可設定（ローカル検証用、デフォルト `false`。Android Cronet では非サポート）
   - `maxResponseBytes`: レスポンスボディの最大許容バイト数（nullable、未指定時は無制限）
 - **レスポンス情報（`TurboHttpResponse`）**:
   - `statusCode` / `statusMessage`
@@ -60,4 +60,4 @@
 | `badCertificate` | `DioExceptionType.badCertificate` | SSL/TLS 証明書検証エラー |
 | `maxResponseBytesExceeded` | `DioExceptionType.unknown` | 受信データ量が `maxResponseBytes` 上限を超過（上限値をメッセージに明記） |
 | `connectionError` | `DioExceptionType.connectionError` | DNS 解決失敗、接続拒否、到達不能、不正な URL / ヘッダ等 |
-| `unknown` | `DioExceptionType.unknown` | プラットフォーム内部の予期せぬ実行時例外 |
+| `unknown` | `DioExceptionType.unknown` | 非サポート設定、ネイティブエンジン初期化失敗、その他予期せぬ実行時例外 |

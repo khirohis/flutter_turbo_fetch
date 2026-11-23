@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_turbo_fetch/src/messages.g.dart';
 import 'package:flutter_turbo_fetch_example/benchmark/benchmark_models.dart';
 import 'package:flutter_turbo_fetch_example/benchmark/verified_benchmark.dart';
+import 'package:flutter_turbo_fetch_example/benchmark/verified_session.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -93,5 +94,43 @@ void main() {
     }
     expect(result['jank_frames'], isNull);
     expect(result['max_frame_ms'], isNull);
+  });
+
+  test('Session start metadata includes platform, engine, and generic log prefix', () {
+    expect(benchmarkLogPrefix, 'TURBO_BENCHMARK');
+    expect(benchmarkEvidenceFileName, 'turbo-benchmark.jsonl');
+    expect(benchmarkDiagnosticFileName, 'turbo-benchmark-diagnostic.txt');
+
+    final explicit = buildSessionStartRecord(
+      platform: 'android',
+      engineOverride: 'cronet',
+      sourceSha: 'a' * 40,
+      osVersion: 'Android 16',
+      allowLocalCertificate: false,
+      isReleaseMode: true,
+    );
+    expect(explicit['type'], 'session_start');
+    expect(explicit['platform'], 'android');
+    expect(explicit['engine'], 'cronet');
+    expect(explicit['mode'], 'release');
+    expect(explicit['local_tls_bypass'], isFalse);
+
+    final defaulted = buildSessionStartRecord(
+      platform: 'android',
+      engineOverride: '',
+      sourceSha: 'b' * 40,
+      osVersion: 'Android 16',
+      allowLocalCertificate: true,
+      isReleaseMode: false,
+    );
+    expect(defaulted['engine'], 'okhttp');
+    expect(defaulted['mode'], 'debug');
+
+    final line = formatBenchmarkLogLine(explicit);
+    expect(line, startsWith('TURBO_BENCHMARK '));
+    final decoded =
+        jsonDecode(line.substring('TURBO_BENCHMARK '.length)) as Map<String, dynamic>;
+    expect(decoded['platform'], 'android');
+    expect(decoded['engine'], 'cronet');
   });
 }

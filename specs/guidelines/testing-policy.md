@@ -22,8 +22,9 @@
 | 階層 | 対象ディレクトリ | モック方針 | 主な検証責務 |
 | :--- | :--- | :--- | :--- |
 | **Dart 層単体テスト** | `test/` | Pigeon `TurboFetchHostApi` を Fake 化 | リクエスト/レスポンス変換、`ResponseType` デコード、Isolate 分岐（24KiB）、エラーマッピング、キャンセル伝播、クローズ状態遷移 |
-| **ネイティブ層単体テスト** | `android/`<br>`example/darwin/RunnerTests/`（iOS / macOS 共通）<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
+| **ネイティブ層単体テスト** | `android/`（`src/test/`, `src/testOkhttp/`, `src/testCronet/`）<br>`example/darwin/RunnerTests/`（iOS / macOS 共通）<br>`windows/test/`<br>`linux/test/` | OS 標準/モック HTTP サーバー・Fake 等 | 3層責務分離、全 OS 共通不変条件、OS 例外から共通エラーコード（8種）へのマッピング、Engine デタッチ時の解放と復帰 |
 | **統合テスト (E2E)** | `example/integration_test/` | 実通信環境 / 実機 / シミュレータ | プラットフォームチャネルを介した実 HTTP/2 通信およびベンチマーク基盤の結合動作 |
+| **ベンチマーク監査ツールテスト** | `tool/benchmark/test_export_benchmark.py` | 合成ログ（デバイス・サーバー JSONL） | 厳密分割プロトコルのログ整合性検証、プレフィックス互換、CSV 集計・要約出力の正確性 |
 
 ### Dart 層テストのファイル構成
 
@@ -33,6 +34,17 @@
 - `transformer_test.dart`: `TurboTransformer` の型変換、Isolate 分岐、セマフォ並行制御。
 - `options_test.dart`: `TurboOptions` の引数・mapper 型安全性。
 - `turbo_benchmark_test.dart`: Dart 層マイクロベンチマークおよびパフォーマンステスト。
+
+### Android（OkHttp3 / Cronet）ネイティブ層テストの構成と実行方針
+
+- **3 分割ソースセット構成**: `android/build.gradle.kts` の `flutter_turbo_fetch.androidEngine` プロパティ（`okhttp`〔既定〕 / `cronet`）に応じてテストソースセットを切り替える。
+  - `android/src/test/kotlin/`: エンジン非依存の共通テスト（`FlutterTurboFetchPluginTest.kt`）。
+  - `android/src/testOkhttp/kotlin/`: `OkHttp3` 固有テスト（`OkHttpClientManagerTest.kt`, `OkHttpTurboHttpExecutorTest.kt`）。
+  - `android/src/testCronet/kotlin/`: `Cronet` 固有の決定論的ユニットテスト（`CronetClientManagerTest.kt`, `CronetTurboHttpExecutorTest.kt`, `CronetTestFakes.kt`）。
+- **双方エンジンでの検証必須**: Android 実装またはテストを変更した際は、必ず以下の両エンジン構成でローカル JVM ユニットテスト（Android Emulator 不要）を全件合格させること。
+  - OkHttp3: `gradlew -p example/android :flutter_turbo_fetch:testDebugUnitTest -Pflutter_turbo_fetch.androidEngine=okhttp`（またはプロパティ省略）
+  - Cronet: `gradlew -p example/android :flutter_turbo_fetch:testDebugUnitTest -Pflutter_turbo_fetch.androidEngine=cronet`
+  - 不正値指定時（例: `-Pflutter_turbo_fetch.androidEngine=invalid`）に `GradleException` で即座にビルド失敗することも適宜確認する。
 
 ### Darwin（iOS / macOS）ネイティブ層テストの構成と CI 検証
 

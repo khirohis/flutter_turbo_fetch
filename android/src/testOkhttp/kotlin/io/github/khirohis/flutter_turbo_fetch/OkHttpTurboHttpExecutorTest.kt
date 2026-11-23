@@ -36,7 +36,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-internal class TurboHttpExecutorTest {
+internal class OkHttpTurboHttpExecutorTest {
     private fun createDummyCall(canceled: Boolean = false): Call {
         return java.lang.reflect.Proxy.newProxyInstance(
             Call::class.java.classLoader,
@@ -70,15 +70,15 @@ internal class TurboHttpExecutorTest {
         )
     }
 
-    private fun createInterceptedExecutor(interceptor: Interceptor): TurboHttpExecutor {
+    private fun createInterceptedExecutor(interceptor: Interceptor): OkHttpTurboHttpExecutor {
         val client = OkHttpClient.Builder()
             .addInterceptor(interceptor)
             .build()
-        return TurboHttpExecutor(TurboClientManager(client))
+        return OkHttpTurboHttpExecutor(OkHttpClientManager(client))
     }
 
     private fun executeSync(
-        executor: TurboHttpExecutor,
+        executor: OkHttpTurboHttpExecutor,
         request: TurboHttpRequest
     ): TurboHttpResponse {
         val latch = CountDownLatch(1)
@@ -92,7 +92,7 @@ internal class TurboHttpExecutorTest {
                 latch.countDown()
             }
         )
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for TurboHttpExecutor.execute")
+        assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for OkHttpTurboHttpExecutor.execute")
         assertEquals(1, callCount.get(), "Callback must be invoked exactly once")
         assertEquals(0, executor.activeCallCount, "activeCalls must be empty after execution")
         assertFalse(executor.hasActiveCall(request.requestId), "activeCalls must not retain finished request")
@@ -101,7 +101,7 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun classifyException_classifiesCanceledCall() {
-        val executor = TurboHttpExecutor()
+        val executor = OkHttpTurboHttpExecutor()
         val call = createDummyCall(canceled = true)
         val result = executor.classifyException(call, IOException("Generic"), isSendingBody = false)
         assertEquals("cancel", result)
@@ -109,7 +109,7 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun classifyException_classifiesTimeoutsCorrectly() {
-        val executor = TurboHttpExecutor()
+        val executor = OkHttpTurboHttpExecutor()
         val call = createDummyCall(canceled = false)
 
         // Connect timeout
@@ -136,7 +136,7 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun classifyException_classifiesCertificateAndConnectionErrors() {
-        val executor = TurboHttpExecutor()
+        val executor = OkHttpTurboHttpExecutor()
         val call = createDummyCall(canceled = false)
 
         val sslException = SSLException("Handshake failed")
@@ -158,7 +158,7 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun execute_invalidUrl_returnsConnectionError() {
-        val executor = TurboHttpExecutor()
+        val executor = OkHttpTurboHttpExecutor()
         val response = executeSync(
             executor = executor,
             request = createRequest(url = "http://[::1")
@@ -170,7 +170,7 @@ internal class TurboHttpExecutorTest {
 
     @Test
     fun execute_invalidHeaderCharacters_returnsConnectionErrorSafelyWithoutCrash() {
-        val executor = TurboHttpExecutor()
+        val executor = OkHttpTurboHttpExecutor()
         val invalidHeaders: Map<String?, String?> = mapOf("X-Invalid\r\nHeader" to "value\r\ninjection")
 
         val response = executeSync(

@@ -24,7 +24,7 @@
 
 - [`architectures/architecture.md`](architectures/architecture.md): 一気通貫パイプライン構造と各層の責務境界
 - [`architectures/native-layer.md`](architectures/native-layer.md): 通信ブリッジ仕様（Pigeon）、共通エラーコード、全 OS 共通のネイティブ層不変条件
-- [`architectures/android-native-layer.md`](architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 固有設計・例外マッピング）
+- [`architectures/android-native-layer.md`](architectures/android-native-layer.md): Android ネイティブ層仕様（OkHttp3 / Cronet ビルド時切替・固有設計・例外マッピング）
 - [`architectures/darwin-native-layer.md`](architectures/darwin-native-layer.md): iOS / macOS（Darwin）ネイティブ層仕様（URLSession 固有設計・例外マッピング）
 - [`architectures/windows-native-layer.md`](architectures/windows-native-layer.md): Windows ネイティブ層仕様（WinHTTP 固有設計・例外マッピング）
 - [`architectures/linux-native-layer.md`](architectures/linux-native-layer.md): Linux ネイティブ層仕様（libcurl 固有設計・例外マッピング）

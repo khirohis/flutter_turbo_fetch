@@ -20,7 +20,7 @@
 - **主要技術スタック**:
   - **Dart / Flutter**: Flutter `>=3.24.0`, Dart `^3.5.0`, `dio: ^5.4.0`
   - **通信ブリッジ**: `pigeon`
-  - **Android**: Kotlin, `OkHttp3`
+  - **Android**: Kotlin, `OkHttp3` / `Cronet`（Gradle プロパティによるビルド時切替）
   - **iOS / macOS (Darwin)**: Swift, `URLSession`
   - **Windows**: C++17, `WinHTTP`
   - **Linux**: C++17, `libcurl`

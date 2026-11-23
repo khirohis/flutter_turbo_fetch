@@ -7,6 +7,56 @@ import 'package:flutter/material.dart';
 import 'benchmark_models.dart';
 import 'verified_benchmark.dart';
 
+const benchmarkLogPrefix = 'TURBO_BENCHMARK';
+const benchmarkEvidenceFileName = 'turbo-benchmark.jsonl';
+const benchmarkDiagnosticFileName = 'turbo-benchmark-diagnostic.txt';
+
+String defaultBenchmarkEngineForPlatform(String platform) {
+  switch (platform.toLowerCase()) {
+    case 'android':
+      return 'okhttp';
+    case 'ios':
+    case 'macos':
+      return 'urlsession';
+    case 'windows':
+      return 'winhttp';
+    case 'linux':
+      return 'libcurl';
+    default:
+      return 'unknown';
+  }
+}
+
+Map<String, Object?> buildSessionStartRecord({
+  required String platform,
+  required String engineOverride,
+  required String sourceSha,
+  required String osVersion,
+  required bool allowLocalCertificate,
+  required bool isReleaseMode,
+  String? utc,
+}) {
+  final normalizedPlatform = platform.trim().toLowerCase();
+  final trimmedEngine = engineOverride.trim().toLowerCase();
+  final engine = trimmedEngine.isNotEmpty
+      ? trimmedEngine
+      : defaultBenchmarkEngineForPlatform(normalizedPlatform);
+  return {
+    'type': 'session_start',
+    'schema': 1,
+    'mode': isReleaseMode ? 'release' : 'debug',
+    'utc': utc ?? DateTime.now().toUtc().toIso8601String(),
+    'source_sha': sourceSha,
+    'platform': normalizedPlatform,
+    'engine': engine,
+    'os': osVersion,
+    'local_tls_bypass': allowLocalCertificate,
+  };
+}
+
+String formatBenchmarkLogLine(Map<String, Object?> row) =>
+    '$benchmarkLogPrefix ${jsonEncode(row)}';
+
 /// Standalone runner widget for headless or automated split-pipeline benchmark execution.
 class VerifiedBenchmarkApp extends StatelessWidget {
   const VerifiedBenchmarkApp({
@@ -86,18 +136,17 @@ class _VerifiedBenchmarkSessionState extends State<VerifiedBenchmarkSession> {
   }
 
   Future<void> _run() async {
-    evidence = File('${Directory.systemTemp.path}/ios-benchmark.jsonl');
+    evidence = File('${Directory.systemTemp.path}/$benchmarkEvidenceFileName');
     evidence.writeAsStringSync('');
     try {
-      _emit({
-        'type': 'session_start',
-        'schema': 1,
-        'mode': kReleaseMode ? 'release' : 'debug',
-        'utc': DateTime.now().toUtc().toIso8601String(),
-        'source_sha': const String.fromEnvironment('BENCHMARK_SOURCE_SHA'),
-        'os': Platform.operatingSystemVersion,
-        'local_tls_bypass': widget.allowLocalCertificate,
-      });
+      _emit(buildSessionStartRecord(
+        platform: Platform.operatingSystem,
+        engineOverride: const String.fromEnvironment('BENCHMARK_ENGINE'),
+        sourceSha: const String.fromEnvironment('BENCHMARK_SOURCE_SHA'),
+        osVersion: Platform.operatingSystemVersion,
+        allowLocalCertificate: widget.allowLocalCertificate,
+        isReleaseMode: kReleaseMode,
+      ));
 
       for (final scenario in BenchmarkScenario.values) {
         final clients = {
@@ -144,7 +193,7 @@ class _VerifiedBenchmarkSessionState extends State<VerifiedBenchmarkSession> {
         setState(() => status = 'Complete: 90 measured trials, 9 warmups');
       }
     } catch (error, stack) {
-      File('${Directory.systemTemp.path}/ios-benchmark-diagnostic.txt')
+      File('${Directory.systemTemp.path}/$benchmarkDiagnosticFileName')
           .writeAsStringSync('$error\n$stack');
       _emit({'type': 'session_failed'});
       if (mounted) setState(() => status = 'Failed: inspect host log');
@@ -152,7 +201,7 @@ class _VerifiedBenchmarkSessionState extends State<VerifiedBenchmarkSession> {
   }
 
   void _emit(Map<String, Object?> row) {
-    final line = 'IOS_BENCHMARK ${jsonEncode(row)}';
+    final line = formatBenchmarkLogLine(row);
     evidence.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
     // ignore: avoid_print
     print(line);

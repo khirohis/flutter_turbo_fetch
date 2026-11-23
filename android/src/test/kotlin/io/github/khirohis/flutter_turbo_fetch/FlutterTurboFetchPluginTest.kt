@@ -1,7 +1,9 @@
 package io.github.khirohis.flutter_turbo_fetch
 
+import android.content.Context
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.BinaryMessenger
+import org.mockito.Mockito
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -9,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 internal class FlutterTurboFetchPluginTest {
@@ -42,7 +45,9 @@ internal class FlutterTurboFetchPluginTest {
         val capturedOnResult = AtomicReference<(TurboHttpResponse) -> Unit>()
         val canceledRequestId = AtomicReference<String?>()
 
-        val fakeExecutor = object : TurboHttpExecutor() {
+        val fakeExecutor = object : TurboHttpExecutor {
+            override fun ensureReady(context: Context?) {}
+
             override fun execute(
                 request: TurboHttpRequest,
                 onResult: (TurboHttpResponse) -> Unit
@@ -54,6 +59,8 @@ internal class FlutterTurboFetchPluginTest {
             override fun cancel(requestId: String) {
                 canceledRequestId.set(requestId)
             }
+
+            override fun shutdown() {}
         }
 
         val plugin = FlutterTurboFetchPlugin(executor = fakeExecutor)
@@ -84,12 +91,21 @@ internal class FlutterTurboFetchPluginTest {
     @Test
     fun engineLifecycle_attachedAndDetached_delegatesToExecutorLifecycle() {
         var ensureReadyCalled = false
+        var capturedContext: Context? = null
         var shutdownCalled = false
 
-        val fakeExecutor = object : TurboHttpExecutor() {
-            override fun ensureReady() {
+        val fakeExecutor = object : TurboHttpExecutor {
+            override fun ensureReady(context: Context?) {
                 ensureReadyCalled = true
+                capturedContext = context
             }
+
+            override fun execute(
+                request: TurboHttpRequest,
+                onResult: (TurboHttpResponse) -> Unit
+            ) {}
+
+            override fun cancel(requestId: String) {}
 
             override fun shutdown() {
                 shutdownCalled = true
@@ -107,9 +123,14 @@ internal class FlutterTurboFetchPluginTest {
             override fun makeBackgroundTaskQueue(options: BinaryMessenger.TaskQueueOptions?): BinaryMessenger.TaskQueue? = null
         }
 
+        val mockContext = Mockito.mock(Context::class.java)
         val constructor = FlutterPlugin.FlutterPluginBinding::class.java.declaredConstructors[0]
         constructor.isAccessible = true
         val args = arrayOfNulls<Any>(constructor.parameterCount)
+        val contextIndex = constructor.parameterTypes.indexOfFirst { it == Context::class.java }
+        if (contextIndex != -1) {
+            args[contextIndex] = mockContext
+        }
         val messengerIndex = constructor.parameterTypes.indexOfFirst { it == BinaryMessenger::class.java }
         if (messengerIndex != -1) {
             args[messengerIndex] = fakeMessenger
@@ -118,9 +139,10 @@ internal class FlutterTurboFetchPluginTest {
 
         val plugin = FlutterTurboFetchPlugin(executor = fakeExecutor)
 
-        // onAttachedToEngine ensures executor is ready and sets up Pigeon channel
+        // onAttachedToEngine passes applicationContext to ensureReady and sets up Pigeon channel
         plugin.onAttachedToEngine(binding)
         assertTrue(ensureReadyCalled, "ensureReady must be invoked on engine attach")
+        assertSame(mockContext, capturedContext, "applicationContext must be passed to ensureReady")
         assertTrue(fakeMessenger.handlers.containsKey("dev.flutter.pigeon.flutter_turbo_fetch.TurboFetchHostApi.executeRequest"))
         assertNotNull(fakeMessenger.handlers["dev.flutter.pigeon.flutter_turbo_fetch.TurboFetchHostApi.executeRequest"])
 

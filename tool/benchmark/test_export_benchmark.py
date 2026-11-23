@@ -14,9 +14,15 @@ from export_benchmark import export
 
 
 class ExportTests(unittest.TestCase):
-    def fixture(self, root):
-        records = [{"type": "session_start", "mode": "release", "source_sha": "a" * 40,
-                    "utc": "synthetic-test-only", "private_metadata": "must-not-export"}]
+    def fixture(self, root, prefix="TURBO_BENCHMARK ", platform="android", engine="okhttp",
+                line_leader=""):
+        session_start = {"type": "session_start", "mode": "release", "source_sha": "a" * 40,
+                         "utc": "synthetic-test-only", "private_metadata": "must-not-export"}
+        if platform is not None:
+            session_start["platform"] = platform
+        if engine is not None:
+            session_start["engine"] = engine
+        records = [session_start]
         server = []
         presets = ["io_http1", "dio_http2", "turbo_fetch"]
         for scenario in ["scenario_a", "scenario_b", "scenario_c"]:
@@ -42,14 +48,20 @@ class ExportTests(unittest.TestCase):
         records.append({"type": "session_complete"})
         device = root / "device.log"
         peer = root / "server.log"
-        device.write_text("\n".join("IOS_BENCHMARK " + json.dumps(r) for r in records))
+        device.write_text("\n".join(line_leader + prefix + json.dumps(r) for r in records))
         peer.write_text("\n".join(json.dumps(r, separators=(",", ":")) for r in server))
         return device, peer, records
 
-    def test_complete_export_preserves_na_and_excludes_private_metadata(self):
+    def test_complete_export_preserves_na_metadata_and_excludes_private_metadata(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
-            device, peer, _ = self.fixture(root)
+            device, peer, _ = self.fixture(
+                root,
+                prefix="TURBO_BENCHMARK ",
+                platform="android",
+                engine="cronet",
+                line_leader="11-23 16:00:00.000  1234  5678 I flutter : ",
+            )
             export(device, peer, root / "out")
             with (root / "out-summary.csv").open(newline="") as stream:
                 rows = list(csv.DictReader(stream))
@@ -62,6 +74,24 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(len(raw), 99)
             self.assertNotIn("private_metadata", raw[0])
             self.assertEqual(raw[0]["source_sha"], "a" * 40)
+            self.assertEqual(raw[0]["platform"], "android")
+            self.assertEqual(raw[0]["engine"], "cronet")
+
+    def test_legacy_ios_prefix_remains_supported_with_na_metadata(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            device, peer, _ = self.fixture(
+                root,
+                prefix="IOS_BENCHMARK ",
+                platform=None,
+                engine=None,
+            )
+            export(device, peer, root / "out")
+            with (root / "out-raw.csv").open(newline="") as stream:
+                raw = list(csv.DictReader(stream))
+            self.assertEqual(len(raw), 99)
+            self.assertEqual(raw[0]["platform"], "N/A")
+            self.assertEqual(raw[0]["engine"], "N/A")
 
     def test_rejects_missing_server_evidence(self):
         with tempfile.TemporaryDirectory() as temp:

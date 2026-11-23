@@ -22,7 +22,7 @@
 | ディレクトリ | 主な役割・責務 | 言語 | 配置・命名ルール |
 | :--- | :--- | :---: | :--- |
 | **`lib/`** | プラグイン本体の Dart 公開 API およびコアロジック | 英語 | Flutter パッケージ標準構造（`src/` 配下に内部実装） |
-| **`android/`** | Android ネイティブ実装（Kotlin, OkHttp3） | 英語 | Android プラグイン標準構造 |
+| **`android/`** | Android ネイティブ実装（Kotlin, OkHttp3 / Cronet） | 英語 | Android プラグイン標準構造（ビルド時切替ソースセット含む） |
 | **`darwin/`** | Apple プラットフォーム共通実装（Swift, URLSession） | 英語 | `sharedDarwinSource: true`（iOS / macOS 共通） |
 | **`windows/`** | Windows ネイティブ実装（C++17, WinHTTP） | 英語 | CMake ビルド構成 |
 | **`linux/`** | Linux ネイティブ実装（C++17, libcurl） | 英語 | CMake ビルド構成 |
@@ -47,6 +47,7 @@
   - iOS / macOS 共通のネイティブ層単体テスト（XCTest）は `example/darwin/RunnerTests/` に一本化し、`example/ios/Runner.xcodeproj` および `example/macos/Runner.xcodeproj` の双方から参照する（OS 別の二重管理を禁止する）。
 - **`tool/`**:
   - 支援スクリプトは `tool/<category>/`、検証用データは `data/<platform>/` に格納する。
+  - 同一プラットフォームに複数エンジンが存在する場合（例: Android の `okhttp` / `cronet`）は、サブディレクトリを切らず `data/<platform>/<YYYY-MM-DD>-<engine>-*.csv` のようにファイル名にエンジン識別子を含めてフラットに管理する。
 
 ---
 
