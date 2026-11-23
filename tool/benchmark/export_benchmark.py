@@ -11,11 +11,16 @@ import statistics
 import sys
 
 
+LOG_PREFIXES = ("TURBO_BENCHMARK ", "IOS_BENCHMARK ")
+
+
 def read_device(path):
     records = []
-    for line in pathlib.Path(path).read_text().splitlines():
-        if "IOS_BENCHMARK " in line:
-            records.append(json.loads(line.split("IOS_BENCHMARK ", 1)[1]))
+    for line in pathlib.Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        for prefix in LOG_PREFIXES:
+            if prefix in line:
+                records.append(json.loads(line.split(prefix, 1)[1]))
+                break
     return records
 
 
@@ -62,7 +67,7 @@ def export(device_path, server_path, prefix):
     for key, observed in sizes.items():
         assert len(observed) == 1, f"Byte size mismatch across presets for {key}: {observed}"
     trial_fields = ["scenario", "preset", "trial", "warmup", "position", "http_version",
-                    "mode", "source_sha", "total_ms", "success", "failure", "rps",
+                    "mode", "source_sha", "platform", "engine", "total_ms", "success", "failure", "rps",
                     "response_bytes",
                     "network_avg_ms", "network_p50_ms", "network_p95_ms",
                     "parse_avg_ms", "parse_p50_ms", "parse_p95_ms",
@@ -78,6 +83,8 @@ def export(device_path, server_path, prefix):
         assert r["position"] == expected_position
         row = {k: r.get(k) for k in trial_fields}
         row.update(source_sha=start["source_sha"], mode="release",
+                   platform=start.get("platform") or None,
+                   engine=start.get("engine") or None,
                    http_version=subset[0]["http_version"],
                    response_bytes=sum(q["response_bytes"] for q in subset))
         for kind in ("network", "parse"):
