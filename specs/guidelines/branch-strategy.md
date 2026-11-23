@@ -40,9 +40,13 @@
 
 ## 4. リリース運用フロー（`pub.dev` 公開）
 
+- **バージョニング基準（`0.x.y` 系）**: Dart / `pub` の caret 記法（`^0.x.y`）に従い、後方互換のある新機能追加・内部改善・バグ修正はパッチ（`Z`）を上げ、破壊的変更（Breaking Change）を含む場合のみマイナー（`Y`）を上げる。
+
 1. **準備ブランチ作成**: `release/vX.Y.Z`（緊急時は `hotfix/vX.Y.Z`）を作成し、`pubspec.yaml` の `version` 更新と `CHANGELOG.md` の追記を行う。
-2. **公開前品質ゲート**:
+2. **公開ドキュメント横断チェック**: リリース前に `README.md` および `docs/` 配下（`docs/benchmarks/` を除く要約・設計根拠等）を横断レビューし、最新実装・ベンチマーク結果との矛盾や二重管理による乖離がないか確認してコミットする。
+3. **公開前品質ゲート**:
    - `fvm flutter test`: 全テスト合格
-   - `fvm dart pub publish --dry-run`: **警告 0 件** の確認
-3. **統合 & タグ付け**: `main` へ `--no-ff` マージし、マージコミットに Git タグ（`vX.Y.Z`）を付与してリモートへプッシュ（`--tags`）する。
-4. **公開 & 完了**: CI/CD または `fvm dart pub publish` で公開し、準備ブランチを削除する。
+   - `fvm dart analyze`: 警告・エラー 0 件
+   - `fvm dart pub publish --dry-run`（コミット済みのクリーン状態で実行）: **警告 0 件** の確認
+4. **統合 & タグ付け**: `main` へ `--no-ff` マージし、マージコミットに Git タグ（`vX.Y.Z`）を付与してリモートへプッシュ（`--tags`）する。
+5. **公開 & 完了**: CI/CD または `fvm dart pub publish` で公開し、準備ブランチを削除する。
