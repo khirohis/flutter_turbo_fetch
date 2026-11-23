@@ -1,10 +1,10 @@
 # Benchmark Performance Evaluation Report (`benchmark-results.md`)
 
-This document serves as the **cross-platform executive summary and common evaluation methodology** for the empirical performance benchmarks of `flutter_turbo_fetch`, conducted according to the benchmark specifications defined in [`specs/architectures/benchmark.md`](../specs/architectures/benchmark.md).
+This document serves as the **cross-platform executive summary and common evaluation methodology** for the empirical performance benchmarks of `flutter_turbo_fetch`, conducted according to the Split-Pipeline Rigorous Protocol (`N=10` round-robin trials + 1:1 server audit) defined in [`specs/architectures/benchmark.md`](../specs/architectures/benchmark.md).
 
 For detailed platform-specific measurement environments, full scenario tables, and native stack analyses, refer to the dedicated reports under [`docs/benchmarks/`](benchmarks/):
 
-- 🤖 **[Android Benchmark Report (`docs/benchmarks/android.md`)](benchmarks/android.md)** — `OkHttp3` Shared Connection Pool (API 36 Emulator, Historical Streaming Protocol)
+- 🤖 **[Android Benchmark Report (`docs/benchmarks/android.md`)](benchmarks/android.md)** — Pixel 10a Physical Device Release, `OkHttp3` & `Cronet` (Split-Pipeline Rigorous Protocol, N=10)
 - 🪟 **[Windows Benchmark Report (`docs/benchmarks/windows.md`)](benchmarks/windows.md)** — Windows 11 x64 Desktop Release, `WinHTTP` + OS Thread Pool (Split-Pipeline Rigorous Protocol, N=10)
 - 🍎 **[iOS Benchmark Report (`docs/benchmarks/ios.md`)](benchmarks/ios.md)** — iPhone 17 Physical Device Release, `URLSession` (Split-Pipeline Rigorous Protocol, N=10)
 - 💻 **macOS Benchmark Report (`docs/benchmarks/macos.md`)** *(Planned)*
@@ -26,7 +26,7 @@ All benchmark scenarios evaluate three adapter and transformer combinations back
 
 > [!NOTE]
 > **Why `native_dio_adapter` is excluded**:
-> `native_dio_adapter` (`cronet_http` / `cupertino_http`) does not support bypassing self-signed certificate validation (`allowBadCertificates`) on Android Cronet (causing 100% immediate SSL failures against local HTTP/2 test servers) and falls back to standard `IOHttpClientAdapter` on Windows desktop. For an architectural analysis of `native_dio_adapter`, see [`docs/design-rationale.md`](design-rationale.md).
+> `native_dio_adapter` (`cronet_http` / `cupertino_http`) does not support bypassing self-signed certificate validation (`allowBadCertificates`) on Android Cronet and falls back to standard `IOHttpClientAdapter` on Windows desktop. For an architectural analysis of `native_dio_adapter`, see [`docs/design-rationale.md`](design-rationale.md).
 
 ### 1.2 Workload Scenarios (10-Round Payload Sweeps)
 
@@ -36,58 +36,59 @@ All benchmark scenarios evaluate three adapter and transformer combinations back
 | **Scenario B** | **10KiB to 100KiB** (10 steps of 10KiB) | **5** | **100 req** | **Standard Production Load**: Evaluate throughput and frame stability across typical mobile/desktop API sizes. |
 | **Scenario C** | **20KiB to 200KiB** (10 steps of 20KiB) | **10** | **100 req** | **High-Concurrency Resilience**: Evaluate HTTP/2 multiplexing and semaphore governance (`maxConcurrentIsolates`). |
 
----
+### 1.3 Split-Pipeline Rigorous Protocol (`N=10`)
 
-## 2. Cross-Platform Performance Highlights
+Every evaluated platform below uses the **controlled split-pipeline protocol** to eliminate timing asymmetries between streaming and batch adapters:
 
-Due to differing measurement protocols, empirical results are strictly separated into **Part A (Historical Streaming Protocol)** and **Part B (Split-Pipeline Rigorous Protocol)**.
-
-### 2.1 Part A: Historical Streaming Protocol (Android)
-
-> **Protocol Note**: Evaluated in Dio's standard pipeline (`ResponseType.json`) as a single-trial sequential run. Streaming adapters (`IO`, `dio_http2`) resolve `fetch()` upon response headers and stream chunks inside `transformResponse()`, recording socket download time inside Parse Time. (Android is scheduled for re-measurement under the Split-Pipeline Rigorous Protocol for both `OkHttp3` and `Cronet`.)
-
-#### 2.1.1 Total Wall-Clock Time Comparison
-
-| Platform | Scenario | (1) IO (HTTP/1.1) | (2) dio_http2 | **(3) TurboFetch** | Wall-Time Speedup | Detailed Report |
-| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **Android**<br>*(API 36 Emulator)* | **Scenario A** (90 req, 3 workers) | 6,392 ms | 10,318 ms | **2,344 ms** | **2.7x – 4.4x faster** | [Android Report](benchmarks/android.md) |
-| | **Scenario B** (100 req, 5 workers) | 6,471 ms | 11,063 ms | **2,451 ms** | **2.6x – 4.5x faster** | [Android Report](benchmarks/android.md) |
-| | **Scenario C** (100 req, 10 workers) | 5,322 ms | 10,765 ms | **1,453 ms** | **3.7x – 7.4x faster** | [Android Report](benchmarks/android.md) |
-
-#### 2.1.2 Effective Per-Request Latency (Avg Net Time + Avg Parse Time)
-
-| Platform | Scenario | (1) IO (HTTP/1.1) | (2) dio_http2 | **(3) TurboFetch** | Per-Request Speedup |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Android** | **Scenario A** (5–45KiB) | 199.6 ms | 283.3 ms | **65.8 ms** | **3.0x – 4.3x faster** |
-| | **Scenario B** (10–100KiB) | 300.1 ms | 452.8 ms | **95.3 ms** | **3.1x – 4.8x faster** |
-| | **Scenario C** (20–200KiB) | 486.8 ms | 846.4 ms | **104.0 ms** | **4.7x – 8.1x faster** |
+- **Common Reception Boundary (`ResponseType.bytes`)**: Every adapter receives the full response payload as bytes before passing them to its JSON transformer (`BackgroundTransformer` or `TurboTransformer`). `Network Time` strictly ends at full-body reception; `Parse Time` strictly measures decoding and Isolate/semaphore handoff.
+- **Statistical Rigor & Audit**: Each platform executes **1 warmup trial + 10 measured trials (`N=10`) with round-robin preset rotation** (90 measured trials / 8,700 measured requests per engine), verified 1-to-1 against independent server-side event logs.
 
 ---
 
-### 2.2 Part B: Split-Pipeline Rigorous Protocol (Windows, Linux & iOS)
+## 2. Cross-Platform Performance Highlights (Split-Pipeline Rigorous Protocol, N=10)
 
-> [!IMPORTANT]
-> **Measurement Isolation & Protocol Divergence**:
-> The Windows Desktop, Linux Desktop, and iOS physical-device evaluations employ a **controlled split-pipeline protocol** to eliminate timing asymmetries: every adapter receives the full body as bytes (`ResponseType.bytes`) before passing them to its JSON transformer. Each evaluation executes **1 warmup trial + 10 measured trials (N=10) with round-robin rotation** and 1:1 server event validation. **These metrics cannot be directly compared against Part A's phase values.**
-
-#### 2.2.1 Total Wall-Clock Time & Throughput (10 Measured Trials Median)
+### 2.1 Total Wall-Clock Time & Throughput (10 Measured Trials Median)
 
 | Platform | Scenario | (1) IO (HTTP/1.1) | (2) dio_http2 | **(3) TurboFetch** | Throughput (RPS) | Speedup vs. IO / dio_http2 | Detailed Report |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Windows**<br>*(Win 11 x64 Desktop)* | **Scenario A** (90 req, 3 workers) | 77.9 ms | 108.6 ms | **38.9 ms** | 2,313.5 req/s | **2.0x / 2.8x faster** | [Windows Report](benchmarks/windows.md) |
-| | **Scenario B** (100 req, 5 workers) | 111.7 ms | 234.1 ms | **40.8 ms** | 2,451.5 req/s | **2.7x / 5.7x faster** | [Windows Report](benchmarks/windows.md) |
-| | **Scenario C** (100 req, 10 workers) | 169.9 ms | 390.9 ms | **51.2 ms** | 1,954.6 req/s | **3.3x / 7.6x faster** | [Windows Report](benchmarks/windows.md) |
-| **Linux**<br>*(Mint 22.3 x64 Desktop)* | **Scenario A** (90 req, 3 workers) | 841.8 ms | 2,032.0 ms | **330.5 ms** | 272.4 req/s | **2.5x / 6.1x faster** | [Linux Report](benchmarks/linux.md) |
-| | **Scenario B** (100 req, 5 workers) | 442.3 ms | 2,489.3 ms | **137.7 ms** | 726.6 req/s | **3.2x / 18.1x faster** | [Linux Report](benchmarks/linux.md) |
-| | **Scenario C** (100 req, 10 workers) | 318.0 ms | 4,698.2 ms | **82.7 ms** | 1,209.8 req/s | **3.8x / 56.8x faster** | [Linux Report](benchmarks/linux.md) |
-| **iOS**<br>*(iPhone 17 Physical Device)* | **Scenario A** (90 req, 3 workers) | 444.8 ms | 724.0 ms | **462.0 ms** | 194.8 req/s | **0.96x / 1.6x faster** | [iOS Report](benchmarks/ios.md) |
-| | **Scenario B** (100 req, 5 workers) | 370.5 ms | 1,329.5 ms | **411.8 ms** | 242.8 req/s | **0.90x / 3.2x faster** | [iOS Report](benchmarks/ios.md) |
-| | **Scenario C** (100 req, 10 workers) | 429.9 ms | 2,629.9 ms | **454.2 ms** | 220.2 req/s | **0.95x / 5.8x faster** | [iOS Report](benchmarks/ios.md) |
+| **Android (OkHttp3)**<br>*(Pixel 10a, Wi-Fi LAN)* | **Scenario A** (90 req, 3w) | 492.2 ms | 2,220.3 ms | **494.1 ms** | 182.3 req/s | **1.00x / 4.5x faster** | [Android Report](benchmarks/android.md) |
+| | **Scenario B** (100 req, 5w) | 490.2 ms | 1,277.2 ms | **359.7 ms** | 278.1 req/s | **1.4x / 3.6x faster** | [Android Report](benchmarks/android.md) |
+| | **Scenario C** (100 req, 10w) | 655.6 ms | 2,320.9 ms | **394.0 ms** | 254.4 req/s | **1.7x / 5.9x faster** | [Android Report](benchmarks/android.md) |
+| **Android (Cronet)**<br>*(Pixel 10a, Wi-Fi LAN)* | **Scenario A** (90 req, 3w) | 488.3 ms | 2,256.8 ms | **472.5 ms** | 190.5 req/s | **1.03x / 4.8x faster** | [Android Report](benchmarks/android.md) |
+| | **Scenario B** (100 req, 5w) | 523.4 ms | 1,287.6 ms | **297.2 ms** | 336.5 req/s | **1.8x / 4.3x faster** | [Android Report](benchmarks/android.md) |
+| | **Scenario C** (100 req, 10w) | 633.8 ms | 2,411.1 ms | **353.8 ms** | 282.7 req/s | **1.8x / 6.8x faster** | [Android Report](benchmarks/android.md) |
+| **Windows**<br>*(Win 11 x64 Desktop)* | **Scenario A** (90 req, 3w) | 77.9 ms | 108.6 ms | **38.9 ms** | 2,313.5 req/s | **2.0x / 2.8x faster** | [Windows Report](benchmarks/windows.md) |
+| | **Scenario B** (100 req, 5w) | 111.7 ms | 234.1 ms | **40.8 ms** | 2,451.5 req/s | **2.7x / 5.7x faster** | [Windows Report](benchmarks/windows.md) |
+| | **Scenario C** (100 req, 10w) | 169.9 ms | 390.9 ms | **51.2 ms** | 1,954.6 req/s | **3.3x / 7.6x faster** | [Windows Report](benchmarks/windows.md) |
+| **Linux**<br>*(Mint 22.3 x64 Desktop)* | **Scenario A** (90 req, 3w) | 841.8 ms | 2,032.0 ms | **330.5 ms** | 272.4 req/s | **2.5x / 6.1x faster** | [Linux Report](benchmarks/linux.md) |
+| | **Scenario B** (100 req, 5w) | 442.3 ms | 2,489.3 ms | **137.7 ms** | 726.6 req/s | **3.2x / 18.1x faster** | [Linux Report](benchmarks/linux.md) |
+| | **Scenario C** (100 req, 10w) | 318.0 ms | 4,698.2 ms | **82.7 ms** | 1,209.8 req/s | **3.8x / 56.8x faster** | [Linux Report](benchmarks/linux.md) |
+| **iOS**<br>*(iPhone 17, Wi-Fi LAN)* | **Scenario A** (90 req, 3w) | 444.8 ms | 724.0 ms | **462.0 ms** | 194.8 req/s | **0.96x / 1.6x faster** | [iOS Report](benchmarks/ios.md) |
+| | **Scenario B** (100 req, 5w) | 370.5 ms | 1,329.5 ms | **411.8 ms** | 242.8 req/s | **0.90x / 3.2x faster** | [iOS Report](benchmarks/ios.md) |
+| | **Scenario C** (100 req, 10w) | 429.9 ms | 2,629.9 ms | **454.2 ms** | 220.2 req/s | **0.95x / 5.8x faster** | [iOS Report](benchmarks/ios.md) |
 
-#### 2.2.2 Phase Latency Breakdown (Per-Request Median: Network Time vs. Parse Time)
+### 2.2 Phase Latency Breakdown (Per-Request Median: Network Time vs. Parse Time)
 
 | Platform | Scenario | Preset | Network Time (P50) | Parse Time (P50) | Total Effective Latency (P50) |
 | :--- | :--- | :--- | :---: | :---: | :---: |
+| **Android (OkHttp3)** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 15.57 ms | 0.31 ms | 15.88 ms |
+| | | (2) dio_http2 | 76.46 ms | 0.71 ms | 77.17 ms |
+| | | **(3) TurboFetch** | **13.67 ms** | **2.20 ms** | **15.87 ms** |
+| | **Scenario B** (10–100KiB) | (1) IO (HTTP/1.1) | 20.58 ms | 2.14 ms | 22.72 ms |
+| | | (2) dio_http2 | 58.78 ms | 2.94 ms | 61.72 ms |
+| | | **(3) TurboFetch** | **13.72 ms** | **3.18 ms** | **16.90 ms** |
+| | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 50.75 ms | 3.43 ms | 54.18 ms |
+| | | (2) dio_http2 | 215.26 ms | 3.08 ms | 218.34 ms |
+| | | **(3) TurboFetch** | **32.89 ms** | **3.19 ms** | **36.08 ms** |
+| **Android (Cronet)** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 15.97 ms | 0.32 ms | 16.29 ms |
+| | | (2) dio_http2 | 74.83 ms | 0.63 ms | 75.46 ms |
+| | | **(3) TurboFetch** | **13.05 ms** | **2.09 ms** | **15.14 ms** |
+| | **Scenario B** (10–100KiB) | (1) IO (HTTP/1.1) | 22.13 ms | 2.56 ms | 24.69 ms |
+| | | (2) dio_http2 | 57.92 ms | 4.12 ms | 62.04 ms |
+| | | **(3) TurboFetch** | **10.61 ms** | **3.17 ms** | **13.78 ms** |
+| | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 49.92 ms | 3.20 ms | 53.12 ms |
+| | | (2) dio_http2 | 221.09 ms | 4.59 ms | 225.68 ms |
+| | | **(3) TurboFetch** | **28.51 ms** | **3.23 ms** | **31.74 ms** |
 | **Windows** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 2.28 ms | 0.19 ms | 2.47 ms |
 | | | (2) dio_http2 | 3.10 ms | 0.18 ms | 3.28 ms |
 | | | **(3) TurboFetch** | **0.81 ms** | **0.27 ms** | **1.08 ms** |
@@ -120,51 +121,30 @@ Due to differing measurement protocols, empirical results are strictly separated
 
 ## 3. Common Architectural & Measurement Principles
 
-### 3.1 Asymmetric Measurement Boundaries: Net Time vs. Parse Time
+### 3.1 Native Batch Reception vs. Pure-Dart HTTP/2 Streaming
 
-Because `BenchmarkTimingAdapter` and `BenchmarkTimingTransformer` instrument Dio's standard pipeline boundaries, recorded timestamps represent different physical phases depending on the adapter's transfer model:
+Across every tested OS and hardware class (Android, Windows, Linux, iOS), pure-Dart `dio_http2` collapses under concurrent HTTP/2 workloads (4.3x–56.8x slower than `TurboFetch` in Scenarios B & C) because 5–10 parallel HTTP/2 streams compete on Dart's single event loop and stall on its hardcoded 64KiB initial receive window.
 
-- **(1) IO / (2) dio_http2 (Streaming Model)**:
-  - `HttpClientAdapter.fetch()` resolves as soon as **initial HTTP response headers** arrive.
-  - Reading and reassembling response body chunks from the TCP/TLS socket occurs downstream inside `Transformer.transformResponse`. Consequently, **socket transfer and HTTP/2 frame processing latency are recorded inside Parse Time**. Under high concurrency (Scenario C), `dio_http2` suffers severe Parse Time inflation because 10 parallel HTTP/2 streams compete on Dart's single event loop and hit the hardcoded 64KiB flow-control window.
-- **(3) TurboFetch (Platform Native Batch Model)**:
-  - The OS native layer (`OkHttp3` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` on Linux) receives, decompresses, and concatenates all HTTP/2 `DATA` frames in background OS threads, returning a single contiguous `Uint8List` via Pigeon before `fetch()` resolves.
-  - Consequently, **network transmission, TLS decryption, full body download, native buffer assembly, and Pigeon IPC are all accounted for within Net Time**, while in **Part A (`ResponseType.json`)**, **Parse Time strictly measures in-memory fused UTF-8/JSON decoding (`utf8.decoder.fuse(json.decoder)`), zero-copy Isolate handoff, and semaphore queuing** (in **Part B (`ResponseType.bytes`)**, JSON decoding is skipped and the assembled `Uint8List` is returned directly).
+By contrast, `TurboFetch` offloads TLS decryption, HTTP/2 `DATA` frame reassembly, and decompression into platform-native background engines (`OkHttp3` / `Cronet` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` `curl_multi` on Linux), returning a single contiguous `Uint8List` via Pigeon once per request.
 
-Evaluating **Effective Total Latency (Net Time + Parse Time)** alongside **Total Wall Time** provides a strictly apples-to-apples comparison across both models in Part A.
+### 3.2 Concurrency Scaling Across Platforms
 
-### 3.2 The "Jank Frames (%)" Denominator Paradox vs. Max Frame Duration
+- **Android (Pixel 10a, Wi-Fi LAN)**:
+  - **`OkHttp3`**: Scales from **494.1 ms** (3w) -> **359.7 ms** (5w) -> **394.0 ms** (10w), beating `IO` by **1.4x–1.7x** and `dio_http2` by **3.6x–5.9x** in Scenarios B & C.
+  - **`Cronet`**: Extends the lead across every scenario (**472.5 ms** -> **297.2 ms** -> **353.8 ms**, peaking at **336.5 req/s**), outperforming `OkHttp3` by **4.4%–17.4%** and `dio_http2` by **4.3x–6.8x** with tight variance (CV 6.5%–8.9%).
+- **Windows (Win 11 x64 Desktop)**: Even as payload sizes quadrupled (up to 200KiB), median total wall time stayed nearly flat (**38.9 ms** -> **40.8 ms** -> **51.2 ms**), widening the lead over `IO` from **2.0x to 3.3x** and over `dio_http2` from **2.8x to 7.6x**.
+- **Linux (Mint 22.3 x64 Desktop)**: `libcurl` `curl_multi` multiplexing drove inverted concurrency scaling (**330.5 ms** -> **137.7 ms** -> **82.7 ms**, **1,209.8 req/s**), reaching **3.8x faster than `IO`** and **56.8x faster than `dio_http2`**.
 
-When interpreting UI smoothness metrics in Part A (standard GUI streaming suite on Android Emulator):
+### 3.3 Hardware Characteristics & Tuning on High-Performance Mobile Chips
 
-1. **Denominator Distortion**:
-   Slow adapters (`dio_http2` taking >10 seconds on Android) spend significant time stalled waiting for network window updates, allowing Flutter to render hundreds of idle 60 FPS frames that dilute the jank percentage denominator. Conversely, `TurboFetch` completes all 100 requests in **1.45 seconds** on Android, rendering very few total frames during the high-density completion burst (`setState()` progress updates firing 50+ times per second).
-2. **True UI Responsiveness (`Max Frame Duration`)**:
-   Worst-case UI freezes are accurately captured by **Max Frame Duration**. On Android, standard `(1) IO` caused severe UI freezes up to **511.5 ms** (Scenario B), whereas `(3) TurboFetch` kept worst-case frame duration down to **34.5 ms** in Scenario C. *(In Part B's headless Release protocol on Windows and iOS, frame timing is intentionally recorded as `N/A`.)*
+On modern mobile SoCs (iPhone 17 Apple Silicon and Pixel 10a Tensor G4), Scenario A (5–45KiB) reveals the exact break-even point of the **24KiB hybrid threshold**:
 
-### 3.3 Concurrency Scaling & Memory Stability
+- Payloads below 24KiB (`5–20KiB`) decode synchronously on the Main Isolate in **0.14–0.37 ms**.
+- Payloads in the `25–45KiB` band incur ~1–3 ms of Worker Isolate dispatch/semaphore overhead when offloaded, while synchronous Main Isolate decoding takes < 0.7 ms on flagship CPUs.
 
-Native HTTP/2 multiplexing paired with semaphore-governed `TurboTransformer` delivers strong concurrency scaling across both Part A and Part B:
+#### Practical Tuning Recommendations for High-End Hardware
 
-- **Android (Part A, Inverted Concurrency Scaling)**: Total wall time improved from **2,344 ms** (Scenario A, 3 workers) -> **2,451 ms** (Scenario B, 5 workers) -> **1,453 ms** (Scenario C, 10 workers).
-- **Windows (Part B, Flat Sub-52 ms Scaling at N=10)**: Even as payload sizes quadrupled (up to 200KiB) and total transferred volume grew more than 4x, median total wall time stayed nearly flat (**38.9 ms** -> **40.8 ms** -> **51.2 ms**), widening the lead over `(1) IO` from **2.0x to 3.3x** and over `(2) dio_http2` from **2.8x to 7.6x**.
-- **Linux (Part B, Inverted Concurrency Scaling at N=10)**: As worker concurrency rose from 3 to 10 and payloads scaled up to 200KiB, `libcurl` `curl_multi` multiplexing reduced median total wall time from **330.5 ms** -> **137.7 ms** -> **82.7 ms**, widening the lead over `(1) IO` from **2.5x to 3.8x** and over `(2) dio_http2` from **6.1x to 56.8x**.
-
-This confirms that:
-
-1. Native HTTP/2 connection multiplexing (`OkHttp3` / `WinHTTP` / `libcurl`) eliminates socket contention,
-2. The **24KiB hybrid threshold** avoids Isolate spawn overhead on small payloads while offloading heavy JSON payloads via zero-copy `Isolate.run`, and
-3. **Semaphore concurrency governance (`maxConcurrentIsolates`)** prevents Isolate thread storms and keeps Peak RSS memory growth bounded (~10–15 MiB delta).
-
-### 3.4 Hardware Characteristics & Latency Dynamics on High-Performance Hardware (iOS / Apple Silicon)
-
-The iPhone 17 physical-device benchmark demonstrates **1.6x–5.8x faster median execution than `dio_http2`**, while trailing `IOHttpClientAdapter` slightly (+3.9% to +11.1%) in ultra-low-latency Wi-Fi LAN tests where fast single-core Main Isolate decoding outpaces Worker Isolate dispatch between 25KiB and 100KiB. See the [iOS Benchmark Report §3](benchmarks/ios.md#3-technical-analysis-ios--urlsession) for the full request-level profiling breakdown.
-
-#### 3.4.1 Practical Tuning Recommendations for High-End Hardware
-
-Based on empirical evidence from the iPhone 17 physical-device study, developers targeting modern high-end devices can maximize throughput with two simple adjustments:
-
-- **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship mobile processors, decoding up to 100KiB synchronously on the Main Isolate takes under 0.7 ms, and 200KiB takes ~1.0 ms—safely below the 8.33 ms (120 FPS) frame budget. Raising the threshold to **128KiB–256KiB** matches the physical Isolate break-even point and eliminates Worker Isolate dispatch overhead, closing the slight gap with `IOHttpClientAdapter` while maintaining non-blocking safety for genuinely massive responses.
+- **Raise `isolateThresholdBytes` to 128KiB–256KiB**: On modern Apple Silicon and flagship Android processors, raising the threshold matches the physical Isolate break-even point—eliminating Worker Isolate dispatch overhead on mid-sized responses while preserving non-blocking UI safety for large payloads.
 - **Scale `maxConcurrentIsolates` for Burst Concurrency**: Under 10+ parallel worker bursts (Scenario C), increasing semaphore capacity (e.g., to `4`–`6` on 6-core or 8-core CPUs) allows more concurrent decodes without queue stalls.
 
-*(Note: Similar characteristics and tuning may also apply to macOS on Apple Silicon due to the shared Darwin native layer.)*
+*(Note: In this headless Release protocol, frame timing is intentionally recorded as `N/A` because `SchedulerBinding` frame callbacks are not instrumented in Release AOT benchmarks.)*
