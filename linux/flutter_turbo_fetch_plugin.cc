@@ -199,6 +199,9 @@ void FlutterTurboFetchPlugin::Shutdown() {
   if (executor_) {
     executor_->Shutdown();
   }
+  if (owned_session_manager_) {
+    owned_session_manager_->Shutdown();
+  }
 }
 
 void FlutterTurboFetchPlugin::Execute(

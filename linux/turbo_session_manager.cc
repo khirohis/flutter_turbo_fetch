@@ -32,59 +32,43 @@ TurboSessionManager::~TurboSessionManager() {
   EnsureCurlGlobalCleanup();
 }
 
-void TurboSessionManager::LockCallback(CURL* /*handle*/, curl_lock_data data,
-                                       curl_lock_access /*access*/, void* userptr) {
-  auto* self = static_cast<TurboSessionManager*>(userptr);
-  if (data < CURL_LOCK_DATA_LAST) {
-    self->share_mutexes_[data].lock();
-  }
-}
-
-void TurboSessionManager::UnlockCallback(CURL* /*handle*/, curl_lock_data data,
-                                         void* userptr) {
-  auto* self = static_cast<TurboSessionManager*>(userptr);
-  if (data < CURL_LOCK_DATA_LAST) {
-    self->share_mutexes_[data].unlock();
-  }
-}
-
-void TurboSessionManager::InitializeShareHandleLocked() {
-  if (share_handle_ != nullptr) {
+void TurboSessionManager::InitializeMultiHandleLocked() {
+  if (multi_handle_ != nullptr) {
     return;
   }
 
-  share_handle_ = curl_share_init();
-  if (share_handle_ == nullptr) {
+  multi_handle_ = curl_multi_init();
+  if (multi_handle_ == nullptr) {
     return;
   }
 
-  curl_share_setopt(share_handle_, CURLSHOPT_USERDATA, this);
-  curl_share_setopt(share_handle_, CURLSHOPT_LOCKFUNC, &TurboSessionManager::LockCallback);
-  curl_share_setopt(share_handle_, CURLSHOPT_UNLOCKFUNC, &TurboSessionManager::UnlockCallback);
-
-  // Enable HTTP/2 connection reuse, DNS cache, and SSL session reuse
-  curl_share_setopt(share_handle_, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
-  curl_share_setopt(share_handle_, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
-  curl_share_setopt(share_handle_, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-
+  // Enable HTTP/2 stream multiplexing across the single event-loop connection pool.
+  curl_multi_setopt(multi_handle_, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
   is_shutdown_ = false;
 }
 
-CURLSH* TurboSessionManager::AcquireShareHandle() {
+CURLM* TurboSessionManager::AcquireMultiHandle() {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  if (share_handle_ == nullptr || is_shutdown_) {
-    InitializeShareHandleLocked();
+  if (multi_handle_ == nullptr || is_shutdown_) {
+    InitializeMultiHandleLocked();
   }
 
-  return share_handle_;
+  return multi_handle_;
+}
+
+void TurboSessionManager::Wakeup() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (multi_handle_ != nullptr && !is_shutdown_) {
+    curl_multi_wakeup(multi_handle_);
+  }
 }
 
 void TurboSessionManager::Shutdown() {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (share_handle_ != nullptr) {
-    curl_share_cleanup(share_handle_);
-    share_handle_ = nullptr;
+  if (multi_handle_ != nullptr) {
+    curl_multi_cleanup(multi_handle_);
+    multi_handle_ = nullptr;
   }
   is_shutdown_ = true;
 }
