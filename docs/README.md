@@ -10,8 +10,8 @@ For internal specifications and agent instructions (maintained in Japanese), ref
 ## Technical Documents
 
 - **[Design Rationale (`design-rationale.md`)](design-rationale.md)**:
-  Detailed analysis of the three fundamental bottlenecks in mobile networking, evaluation of existing `pub.dev` packages, and technical justification of the four core design principles.
+  Detailed analysis of the three fundamental bottlenecks in mobile networking, evaluation of existing `pub.dev` packages, and technical justification of the core design principles.
 - **[Benchmark Results & Analysis (`benchmark-results.md`)](benchmark-results.md)**:
-  Cross-platform executive summary and common evaluation methodology, accompanied by platform-specific empirical benchmark reports under `docs/benchmarks/` (Android, Windows, iOS, etc.).
+  Cross-platform executive summary and common evaluation methodology, accompanied by platform-specific empirical benchmark reports under `docs/benchmarks/` (Android, iOS, Windows, and Linux).
 - **[TurboTransformer & TurboOptions Guide (`turbo-transformer.md`)](turbo-transformer.md)**:
   Architecture overview, JSON usage examples, and conceptual sketches of zero-copy Isolate transformations, fused decoders, and semaphore concurrency governance.

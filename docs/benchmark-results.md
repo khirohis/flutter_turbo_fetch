@@ -26,7 +26,7 @@ All benchmark scenarios evaluate three adapter and transformer combinations back
 
 > [!NOTE]
 > **Why `native_dio_adapter` is excluded**:
-> `native_dio_adapter` (`cronet_http` / `cupertino_http`) does not support bypassing self-signed certificate validation (`allowBadCertificates`) on Android Cronet and falls back to standard `IOHttpClientAdapter` on Windows desktop. For an architectural analysis of `native_dio_adapter`, see [`docs/design-rationale.md`](design-rationale.md).
+> `native_dio_adapter` (`cronet_http` / `cupertino_http`) falls back to standard `IOHttpClientAdapter` on desktop platforms (Windows and Linux) and does not support `allowBadCertificates` on Android Cronet, making it unsuitable for a uniform cross-platform benchmark matrix against standard Dio adapters. For an architectural analysis of `native_dio_adapter`, see [`docs/design-rationale.md`](design-rationale.md).
 
 ### 1.2 Workload Scenarios (10-Round Payload Sweeps)
 
@@ -123,7 +123,7 @@ Every evaluated platform below uses the **controlled split-pipeline protocol** t
 
 ### 3.1 Native Batch Reception vs. Pure-Dart HTTP/2 Streaming
 
-Across every tested OS and hardware class (Android, Windows, Linux, iOS), pure-Dart `dio_http2` collapses under concurrent HTTP/2 workloads (4.3x–56.8x slower than `TurboFetch` in Scenarios B & C) because 5–10 parallel HTTP/2 streams compete on Dart's single event loop and stall on its hardcoded 64KiB initial receive window.
+Across every tested OS and hardware class (Android, Windows, Linux, iOS), pure-Dart `dio_http2` collapses under concurrent HTTP/2 workloads (3.2x–56.8x slower than `TurboFetch` in Scenarios B & C) because 5–10 parallel HTTP/2 streams compete on Dart's single event loop and stall on its hardcoded 64KiB initial receive window.
 
 By contrast, `TurboFetch` offloads TLS decryption, HTTP/2 `DATA` frame reassembly, and decompression into platform-native background engines (`OkHttp3` / `Cronet` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` `curl_multi` on Linux), returning a single contiguous `Uint8List` via Pigeon once per request.
 
@@ -134,6 +134,7 @@ By contrast, `TurboFetch` offloads TLS decryption, HTTP/2 `DATA` frame reassembl
   - **`Cronet`**: Extends the lead across every scenario (**472.5 ms** -> **297.2 ms** -> **353.8 ms**, peaking at **336.5 req/s**), outperforming `OkHttp3` by **4.4%–17.4%** and `dio_http2` by **4.3x–6.8x** with tight variance (CV 6.5%–8.9%).
 - **Windows (Win 11 x64 Desktop)**: Even as payload sizes quadrupled (up to 200KiB), median total wall time stayed nearly flat (**38.9 ms** -> **40.8 ms** -> **51.2 ms**), widening the lead over `IO` from **2.0x to 3.3x** and over `dio_http2` from **2.8x to 7.6x**.
 - **Linux (Mint 22.3 x64 Desktop)**: `libcurl` `curl_multi` multiplexing drove inverted concurrency scaling (**330.5 ms** -> **137.7 ms** -> **82.7 ms**, **1,209.8 req/s**), reaching **3.8x faster than `IO`** and **56.8x faster than `dio_http2`**.
+- **iOS (iPhone 17, Wi-Fi LAN)**: `URLSession` sustained steady wall-clock times (**462.0 ms** -> **411.8 ms** -> **454.2 ms**, peaking at **242.8 req/s**), outperforming `dio_http2` by **1.6x–5.8x** while tracking `IO` closely (**0.90x–0.96x**) over low-latency LAN with native HTTP/2 multiplexing.
 
 ### 3.3 Hardware Characteristics & Tuning on High-Performance Mobile Chips
 
