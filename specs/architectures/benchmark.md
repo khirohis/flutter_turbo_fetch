@@ -1,6 +1,6 @@
 # ベンチマーク・性能検証仕様（`benchmark.md`）
 
-> 実測結果および技術評価レポートについては [`docs/benchmark-results.md`](../../docs/benchmark-results.md) および [`docs/benchmarks/`](../../docs/benchmarks/)（[`android.md`](../../docs/benchmarks/android.md), [`windows.md`](../../docs/benchmarks/windows.md), [`ios.md`](../../docs/benchmarks/ios.md)）を参照。
+> 実測結果および技術評価レポートについては [`docs/benchmark-results.md`](../../docs/benchmark-results.md) および [`docs/benchmarks/`](../../docs/benchmarks/)（[`android.md`](../../docs/benchmarks/android.md), [`windows.md`](../../docs/benchmarks/windows.md), [`linux.md`](../../docs/benchmarks/linux.md), [`ios.md`](../../docs/benchmarks/ios.md)）を参照。
 
 ---
 
@@ -31,7 +31,7 @@
 ### 1.3 計測プロトコル体系
 
 1. **分割パイプライン厳密プロトコル（標準プロトコル）**:
-   - **適用方針**: iOS 実機検証で確立した共通標準仕様。Windows 再計測および今後の Linux / macOS 計測・Android（`OkHttp3` / `Cronet` 個別計測）でも本プロトコルを採用する（集計は `tool/benchmark/` の共通 CLI ツールを使用。`plot_benchmark.py` による比較グラフ生成は任意・デフォルト不要）。
+   - **適用方針**: iOS 実機検証で確立した共通標準仕様。Windows・Linux 計測および今後の macOS 計測・Android（`OkHttp3` / `Cronet` 個別計測）でも本プロトコルを採用する（集計は `tool/benchmark/` の共通 CLI ツールを使用。`plot_benchmark.py` による比較グラフ生成は任意・デフォルト不要）。
    - **計測方式**: 全方式で `ResponseType.bytes` により全バイト受信完了までを **Net Time**、受信済み生バイト列に対するデコード・オフロード待ち時間を **Parse Time** として厳密に分離計測する。
    - **統計・監査**: **ウォームアップ 1 試行 ＋ 本測定 10 試行（N=10）** をラウンドロビン順で実行して熱スロットリングやキャッシュ偏りを排除し、サーバー側の独立イベントログと 1 リクエスト単位で照合・監査する。
    - **構造化ログ・メタデータ共通仕様**:
@@ -117,5 +117,16 @@
            --dart-define=BENCHMARK_SOURCE_SHA=<HEAD_SHA>
          ```
        - `build/windows/x64/runner/Release/flutter_turbo_fetch_example.exe` を起動して `session_complete` まで実行し、`%TEMP%\turbo-benchmark.jsonl` とサーバーログを `python tool/benchmark/export_benchmark.py <device_log> <server_log> tool/benchmark/data/windows/<YYYY-MM-DD>` へ渡して検証・集計する。
+     - **Linux Desktop（ローカルループバック）**:
+       - 一時ディレクトリ（例: `/tmp/turbo-linux-bench`）に SAN（`DNS:localhost,IP:127.0.0.1`）付きの自己署名証明書を生成し、`HOST=127.0.0.1 PORT=8443 REQUIRE_TLS=1 BENCHMARK_LOG=1` でモックサーバーを起動してログを保存する。
+       - `example/` ディレクトリで Release ビルドを実行する：
+         ```bash
+         fvm flutter build linux --release -t lib/main.dart \
+           --dart-define=BENCHMARK_BASE_URL=https://127.0.0.1:8443 \
+           --dart-define=BENCHMARK_LOCAL_TLS=true \
+           --dart-define=BENCHMARK_ENGINE=libcurl \
+           --dart-define=BENCHMARK_SOURCE_SHA=$(git rev-parse HEAD)
+         ```
+       - `build/linux/x64/release/bundle/flutter_turbo_fetch_example` を起動して `session_complete` まで実行し、`/tmp/turbo-benchmark.jsonl` とサーバーログを `python3 tool/benchmark/export_benchmark.py <device_log> <server_log> tool/benchmark/data/linux/<YYYY-MM-DD>` へ渡して検証・集計する。
      - **デスクトップ（Windows / Linux / macOS）自動実行時の終了検知**:
        - `VerifiedBenchmarkApp` は完了後もウィンドウを開いたまま待機するため、自動実行時は `Directory.systemTemp`（Windows は `%TEMP%`、Linux / macOS は `/tmp`）配下の `turbo-benchmark.jsonl` に `"type":"session_complete"`（または `"type":"session_failed"`）が出力されたことを検知してアプリおよびモックサーバーを停止する。

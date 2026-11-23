@@ -8,7 +8,7 @@ For detailed platform-specific measurement environments, full scenario tables, a
 - 🪟 **[Windows Benchmark Report (`docs/benchmarks/windows.md`)](benchmarks/windows.md)** — Windows 11 x64 Desktop Release, `WinHTTP` + OS Thread Pool (Split-Pipeline Rigorous Protocol, N=10)
 - 🍎 **[iOS Benchmark Report (`docs/benchmarks/ios.md`)](benchmarks/ios.md)** — iPhone 17 Physical Device Release, `URLSession` (Split-Pipeline Rigorous Protocol, N=10)
 - 💻 **macOS Benchmark Report (`docs/benchmarks/macos.md`)** *(Planned)*
-- 🐧 **Linux Benchmark Report (`docs/benchmarks/linux.md`)** *(Planned)*
+- 🐧 **[Linux Benchmark Report (`docs/benchmarks/linux.md`)](benchmarks/linux.md)** — Linux Mint 22.3 (Ubuntu 24.04) x64 Desktop Release, `libcurl` (`curl_multi`, Split-Pipeline Rigorous Protocol, N=10)
 
 ---
 
@@ -64,11 +64,11 @@ Due to differing measurement protocols, empirical results are strictly separated
 
 ---
 
-### 2.2 Part B: Split-Pipeline Rigorous Protocol (Windows & iOS)
+### 2.2 Part B: Split-Pipeline Rigorous Protocol (Windows, Linux & iOS)
 
 > [!IMPORTANT]
 > **Measurement Isolation & Protocol Divergence**:
-> The Windows Desktop and iOS physical-device evaluations employ a **controlled split-pipeline protocol** to eliminate timing asymmetries: every adapter receives the full body as bytes (`ResponseType.bytes`) before passing them to its JSON transformer. Each evaluation executes **1 warmup trial + 10 measured trials (N=10) with round-robin rotation** and 1:1 server event validation. **These metrics cannot be directly compared against Part A's phase values.**
+> The Windows Desktop, Linux Desktop, and iOS physical-device evaluations employ a **controlled split-pipeline protocol** to eliminate timing asymmetries: every adapter receives the full body as bytes (`ResponseType.bytes`) before passing them to its JSON transformer. Each evaluation executes **1 warmup trial + 10 measured trials (N=10) with round-robin rotation** and 1:1 server event validation. **These metrics cannot be directly compared against Part A's phase values.**
 
 #### 2.2.1 Total Wall-Clock Time & Throughput (10 Measured Trials Median)
 
@@ -77,6 +77,9 @@ Due to differing measurement protocols, empirical results are strictly separated
 | **Windows**<br>*(Win 11 x64 Desktop)* | **Scenario A** (90 req, 3 workers) | 77.9 ms | 108.6 ms | **38.9 ms** | 2,313.5 req/s | **2.0x / 2.8x faster** | [Windows Report](benchmarks/windows.md) |
 | | **Scenario B** (100 req, 5 workers) | 111.7 ms | 234.1 ms | **40.8 ms** | 2,451.5 req/s | **2.7x / 5.7x faster** | [Windows Report](benchmarks/windows.md) |
 | | **Scenario C** (100 req, 10 workers) | 169.9 ms | 390.9 ms | **51.2 ms** | 1,954.6 req/s | **3.3x / 7.6x faster** | [Windows Report](benchmarks/windows.md) |
+| **Linux**<br>*(Mint 22.3 x64 Desktop)* | **Scenario A** (90 req, 3 workers) | 841.8 ms | 2,032.0 ms | **330.5 ms** | 272.4 req/s | **2.5x / 6.1x faster** | [Linux Report](benchmarks/linux.md) |
+| | **Scenario B** (100 req, 5 workers) | 442.3 ms | 2,489.3 ms | **137.7 ms** | 726.6 req/s | **3.2x / 18.1x faster** | [Linux Report](benchmarks/linux.md) |
+| | **Scenario C** (100 req, 10 workers) | 318.0 ms | 4,698.2 ms | **82.7 ms** | 1,209.8 req/s | **3.8x / 56.8x faster** | [Linux Report](benchmarks/linux.md) |
 | **iOS**<br>*(iPhone 17 Physical Device)* | **Scenario A** (90 req, 3 workers) | 444.8 ms | 724.0 ms | **462.0 ms** | 194.8 req/s | **0.96x / 1.6x faster** | [iOS Report](benchmarks/ios.md) |
 | | **Scenario B** (100 req, 5 workers) | 370.5 ms | 1,329.5 ms | **411.8 ms** | 242.8 req/s | **0.90x / 3.2x faster** | [iOS Report](benchmarks/ios.md) |
 | | **Scenario C** (100 req, 10 workers) | 429.9 ms | 2,629.9 ms | **454.2 ms** | 220.2 req/s | **0.95x / 5.8x faster** | [iOS Report](benchmarks/ios.md) |
@@ -94,6 +97,15 @@ Due to differing measurement protocols, empirical results are strictly separated
 | | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 14.75 ms | 1.43 ms | 16.18 ms |
 | | | (2) dio_http2 | 36.45 ms | 1.33 ms | 37.78 ms |
 | | | **(3) TurboFetch** | **3.18 ms** | **0.91 ms** | **4.09 ms** |
+| **Linux** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 27.54 ms | 0.29 ms | 27.83 ms |
+| | | (2) dio_http2 | 74.28 ms | 0.29 ms | 74.57 ms |
+| | | **(3) TurboFetch** | **9.66 ms** | **1.63 ms** | **11.29 ms** |
+| | **Scenario B** (10–100KiB) | (1) IO (HTTP/1.1) | 19.80 ms | 1.23 ms | 21.03 ms |
+| | | (2) dio_http2 | 117.12 ms | 1.45 ms | 118.57 ms |
+| | | **(3) TurboFetch** | **5.24 ms** | **1.52 ms** | **6.76 ms** |
+| | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 26.21 ms | 1.61 ms | 27.82 ms |
+| | | (2) dio_http2 | 466.10 ms | 2.49 ms | 468.59 ms |
+| | | **(3) TurboFetch** | **5.07 ms** | **1.87 ms** | **6.94 ms** |
 | **iOS** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 14.07 ms | 0.35 ms | 14.42 ms |
 | | | (2) dio_http2 | 24.23 ms | 0.40 ms | 24.63 ms |
 | | | **(3) TurboFetch** | **14.35 ms** | **0.70 ms** | **15.05 ms** |
@@ -136,10 +148,11 @@ Native HTTP/2 multiplexing paired with semaphore-governed `TurboTransformer` del
 
 - **Android (Part A, Inverted Concurrency Scaling)**: Total wall time improved from **2,344 ms** (Scenario A, 3 workers) -> **2,451 ms** (Scenario B, 5 workers) -> **1,453 ms** (Scenario C, 10 workers).
 - **Windows (Part B, Flat Sub-52 ms Scaling at N=10)**: Even as payload sizes quadrupled (up to 200KiB) and total transferred volume grew more than 4x, median total wall time stayed nearly flat (**38.9 ms** -> **40.8 ms** -> **51.2 ms**), widening the lead over `(1) IO` from **2.0x to 3.3x** and over `(2) dio_http2` from **2.8x to 7.6x**.
+- **Linux (Part B, Inverted Concurrency Scaling at N=10)**: As worker concurrency rose from 3 to 10 and payloads scaled up to 200KiB, `libcurl` `curl_multi` multiplexing reduced median total wall time from **330.5 ms** -> **137.7 ms** -> **82.7 ms**, widening the lead over `(1) IO` from **2.5x to 3.8x** and over `(2) dio_http2` from **6.1x to 56.8x**.
 
 This confirms that:
 
-1. Native HTTP/2 connection multiplexing (`OkHttp3` / `WinHTTP`) eliminates socket contention,
+1. Native HTTP/2 connection multiplexing (`OkHttp3` / `WinHTTP` / `libcurl`) eliminates socket contention,
 2. The **24KiB hybrid threshold** avoids Isolate spawn overhead on small payloads while offloading heavy JSON payloads via zero-copy `Isolate.run`, and
 3. **Semaphore concurrency governance (`maxConcurrentIsolates`)** prevents Isolate thread storms and keeps Peak RSS memory growth bounded (~10–15 MiB delta).
 
