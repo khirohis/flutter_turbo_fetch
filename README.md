@@ -25,17 +25,17 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Flutter** | `>= 3.24.0` | Supported |
 | **Dart** | `>= 3.5.0` | Supported |
 | **Dio** | `^5.4.0` | Supported |
-| **Android** | `minSdk = 24` (Android 7.0+) • `OkHttp3` (default) or `Cronet` | Tested & Benchmarked |
+| **Android** | `minSdk = 24` (Android 7.0+) • `OkHttp3` (default) or `Cronet` | Tested & Benchmarked (Pixel 10a, OkHttp3 & Cronet) |
 | **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested & Benchmarked (iPhone 17, Release) |
 | **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
-| **Linux** | `Ubuntu 20.04+ / Debian 11+` (64-bit) • `libcurl` | Tested (Benchmarking Pending) |
+| **Linux** | `Ubuntu 20.04+ / Debian 11+` (64-bit) • `libcurl` | Tested & Benchmarked |
 | **Web** | Not Supported | Out of Scope |
 
 > [!NOTE]
 >
-> - **iOS Status**: A physical-device Release [benchmark report](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/ios.md) documents measured tradeoffs and protocol details.
-> - **macOS & Linux Status**: Native implementations are complete and unit/integration-tested; formal end-to-end performance benchmarking reports are pending.
+> - **Mobile & Desktop Benchmarks**: Split-pipeline rigorous Release benchmarks (`N=10` trials + 1:1 server audit) are published for [Android (`OkHttp3` & `Cronet`)](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/android.md), [iOS](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/ios.md), [Windows](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/windows.md), and [Linux](https://github.com/khirohis/flutter_turbo_fetch/blob/main/docs/benchmarks/linux.md).
+> - **macOS Status**: Native implementation is complete and unit/integration-tested; formal end-to-end performance benchmarking report is pending.
 > - **Web**: Web is not supported due to native OS transport requirements.
 
 ---
