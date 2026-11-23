@@ -31,7 +31,7 @@
 ### 1.3 計測プロトコル体系
 
 1. **分割パイプライン厳密プロトコル（標準プロトコル）**:
-   - **適用方針**: iOS 実機検証で確立した共通標準仕様。Windows 再計測および今後の Linux / macOS 計測・Android（`OkHttp3` / `Cronet` 個別計測）でも本プロトコルを採用する（集計は `tool/benchmark/` の共通 CLI ツールを使用）。
+   - **適用方針**: iOS 実機検証で確立した共通標準仕様。Windows 再計測および今後の Linux / macOS 計測・Android（`OkHttp3` / `Cronet` 個別計測）でも本プロトコルを採用する（集計は `tool/benchmark/` の共通 CLI ツールを使用。`plot_benchmark.py` による比較グラフ生成は任意・デフォルト不要）。
    - **計測方式**: 全方式で `ResponseType.bytes` により全バイト受信完了までを **Net Time**、受信済み生バイト列に対するデコード・オフロード待ち時間を **Parse Time** として厳密に分離計測する。
    - **統計・監査**: **ウォームアップ 1 試行 ＋ 本測定 10 試行（N=10）** をラウンドロビン順で実行して熱スロットリングやキャッシュ偏りを排除し、サーバー側の独立イベントログと 1 リクエスト単位で照合・監査する。
    - **構造化ログ・メタデータ共通仕様**:
@@ -117,3 +117,5 @@
            --dart-define=BENCHMARK_SOURCE_SHA=<HEAD_SHA>
          ```
        - `build/windows/x64/runner/Release/flutter_turbo_fetch_example.exe` を起動して `session_complete` まで実行し、`%TEMP%\turbo-benchmark.jsonl` とサーバーログを `python tool/benchmark/export_benchmark.py <device_log> <server_log> tool/benchmark/data/windows/<YYYY-MM-DD>` へ渡して検証・集計する。
+     - **デスクトップ（Windows / Linux / macOS）自動実行時の終了検知**:
+       - `VerifiedBenchmarkApp` は完了後もウィンドウを開いたまま待機するため、自動実行時は `Directory.systemTemp`（Windows は `%TEMP%`、Linux / macOS は `/tmp`）配下の `turbo-benchmark.jsonl` に `"type":"session_complete"`（または `"type":"session_failed"`）が出力されたことを検知してアプリおよびモックサーバーを停止する。
