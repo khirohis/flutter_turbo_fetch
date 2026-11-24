@@ -6,7 +6,7 @@ For detailed platform-specific measurement environments, full scenario tables, a
 
 - 🤖 **[Android Benchmark Report (`docs/benchmarks/android.md`)](benchmarks/android.md)** — Pixel 10a Physical Device Release, `OkHttp3` & `Cronet` (Split-Pipeline Rigorous Protocol, N=10)
 - 🪟 **[Windows Benchmark Report (`docs/benchmarks/windows.md`)](benchmarks/windows.md)** — Windows 11 x64 Desktop Release, `WinHTTP` + OS Thread Pool (Split-Pipeline Rigorous Protocol, N=10)
-- 🍎 **[iOS Benchmark Report (`docs/benchmarks/ios.md`)](benchmarks/ios.md)** — iPhone 17 Physical Device Release, `URLSession` (Split-Pipeline Rigorous Protocol, N=10)
+- 🍎 **[iOS Benchmark Report (`docs/benchmarks/ios.md`)](benchmarks/ios.md)** — iPhone 17 & iPhone 6s Physical Device Release, `URLSession` (Split-Pipeline Rigorous Protocol, N=10)
 - 💻 **macOS Benchmark Report (`docs/benchmarks/macos.md`)** *(Planned)*
 - 🐧 **[Linux Benchmark Report (`docs/benchmarks/linux.md`)](benchmarks/linux.md)** — Linux Mint 22.3 (Ubuntu 24.04) x64 Desktop Release, `libcurl` (`curl_multi`, Split-Pipeline Rigorous Protocol, N=10)
 
@@ -66,6 +66,9 @@ Every evaluated platform below uses the **controlled split-pipeline protocol** t
 | **iOS**<br>*(iPhone 17, Wi-Fi LAN)* | **Scenario A** (90 req, 3w) | 444.8 ms | 724.0 ms | **462.0 ms** | 194.8 req/s | **0.96x / 1.6x faster** | [iOS Report](benchmarks/ios.md) |
 | | **Scenario B** (100 req, 5w) | 370.5 ms | 1,329.5 ms | **411.8 ms** | 242.8 req/s | **0.90x / 3.2x faster** | [iOS Report](benchmarks/ios.md) |
 | | **Scenario C** (100 req, 10w) | 429.9 ms | 2,629.9 ms | **454.2 ms** | 220.2 req/s | **0.95x / 5.8x faster** | [iOS Report](benchmarks/ios.md) |
+| **iOS**<br>*(iPhone 6s, Wi-Fi LAN)* | **Scenario A** (90 req, 3w) | 531.0 ms | 662.9 ms | **524.4 ms** | 171.7 req/s | **1.01x / 1.3x faster** | [iOS Report](benchmarks/ios.md) |
+| | **Scenario B** (100 req, 5w) | 705.4 ms | 1,244.3 ms | **621.8 ms** | 160.8 req/s | **1.13x / 2.0x faster** | [iOS Report](benchmarks/ios.md) |
+| | **Scenario C** (100 req, 10w) | 1,089.3 ms | 2,333.1 ms | **825.7 ms** | 121.3 req/s | **1.32x / 2.8x faster** | [iOS Report](benchmarks/ios.md) |
 
 ### 2.2 Phase Latency Breakdown (Per-Request Median: Network Time vs. Parse Time)
 
@@ -107,7 +110,7 @@ Every evaluated platform below uses the **controlled split-pipeline protocol** t
 | | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 26.21 ms | 1.61 ms | 27.82 ms |
 | | | (2) dio_http2 | 466.10 ms | 2.49 ms | 468.59 ms |
 | | | **(3) TurboFetch** | **5.07 ms** | **1.87 ms** | **6.94 ms** |
-| **iOS** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 14.07 ms | 0.35 ms | 14.42 ms |
+| **iOS (iPhone 17)** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 14.07 ms | 0.35 ms | 14.42 ms |
 | | | (2) dio_http2 | 24.23 ms | 0.40 ms | 24.63 ms |
 | | | **(3) TurboFetch** | **14.35 ms** | **0.70 ms** | **15.05 ms** |
 | | **Scenario B** (10–100KiB) | (1) IO (HTTP/1.1) | 16.90 ms | 0.47 ms | 17.37 ms |
@@ -116,6 +119,15 @@ Every evaluated platform below uses the **controlled split-pipeline protocol** t
 | | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 39.22 ms | 0.62 ms | 39.84 ms |
 | | | (2) dio_http2 | 257.67 ms | 2.43 ms | 260.10 ms |
 | | | **(3) TurboFetch** | **41.34 ms** | **1.65 ms** | **42.99 ms** |
+| **iOS (iPhone 6s)** | **Scenario A** (5–45KiB) | (1) IO (HTTP/1.1) | 14.90 ms | 0.51 ms | 15.41 ms |
+| | | (2) dio_http2 | 19.04 ms | 0.51 ms | 19.55 ms |
+| | | **(3) TurboFetch** | **14.21 ms** | **1.15 ms** | **15.36 ms** |
+| | **Scenario B** (10–100KiB) | (1) IO (HTTP/1.1) | 28.90 ms | 2.66 ms | 31.56 ms |
+| | | (2) dio_http2 | 58.36 ms | 2.50 ms | 60.86 ms |
+| | | **(3) TurboFetch** | **24.46 ms** | **2.34 ms** | **26.80 ms** |
+| | **Scenario C** (20–200KiB) | (1) IO (HTTP/1.1) | 91.20 ms | 6.09 ms | 97.29 ms |
+| | | (2) dio_http2 | 220.68 ms | 4.57 ms | 225.25 ms |
+| | | **(3) TurboFetch** | **59.11 ms** | **6.61 ms** | **65.72 ms** |
 
 ---
 
@@ -123,7 +135,7 @@ Every evaluated platform below uses the **controlled split-pipeline protocol** t
 
 ### 3.1 Native Batch Reception vs. Pure-Dart HTTP/2 Streaming
 
-Across every tested OS and hardware class (Android, Windows, Linux, iOS), pure-Dart `dio_http2` collapses under concurrent HTTP/2 workloads (3.2x–56.8x slower than `TurboFetch` in Scenarios B & C) because 5–10 parallel HTTP/2 streams compete on Dart's single event loop and stall on its hardcoded 64KiB initial receive window.
+Across every tested OS and hardware class (Android, Windows, Linux, iOS), pure-Dart `dio_http2` collapses under concurrent HTTP/2 workloads (2.0x–56.8x slower than `TurboFetch` in Scenarios B & C) because 5–10 parallel HTTP/2 streams compete on Dart's single event loop and stall on its hardcoded 64KiB initial receive window.
 
 By contrast, `TurboFetch` offloads TLS decryption, HTTP/2 `DATA` frame reassembly, and decompression into platform-native background engines (`OkHttp3` / `Cronet` on Android, `URLSession` on iOS/macOS, `WinHTTP` on Windows, `libcurl` `curl_multi` on Linux), returning a single contiguous `Uint8List` via Pigeon once per request.
 
@@ -134,7 +146,9 @@ By contrast, `TurboFetch` offloads TLS decryption, HTTP/2 `DATA` frame reassembl
   - **`Cronet`**: Extends the lead across every scenario (**472.5 ms** -> **297.2 ms** -> **353.8 ms**, peaking at **336.5 req/s**), outperforming `OkHttp3` by **4.4%–17.4%** and `dio_http2` by **4.3x–6.8x** with tight variance (CV 6.5%–8.9%).
 - **Windows (Win 11 x64 Desktop)**: Even as payload sizes quadrupled (up to 200KiB), median total wall time stayed nearly flat (**38.9 ms** -> **40.8 ms** -> **51.2 ms**), widening the lead over `IO` from **2.0x to 3.3x** and over `dio_http2` from **2.8x to 7.6x**.
 - **Linux (Mint 22.3 x64 Desktop)**: `libcurl` `curl_multi` multiplexing drove inverted concurrency scaling (**330.5 ms** -> **137.7 ms** -> **82.7 ms**, **1,209.8 req/s**), reaching **3.8x faster than `IO`** and **56.8x faster than `dio_http2`**.
-- **iOS (iPhone 17, Wi-Fi LAN)**: `URLSession` sustained steady wall-clock times (**462.0 ms** -> **411.8 ms** -> **454.2 ms**, peaking at **242.8 req/s**), outperforming `dio_http2` by **1.6x–5.8x** while tracking `IO` closely (**0.90x–0.96x**) over low-latency LAN with native HTTP/2 multiplexing.
+- **iOS (Wi-Fi LAN)**:
+  - **iPhone 17 (Flagship)**: `URLSession` sustained steady wall-clock times (**462.0 ms** -> **411.8 ms** -> **454.2 ms**, peaking at **242.8 req/s**), outperforming `dio_http2` by **1.6x–5.8x** while tracking `IO` closely (**0.90x–0.96x**) over low-latency LAN with native HTTP/2 multiplexing.
+  - **iPhone 6s (Legacy / Entry-Tier)**: `TurboFetch` won every scenario (**524.4 ms** -> **621.8 ms** -> **825.7 ms**), widening its lead over `IO` to **1.13x** in Scenario B and **1.32x** in Scenario C (and **2.0x–2.8x faster than `dio_http2`**) as native `URLSession` multiplexing relieved CPU contention on the dual-core A9.
 
 ### 3.3 Hardware Characteristics & Tuning on High-Performance Mobile Chips
 
