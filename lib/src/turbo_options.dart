@@ -29,7 +29,89 @@ class TurboOptions<T> extends Options {
     super.requestEncoder,
     super.responseDecoder,
     super.listFormat,
-  }) : super() {
+  }) {
+    _attachExtras(mapper, maxResponseBytes);
+  }
+
+  /// Named constructor for JSON payloads.
+  ///
+  /// Automatically binds [responseType] to [ResponseType.json] and feeds the
+  /// decoded JSON structure (Map or List) into [mapper].
+  TurboOptions.json({
+    required T Function(dynamic json) mapper,
+    int? maxResponseBytes,
+    super.method,
+    super.sendTimeout,
+    super.receiveTimeout,
+    super.extra,
+    super.headers,
+    super.preserveHeaderCase,
+    super.contentType,
+    super.validateStatus,
+    super.receiveDataWhenStatusError,
+    super.followRedirects,
+    super.maxRedirects,
+    super.persistentConnection,
+    super.requestEncoder,
+    super.responseDecoder,
+    super.listFormat,
+  }) : super(responseType: ResponseType.json) {
+    _attachExtras(mapper, maxResponseBytes);
+  }
+
+  /// Named constructor for raw binary payloads (e.g. Protobuf, MessagePack, FlatBuffers).
+  ///
+  /// Automatically binds [responseType] to [ResponseType.bytes] and statically
+  /// types the [mapper] argument as [Uint8List].
+  TurboOptions.bytes({
+    required T Function(Uint8List bytes) mapper,
+    int? maxResponseBytes,
+    super.method,
+    super.sendTimeout,
+    super.receiveTimeout,
+    super.extra,
+    super.headers,
+    super.preserveHeaderCase,
+    super.contentType,
+    super.validateStatus,
+    super.receiveDataWhenStatusError,
+    super.followRedirects,
+    super.maxRedirects,
+    super.persistentConnection,
+    super.requestEncoder,
+    super.responseDecoder,
+    super.listFormat,
+  }) : super(responseType: ResponseType.bytes) {
+    _attachExtras(_wrapBytesMapper(mapper), maxResponseBytes);
+  }
+
+  /// Named constructor for plain text payloads (e.g. CSV, YAML, custom text formats).
+  ///
+  /// Automatically binds [responseType] to [ResponseType.plain] and statically
+  /// types the [mapper] argument as [String].
+  TurboOptions.plain({
+    required T Function(String text) mapper,
+    int? maxResponseBytes,
+    super.method,
+    super.sendTimeout,
+    super.receiveTimeout,
+    super.extra,
+    super.headers,
+    super.preserveHeaderCase,
+    super.contentType,
+    super.validateStatus,
+    super.receiveDataWhenStatusError,
+    super.followRedirects,
+    super.maxRedirects,
+    super.persistentConnection,
+    super.requestEncoder,
+    super.responseDecoder,
+    super.listFormat,
+  }) : super(responseType: ResponseType.plain) {
+    _attachExtras(_wrapPlainMapper(mapper), maxResponseBytes);
+  }
+
+  void _attachExtras(TurboResponseMapper<T>? mapper, int? maxResponseBytes) {
     if (mapper != null || maxResponseBytes != null) {
       extra = <String, Object?>{
         ...?extra,
@@ -40,138 +122,12 @@ class TurboOptions<T> extends Options {
     }
   }
 
-  /// Factory constructor for JSON payloads.
-  ///
-  /// Automatically binds [responseType] to [ResponseType.json] and feeds the
-  /// decoded JSON structure (Map or List) into [mapper].
-  factory TurboOptions.json({
-    required T Function(dynamic json) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: mapper,
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.json,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
-  }
+  // Kept static so the wrapping closure captures only [mapper], never `this`.
+  static TurboResponseMapper<R> _wrapBytesMapper<R>(
+    R Function(Uint8List bytes) mapper,
+  ) => (dynamic data) => mapper(data as Uint8List);
 
-  /// Factory constructor for raw binary payloads (e.g. Protobuf, MessagePack, FlatBuffers).
-  ///
-  /// Automatically binds [responseType] to [ResponseType.bytes] and statically
-  /// types the [mapper] argument as [Uint8List].
-  factory TurboOptions.bytes({
-    required T Function(Uint8List bytes) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: (dynamic data) => mapper(data as Uint8List),
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.bytes,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
-  }
-
-  /// Factory constructor for plain text payloads (e.g. CSV, YAML, custom text formats).
-  ///
-  /// Automatically binds [responseType] to [ResponseType.plain] and statically
-  /// types the [mapper] argument as [String].
-  factory TurboOptions.plain({
-    required T Function(String text) mapper,
-    int? maxResponseBytes,
-    String? method,
-    Duration? sendTimeout,
-    Duration? receiveTimeout,
-    Map<String, dynamic>? extra,
-    Map<String, dynamic>? headers,
-    bool? preserveHeaderCase,
-    String? contentType,
-    ValidateStatus? validateStatus,
-    bool? receiveDataWhenStatusError,
-    bool? followRedirects,
-    int? maxRedirects,
-    bool? persistentConnection,
-    RequestEncoder? requestEncoder,
-    ResponseDecoder? responseDecoder,
-    ListFormat? listFormat,
-  }) {
-    return TurboOptions<T>(
-      mapper: (dynamic data) => mapper(data as String),
-      maxResponseBytes: maxResponseBytes,
-      method: method,
-      sendTimeout: sendTimeout,
-      receiveTimeout: receiveTimeout,
-      extra: extra,
-      headers: headers,
-      preserveHeaderCase: preserveHeaderCase,
-      responseType: ResponseType.plain,
-      contentType: contentType,
-      validateStatus: validateStatus,
-      receiveDataWhenStatusError: receiveDataWhenStatusError,
-      followRedirects: followRedirects,
-      maxRedirects: maxRedirects,
-      persistentConnection: persistentConnection,
-      requestEncoder: requestEncoder,
-      responseDecoder: responseDecoder,
-      listFormat: listFormat,
-    );
-  }
+  static TurboResponseMapper<R> _wrapPlainMapper<R>(
+    R Function(String text) mapper,
+  ) => (dynamic data) => mapper(data as String);
 }

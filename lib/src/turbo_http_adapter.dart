@@ -100,6 +100,16 @@ class TurboHttpAdapter implements HttpClientAdapter {
     return _buildResponseBody(response);
   }
 
+  @override
+  void close({bool force = false}) {
+    _closed = true;
+    if (force) {
+      for (final requestId in _activeRequests.keys.toList()) {
+        _cancelRequest(requestId);
+      }
+    }
+  }
+
   TurboHttpRequest _buildRequest({
     required String requestId,
     required RequestOptions options,
@@ -145,8 +155,18 @@ class TurboHttpAdapter implements HttpClientAdapter {
     required bool isCancelled,
     required int? maxResponseBytes,
   }) {
-    if (response.errorCode != null) {
-      final errorCode = isCancelled ? 'cancel' : response.errorCode!;
+    if (isCancelled) {
+      final errorMessage = response.errorMessage ?? 'Request was cancelled.';
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+        message: errorMessage,
+        error: errorMessage,
+      );
+    }
+
+    final errorCode = response.errorCode;
+    if (errorCode != null) {
       final errorMessage = _resolveErrorMessage(
         errorCode: errorCode,
         rawMessage: response.errorMessage,
@@ -157,14 +177,6 @@ class TurboHttpAdapter implements HttpClientAdapter {
         type: _mapErrorCode(errorCode),
         message: errorMessage,
         error: errorMessage,
-      );
-    }
-
-    if (isCancelled) {
-      throw DioException(
-        requestOptions: options,
-        type: DioExceptionType.cancel,
-        message: 'Request was cancelled.',
       );
     }
   }
@@ -212,33 +224,13 @@ class TurboHttpAdapter implements HttpClientAdapter {
     return rawMessage;
   }
 
-  DioExceptionType _mapErrorCode(String errorCode) {
-    switch (errorCode) {
-      case 'cancel':
-        return DioExceptionType.cancel;
-      case 'connectionTimeout':
-        return DioExceptionType.connectionTimeout;
-      case 'sendTimeout':
-        return DioExceptionType.sendTimeout;
-      case 'receiveTimeout':
-        return DioExceptionType.receiveTimeout;
-      case 'badCertificate':
-        return DioExceptionType.badCertificate;
-      case 'connectionError':
-        return DioExceptionType.connectionError;
-      case 'maxResponseBytesExceeded':
-      default:
-        return DioExceptionType.unknown;
-    }
-  }
-
-  @override
-  void close({bool force = false}) {
-    _closed = true;
-    if (force) {
-      for (final requestId in _activeRequests.keys.toList()) {
-        _cancelRequest(requestId);
-      }
-    }
-  }
+  DioExceptionType _mapErrorCode(String errorCode) => switch (errorCode) {
+    'cancel' => DioExceptionType.cancel,
+    'connectionTimeout' => DioExceptionType.connectionTimeout,
+    'sendTimeout' => DioExceptionType.sendTimeout,
+    'receiveTimeout' => DioExceptionType.receiveTimeout,
+    'badCertificate' => DioExceptionType.badCertificate,
+    'connectionError' => DioExceptionType.connectionError,
+    _ => DioExceptionType.unknown,
+  };
 }
