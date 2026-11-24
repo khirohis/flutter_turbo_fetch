@@ -301,6 +301,56 @@ void main() {
           ),
         );
       });
+
+      test('close(force: true) during requestStream aggregation cancels before executeRequest, while close(force: false) completes', () async {
+        // 1. force: true during requestStream -> cancels without calling executeRequest
+        final fakeApiForce = FakeTurboFetchHostApi();
+        final adapterForce = TurboHttpAdapter(hostApi: fakeApiForce);
+        final controllerForce = StreamController<Uint8List>();
+
+        final futureForce = adapterForce.fetch(
+          RequestOptions(path: 'https://example.com/upload', method: 'POST'),
+          controllerForce.stream,
+          null,
+        );
+
+        final expectation = expectLater(
+          futureForce,
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+
+        adapterForce.close(force: true);
+        controllerForce.add(Uint8List.fromList(<int>[1, 2, 3]));
+        await controllerForce.close();
+
+        await expectation;
+        expect(fakeApiForce.requests, isEmpty);
+
+        // 2. force: false during requestStream -> allows in-flight request to complete
+        final fakeApiGraceful = FakeTurboFetchHostApi();
+        final adapterGraceful = TurboHttpAdapter(hostApi: fakeApiGraceful);
+        final controllerGraceful = StreamController<Uint8List>();
+
+        final futureGraceful = adapterGraceful.fetch(
+          RequestOptions(path: 'https://example.com/upload', method: 'POST'),
+          controllerGraceful.stream,
+          null,
+        );
+
+        adapterGraceful.close(force: false);
+        controllerGraceful.add(Uint8List.fromList(<int>[4, 5, 6]));
+        await controllerGraceful.close();
+
+        final response = await futureGraceful;
+        expect(response.statusCode, 200);
+        expect(fakeApiGraceful.requests, hasLength(1));
+      });
     });
 
     group('Cancellation', () {
@@ -366,6 +416,43 @@ void main() {
         await expectLater(
           dio.get<dynamic>(
             'https://example.com/race-cancel',
+            cancelToken: cancelToken,
+          ),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+      });
+
+      test('swallows errors thrown by hostApi.cancelRequest without leaking unhandled exceptions', () async {
+        final completer = Completer<TurboHttpResponse>();
+        final cancelToken = CancelToken();
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) {
+            scheduleMicrotask(() => cancelToken.cancel('User cancelled'));
+            return completer.future;
+          },
+          onCancel: (_) {
+            if (!completer.isCompleted) {
+              completer.complete(
+                TurboHttpResponse(
+                  errorCode: 'cancel',
+                  errorMessage: 'Cancelled',
+                ),
+              );
+            }
+            throw Exception('Simulated cancelRequest channel error');
+          },
+        );
+        final dio = createTestDio(fakeApi);
+
+        await expectLater(
+          dio.get<dynamic>(
+            'https://example.com/cancel-error',
             cancelToken: cancelToken,
           ),
           throwsA(

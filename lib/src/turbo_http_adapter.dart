@@ -51,32 +51,43 @@ class TurboHttpAdapter implements HttpClientAdapter {
       );
     }
 
-    // Aggregate request body stream into a single byte array (unbounded size)
-    Uint8List? requestBody;
-    if (requestStream != null) {
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in requestStream) {
-        builder.add(chunk);
-      }
-      requestBody = builder.takeBytes();
-    }
-
     final maxResponseBytes =
         options.extra[turboMaxResponseBytesExtraKey] as int?;
     final requestId = '$_isolatePrefix${++_requestCounter}';
-    final turboRequest = _buildRequest(
-      requestId: requestId,
-      options: options,
-      requestBody: requestBody,
-      maxResponseBytes: maxResponseBytes,
-    );
 
     _activeRequests[requestId] = false;
     final TurboHttpResponse response;
     bool isCancelled = false;
     try {
       cancelFuture?.whenComplete(() => _cancelRequest(requestId));
+
+      // Aggregate request body stream into a single byte array (unbounded size)
+      Uint8List? requestBody;
+      if (requestStream != null) {
+        final builder = BytesBuilder(copy: false);
+        await for (final chunk in requestStream) {
+          builder.add(chunk);
+        }
+        requestBody = builder.takeBytes();
+      }
+
+      if (_activeRequests[requestId] == true) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.cancel,
+          message: 'Request was cancelled.',
+        );
+      }
+
+      final turboRequest = _buildRequest(
+        requestId: requestId,
+        options: options,
+        requestBody: requestBody,
+        maxResponseBytes: maxResponseBytes,
+      );
       response = await _hostApi.executeRequest(turboRequest);
+    } on DioException {
+      rethrow;
     } catch (e, stackTrace) {
       final cancelled = _activeRequests[requestId] == true;
       throw DioException(
@@ -145,7 +156,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
   void _cancelRequest(String requestId) {
     if (_activeRequests[requestId] == false) {
       _activeRequests[requestId] = true;
-      unawaited(_hostApi.cancelRequest(requestId));
+      unawaited(_hostApi.cancelRequest(requestId).catchError((Object _) {}));
     }
   }
 

@@ -50,7 +50,15 @@ class TurboTransformer extends BackgroundTransformer {
   TurboTransformer._({
     required this.isolateThresholdBytes,
     required this.maxConcurrentIsolates,
-  }) : _semaphore = _Semaphore(maxConcurrentIsolates);
+  }) : _semaphore = _Semaphore(maxConcurrentIsolates) {
+    if (maxConcurrentIsolates < 1) {
+      throw RangeError.value(
+        maxConcurrentIsolates,
+        'maxConcurrentIsolates',
+        'Must be at least 1',
+      );
+    }
+  }
 
   @override
   Future<dynamic> transformResponse(

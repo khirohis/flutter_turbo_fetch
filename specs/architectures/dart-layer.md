@@ -65,4 +65,4 @@
 - **ゼロコピー往復転送**:
   - 閾値以上のオフロード時は、入力バイト列を `TransferableTypedData` で Worker Isolate へ `O(1)` 転送し、一次デコードと `mapper` を同一 Worker 内で連続実行した上で、最終成果物のみを `Isolate.run`（`Isolate.exit`）で `O(1)` 返却する。
 - **同時起動 Isolate 数の制限（`maxConcurrentIsolates`）**:
-  - セマフォにより同時起動数を制限する。デフォルト値は `math.max(2, Platform.numberOfProcessors - 2)`（最小保証定数 `defaultMinConcurrentIsolates = 2`）とし、UI / Raster スレッド用の CPU コアを保護する。
+  - セマフォにより同時起動数を制限する。デフォルト値は `math.max(2, Platform.numberOfProcessors - 2)`（最小保証定数 `defaultMinConcurrentIsolates = 2`）とし、UI / Raster スレッド用の CPU コアを保護する。`1` 未満が指定された場合は `RangeError` をスローする。
