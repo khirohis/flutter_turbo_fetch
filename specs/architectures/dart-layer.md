@@ -58,6 +58,8 @@
 | **`plain`** | `utf8.decode(bytes, allowMalformed: true)` | `''`（または `mapper('')`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
 | **`json`** | `utf8.decoder.fuse(json.decoder)`<br>（中間 `String` 生成なし） | `null`（または `mapper(null)`） | Main Isolate でデコード（＋指定時は `mapper`） | Worker Isolate でデコード（＋指定時は `mapper`）を一貫実行 |
 
+※ 空ボディ（0 byte）時は、`isolateThresholdBytes` の値にかかわらず Worker Isolate へオフロードせず、すべて Main Isolate で解決する。
+
 ### 3.2 Isolate オフロードとセマフォ制御
 
 - **ゼロコピー往復転送**:
