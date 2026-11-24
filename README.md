@@ -26,7 +26,7 @@ A high-performance, non-blocking networking plugin for Flutter (`package:dio`).
 | **Dart** | `>= 3.5.0` | Supported |
 | **Dio** | `^5.4.0` | Supported |
 | **Android** | `minSdk = 24` (Android 7.0+) • `OkHttp3` (default) or `Cronet` | Tested & Benchmarked (Pixel 10a, OkHttp3 & Cronet) |
-| **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested & Benchmarked (iPhone 17, Release) |
+| **iOS** | `iOS 13.0+` • `URLSession` (SPM & CocoaPods) | Tested & Benchmarked (iPhone 17 & iPhone 6s, Release) |
 | **macOS** | `macOS 10.15+` • `URLSession` (SPM & CocoaPods) | Tested (Benchmarking Pending) |
 | **Windows** | `Windows 10 (1809+)` (64-bit) • `WinHTTP` (`winhttp.dll`) | Tested & Benchmarked |
 | **Linux** | `Ubuntu 20.04+ / Debian 11+` (64-bit) • `libcurl` | Tested & Benchmarked |
@@ -204,7 +204,7 @@ Controls Isolate dispatching and thread concurrency:
 
 Under the controlled split-pipeline Release protocol (`N=10` trials + 1:1 server audit), `flutter_turbo_fetch` delivers:
 
-- **3.2x to 56.8x faster throughput than pure Dart HTTP/2 (`dio_http2`)** under concurrent workloads (Scenarios B & C), and **up to 3.8x faster than standard `IOHttpClientAdapter` (HTTP/1.1)** on desktop and Android.
+- **2.0x to 56.8x faster throughput than pure Dart HTTP/2 (`dio_http2`)** under concurrent workloads (Scenarios B & C), and **up to 3.8x faster than standard `IOHttpClientAdapter` (HTTP/1.1)** on desktop, Android, and entry-tier iOS devices (up to **1.32x** on iPhone 6s).
 - **Zero UI frame drops (60/120 FPS preserved)** during large JSON decoding and model mapping via threshold-based Worker Isolate offloading.
 - **Minimal memory footprints** via platform-native buffering (`Okio` / `Cronet` / `CFNetwork` / `WinHTTP` / `libcurl`) and zero-copy Isolate transfers.
 
