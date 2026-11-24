@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:isolate';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'messages.g.dart';
@@ -59,7 +59,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
     final TurboHttpResponse response;
     bool isCancelled = false;
     try {
-      cancelFuture?.whenComplete(() => _cancelRequest(requestId));
+      cancelFuture?.whenComplete(() => _cancelRequest(requestId)).ignore();
 
       // Aggregate request body stream into a single byte array (unbounded size)
       Uint8List? requestBody;
@@ -76,6 +76,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
           requestOptions: options,
           type: DioExceptionType.cancel,
           message: 'Request was cancelled.',
+          error: 'Request was cancelled.',
         );
       }
 
@@ -121,6 +122,13 @@ class TurboHttpAdapter implements HttpClientAdapter {
     }
   }
 
+  void _cancelRequest(String requestId) {
+    if (_activeRequests[requestId] == false) {
+      _activeRequests[requestId] = true;
+      unawaited(_hostApi.cancelRequest(requestId).catchError((Object _) {}));
+    }
+  }
+
   TurboHttpRequest _buildRequest({
     required String requestId,
     required RequestOptions options,
@@ -151,13 +159,6 @@ class TurboHttpAdapter implements HttpClientAdapter {
       allowBadCertificates: allowBadCertificates,
       maxResponseBytes: maxResponseBytes,
     );
-  }
-
-  void _cancelRequest(String requestId) {
-    if (_activeRequests[requestId] == false) {
-      _activeRequests[requestId] = true;
-      unawaited(_hostApi.cancelRequest(requestId).catchError((Object _) {}));
-    }
   }
 
   void _validateResponse(

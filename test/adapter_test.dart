@@ -464,6 +464,48 @@ void main() {
           ),
         );
       });
+
+      test('handles cancelFuture completing with an error without leaking unhandled exceptions', () async {
+        final responseCompleter = Completer<TurboHttpResponse>();
+        final cancelCompleter = Completer<void>();
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) {
+            scheduleMicrotask(
+              () => cancelCompleter.completeError(
+                Exception('Cancel trigger error'),
+              ),
+            );
+            return responseCompleter.future;
+          },
+          onCancel: (_) {
+            if (!responseCompleter.isCompleted) {
+              responseCompleter.complete(
+                TurboHttpResponse(
+                  errorCode: 'cancel',
+                  errorMessage: 'Cancelled',
+                ),
+              );
+            }
+          },
+        );
+        final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+        await expectLater(
+          adapter.fetch(
+            RequestOptions(path: 'https://example.com/cancel-future-error'),
+            null,
+            cancelCompleter.future,
+          ),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+        expect(fakeApi.cancelledRequestIds, hasLength(1));
+      });
     });
 
     group('Error handling & DioException mapping', () {
