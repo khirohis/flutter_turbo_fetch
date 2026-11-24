@@ -110,6 +110,48 @@ void main() {
         expect(responseBody.headers['server'], <String>['TurboServer/1.0']);
       });
 
+      test('handles null/non-string header entries and null response body safely', () async {
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) async => TurboHttpResponse(
+            statusCode: 204,
+            headers: <String?, Object?>{
+              null: <String>['ignored-null-key'],
+              'X-Null-Value': null,
+              'X-Mixed-List': <Object?>['v1', null, 42],
+              'X-Int-Single': 123,
+            },
+            body: null,
+          ),
+        );
+        final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+        final responseBody = await adapter.fetch(
+          RequestOptions(
+            path: 'https://example.com/edge',
+            headers: <String, Object?>{
+              'X-Omitted': null,
+              'X-Numeric-List': <Object>[1, 2],
+              'X-Numeric-Single': 99,
+            },
+          ),
+          null,
+          null,
+        );
+
+        final sent = fakeApi.lastRequest!;
+        expect(sent.headers.containsKey('X-Omitted'), isFalse);
+        expect(sent.headers['X-Numeric-List'], '1, 2');
+        expect(sent.headers['X-Numeric-Single'], '99');
+
+        expect(responseBody.headers.containsKey('x-null-value'), isFalse);
+        expect(responseBody.headers['x-mixed-list'], <String>['v1', '42']);
+        expect(responseBody.headers['x-int-single'], <String>['123']);
+
+        final chunks = await responseBody.stream.toList();
+        expect(chunks, hasLength(1));
+        expect(chunks.first, isEmpty);
+      });
+
       test('checks platform support (Android, iOS, macOS, Windows, Linux allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
         final adapter = TurboHttpAdapter();
         if (Platform.isAndroid ||

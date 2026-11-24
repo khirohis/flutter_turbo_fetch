@@ -13,6 +13,13 @@ class TurboHttpAdapter implements HttpClientAdapter {
   final bool _overridePlatformCheck;
 
   static final String _isolatePrefix = 'turbo_${Isolate.current.hashCode}_';
+  static final bool _isSupportedPlatform =
+      Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isMacOS ||
+      Platform.isWindows ||
+      Platform.isLinux;
+  static final Uint8List _emptyBytes = Uint8List(0);
   static int _requestCounter = 0;
   final _activeRequests = <String, void Function()>{};
   bool _closed = false;
@@ -38,12 +45,7 @@ class TurboHttpAdapter implements HttpClientAdapter {
       );
     }
 
-    if (!_overridePlatformCheck &&
-        !Platform.isAndroid &&
-        !Platform.isIOS &&
-        !Platform.isMacOS &&
-        !Platform.isWindows &&
-        !Platform.isLinux) {
+    if (!_overridePlatformCheck && !_isSupportedPlatform) {
       throw UnsupportedError(
         'TurboHttpAdapter is only supported on Android, iOS, macOS, Windows, and Linux.',
       );
@@ -61,15 +63,15 @@ class TurboHttpAdapter implements HttpClientAdapter {
 
     // Convert request headers
     final headers = <String?, String?>{};
-    options.headers.forEach((key, value) {
+    for (final MapEntry(:key, :value) in options.headers.entries) {
       if (value != null) {
         if (value is Iterable) {
-          headers[key] = value.map((e) => e.toString()).join(', ');
+          headers[key] = value.join(', ');
         } else {
-          headers[key] = value.toString();
+          headers[key] = value is String ? value : value.toString();
         }
       }
-    });
+    }
 
     final maxResponseBytes =
         options.extra[turboMaxResponseBytesExtraKey] as int?;
@@ -142,19 +144,27 @@ class TurboHttpAdapter implements HttpClientAdapter {
       }
 
       final responseHeaders = <String, List<String>>{};
-      response.headers?.forEach((key, rawValues) {
-        if (key != null && rawValues != null) {
-          if (rawValues is Iterable) {
-            responseHeaders[key.toLowerCase()] =
-                rawValues.whereType<Object>().map((e) => e.toString()).toList();
-          } else {
-            responseHeaders[key.toLowerCase()] = [rawValues.toString()];
+      final rawHeaders = response.headers;
+      if (rawHeaders != null) {
+        for (final MapEntry(:key, value: rawValues) in rawHeaders.entries) {
+          if (key != null && rawValues != null) {
+            final normalizedKey = key.toLowerCase();
+            if (rawValues is Iterable) {
+              responseHeaders[normalizedKey] = <String>[
+                for (final e in rawValues)
+                  if (e != null) e is String ? e : e.toString(),
+              ];
+            } else {
+              responseHeaders[normalizedKey] = <String>[
+                rawValues is String ? rawValues : rawValues.toString(),
+              ];
+            }
           }
         }
-      });
+      }
 
       return ResponseBody.fromBytes(
-        response.body ?? Uint8List(0),
+        response.body ?? _emptyBytes,
         response.statusCode ?? HttpStatus.ok,
         statusMessage: response.statusMessage,
         headers: responseHeaders,

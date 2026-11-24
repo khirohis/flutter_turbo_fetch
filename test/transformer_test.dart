@@ -163,6 +163,31 @@ void main() {
         expect(jsonEmptyMapped, 'null_payload');
       });
 
+      test('resolves empty payloads (0 bytes) on Main Isolate even when isolateThresholdBytes is 0', () async {
+        final mainIsolateName = Isolate.current.debugName;
+        final transformer = TurboTransformer(isolateThresholdBytes: 0);
+        final emptyBytes = Uint8List(0);
+
+        for (final responseType in <ResponseType>[
+          ResponseType.bytes,
+          ResponseType.plain,
+          ResponseType.json,
+        ]) {
+          final isolateName = await transformer.transformResponse(
+            TurboOptions<String?>(
+              responseType: responseType,
+              mapper: isolateNameMapper,
+            ).compose(BaseOptions(), '/empty-${responseType.name}'),
+            ResponseBody.fromBytes(emptyBytes, 200),
+          );
+          expect(
+            isolateName,
+            equals(mainIsolateName),
+            reason: 'Empty payload for $responseType must not offload to a Worker Isolate',
+          );
+        }
+      });
+
       test('consolidates multi-chunk streams for bytes, plain, and json', () async {
         final transformer = TurboTransformer();
 

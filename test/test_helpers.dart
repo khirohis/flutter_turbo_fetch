@@ -96,3 +96,6 @@ int slowWorkerMapper(dynamic data) {
   final map = data as Map<String, dynamic>;
   return map['id'] as int;
 }
+
+/// Returns the debug name of the Isolate executing this mapper.
+String? isolateNameMapper(dynamic _) => Isolate.current.debugName;

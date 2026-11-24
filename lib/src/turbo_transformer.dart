@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection' show Queue;
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:isolate';
@@ -82,7 +83,7 @@ class TurboTransformer extends BackgroundTransformer {
     if (mapper == null) {
       return bytes;
     }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
+    if (bytes.isEmpty || bytes.lengthInBytes < isolateThresholdBytes) {
       return mapper(bytes);
     }
     return await _offload(bytes, mapper);
@@ -166,7 +167,7 @@ class TurboTransformer extends BackgroundTransformer {
 class _Semaphore {
   final int maxConcurrent;
   int _permits;
-  final _queue = <Completer<void>>[];
+  final _queue = Queue<Completer<void>>();
 
   _Semaphore(this.maxConcurrent) : _permits = maxConcurrent;
 
@@ -175,7 +176,7 @@ class _Semaphore {
       _permits--;
     } else {
       final completer = Completer<void>();
-      _queue.add(completer);
+      _queue.addLast(completer);
       await completer.future;
     }
 
@@ -183,7 +184,7 @@ class _Semaphore {
       return await action();
     } finally {
       if (_queue.isNotEmpty) {
-        _queue.removeAt(0).complete();
+        _queue.removeFirst().complete();
       } else {
         _permits++;
       }
