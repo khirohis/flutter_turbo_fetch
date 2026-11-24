@@ -110,6 +110,48 @@ void main() {
         expect(responseBody.headers['server'], <String>['TurboServer/1.0']);
       });
 
+      test('handles null/non-string header entries and null response body safely', () async {
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) async => TurboHttpResponse(
+            statusCode: 204,
+            headers: <String?, Object?>{
+              null: <String>['ignored-null-key'],
+              'X-Null-Value': null,
+              'X-Mixed-List': <Object?>['v1', null, 42],
+              'X-Int-Single': 123,
+            },
+            body: null,
+          ),
+        );
+        final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+        final responseBody = await adapter.fetch(
+          RequestOptions(
+            path: 'https://example.com/edge',
+            headers: <String, Object?>{
+              'X-Omitted': null,
+              'X-Numeric-List': <Object>[1, 2],
+              'X-Numeric-Single': 99,
+            },
+          ),
+          null,
+          null,
+        );
+
+        final sent = fakeApi.lastRequest!;
+        expect(sent.headers.containsKey('X-Omitted'), isFalse);
+        expect(sent.headers['X-Numeric-List'], '1, 2');
+        expect(sent.headers['X-Numeric-Single'], '99');
+
+        expect(responseBody.headers.containsKey('x-null-value'), isFalse);
+        expect(responseBody.headers['x-mixed-list'], <String>['v1', '42']);
+        expect(responseBody.headers['x-int-single'], <String>['123']);
+
+        final chunks = await responseBody.stream.toList();
+        expect(chunks, hasLength(1));
+        expect(chunks.first, isEmpty);
+      });
+
       test('checks platform support (Android, iOS, macOS, Windows, Linux allowed; others throw UnsupportedError) when hostApi is not overridden', () async {
         final adapter = TurboHttpAdapter();
         if (Platform.isAndroid ||
@@ -259,6 +301,56 @@ void main() {
           ),
         );
       });
+
+      test('close(force: true) during requestStream aggregation cancels before executeRequest, while close(force: false) completes', () async {
+        // 1. force: true during requestStream -> cancels without calling executeRequest
+        final fakeApiForce = FakeTurboFetchHostApi();
+        final adapterForce = TurboHttpAdapter(hostApi: fakeApiForce);
+        final controllerForce = StreamController<Uint8List>();
+
+        final futureForce = adapterForce.fetch(
+          RequestOptions(path: 'https://example.com/upload', method: 'POST'),
+          controllerForce.stream,
+          null,
+        );
+
+        final expectation = expectLater(
+          futureForce,
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+
+        adapterForce.close(force: true);
+        controllerForce.add(Uint8List.fromList(<int>[1, 2, 3]));
+        await controllerForce.close();
+
+        await expectation;
+        expect(fakeApiForce.requests, isEmpty);
+
+        // 2. force: false during requestStream -> allows in-flight request to complete
+        final fakeApiGraceful = FakeTurboFetchHostApi();
+        final adapterGraceful = TurboHttpAdapter(hostApi: fakeApiGraceful);
+        final controllerGraceful = StreamController<Uint8List>();
+
+        final futureGraceful = adapterGraceful.fetch(
+          RequestOptions(path: 'https://example.com/upload', method: 'POST'),
+          controllerGraceful.stream,
+          null,
+        );
+
+        adapterGraceful.close(force: false);
+        controllerGraceful.add(Uint8List.fromList(<int>[4, 5, 6]));
+        await controllerGraceful.close();
+
+        final response = await futureGraceful;
+        expect(response.statusCode, 200);
+        expect(fakeApiGraceful.requests, hasLength(1));
+      });
     });
 
     group('Cancellation', () {
@@ -334,6 +426,85 @@ void main() {
             ),
           ),
         );
+      });
+
+      test('swallows errors thrown by hostApi.cancelRequest without leaking unhandled exceptions', () async {
+        final completer = Completer<TurboHttpResponse>();
+        final cancelToken = CancelToken();
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) {
+            scheduleMicrotask(() => cancelToken.cancel('User cancelled'));
+            return completer.future;
+          },
+          onCancel: (_) {
+            if (!completer.isCompleted) {
+              completer.complete(
+                TurboHttpResponse(
+                  errorCode: 'cancel',
+                  errorMessage: 'Cancelled',
+                ),
+              );
+            }
+            throw Exception('Simulated cancelRequest channel error');
+          },
+        );
+        final dio = createTestDio(fakeApi);
+
+        await expectLater(
+          dio.get<dynamic>(
+            'https://example.com/cancel-error',
+            cancelToken: cancelToken,
+          ),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+      });
+
+      test('handles cancelFuture completing with an error without leaking unhandled exceptions', () async {
+        final responseCompleter = Completer<TurboHttpResponse>();
+        final cancelCompleter = Completer<void>();
+        final fakeApi = FakeTurboFetchHostApi(
+          onExecute: (_) {
+            scheduleMicrotask(
+              () => cancelCompleter.completeError(
+                Exception('Cancel trigger error'),
+              ),
+            );
+            return responseCompleter.future;
+          },
+          onCancel: (_) {
+            if (!responseCompleter.isCompleted) {
+              responseCompleter.complete(
+                TurboHttpResponse(
+                  errorCode: 'cancel',
+                  errorMessage: 'Cancelled',
+                ),
+              );
+            }
+          },
+        );
+        final adapter = TurboHttpAdapter(hostApi: fakeApi);
+
+        await expectLater(
+          adapter.fetch(
+            RequestOptions(path: 'https://example.com/cancel-future-error'),
+            null,
+            cancelCompleter.future,
+          ),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+        expect(fakeApi.cancelledRequestIds, hasLength(1));
       });
     });
 

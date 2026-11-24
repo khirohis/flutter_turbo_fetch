@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection' show Queue;
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:isolate';
@@ -9,6 +10,13 @@ import 'turbo_options.dart';
 
 /// Fused UTF-8 and JSON decoder that bypasses intermediate String allocations.
 final _jsonUtf8Decoder = utf8.decoder.fuse(json.decoder);
+
+typedef _ByteDecoder = dynamic Function(Uint8List bytes);
+
+String _decodePlain(Uint8List bytes) =>
+    utf8.decode(bytes, allowMalformed: true);
+
+dynamic _decodeJson(Uint8List bytes) => _jsonUtf8Decoder.convert(bytes);
 
 class TurboTransformer extends BackgroundTransformer {
   /// Default byte threshold (24KiB) above which parsing is offloaded to a worker Isolate.
@@ -42,115 +50,54 @@ class TurboTransformer extends BackgroundTransformer {
   TurboTransformer._({
     required this.isolateThresholdBytes,
     required this.maxConcurrentIsolates,
-  }) : _semaphore = _Semaphore(maxConcurrentIsolates);
+  }) : _semaphore = _Semaphore(maxConcurrentIsolates) {
+    if (maxConcurrentIsolates < 1) {
+      throw RangeError.value(
+        maxConcurrentIsolates,
+        'maxConcurrentIsolates',
+        'Must be at least 1',
+      );
+    }
+  }
 
   @override
-  Future transformResponse(
+  Future<dynamic> transformResponse(
     RequestOptions options,
     ResponseBody responseBody,
-  ) {
-    switch (options.responseType) {
-      case ResponseType.stream:
-        return _transformStream(options, responseBody);
-      case ResponseType.bytes:
-        return _transformBytes(options, responseBody);
-      case ResponseType.plain:
-        return _transformPlain(options, responseBody);
-      case ResponseType.json:
-        return _transformJson(options, responseBody);
+  ) async {
+    final responseType = options.responseType;
+    final mapper =
+        options.extra[turboMapperExtraKey] as TurboResponseMapper<dynamic>?;
+
+    if (responseType == ResponseType.stream) {
+      return mapper != null ? mapper(responseBody) : responseBody;
     }
-  }
 
-  dynamic Function(dynamic)? _extractMapper(RequestOptions options) {
-    return options.extra[turboMapperExtraKey] as dynamic Function(dynamic)?;
-  }
-
-  Future<dynamic> _transformStream(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
-    return mapper != null ? mapper(responseBody) : responseBody;
-  }
-
-  Future<dynamic> _transformBytes(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) async {
-    final mapper = _extractMapper(options);
     final bytes = await _readBytes(responseBody.stream);
-    if (mapper == null) {
+
+    if (responseType == ResponseType.bytes && mapper == null) {
       return bytes;
     }
-    if (bytes.lengthInBytes < isolateThresholdBytes) {
-      return mapper(bytes);
-    }
-    return await _offload(bytes, mapper);
-  }
 
-  Future<dynamic> _transformPlain(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) {
-    return _transformPayload(
-      options,
-      responseBody,
-      emptyValue: '',
-      decode: (bytes) => utf8.decode(bytes, allowMalformed: true),
-    );
-  }
-
-  Future<dynamic> _transformJson(
-    RequestOptions options,
-    ResponseBody responseBody,
-  ) {
-    return _transformPayload(
-      options,
-      responseBody,
-      emptyValue: null,
-      decode: _jsonUtf8Decoder.convert,
-    );
-  }
-
-  /// Common pipeline for decodable payloads (plain text and JSON).
-  Future<dynamic> _transformPayload(
-    RequestOptions options,
-    ResponseBody responseBody, {
-    required dynamic emptyValue,
-    required dynamic Function(Uint8List bytes) decode,
-  }) async {
-    final mapper = _extractMapper(options);
-    final bytes = await _readBytes(responseBody.stream);
+    final (_ByteDecoder? decode, Object? emptyValue) = switch (responseType) {
+      ResponseType.bytes => (null, bytes),
+      ResponseType.plain => (_decodePlain, ''),
+      ResponseType.json => (_decodeJson, null),
+      ResponseType.stream => throw StateError('Unreachable'),
+    };
 
     if (bytes.isEmpty) {
       return mapper != null ? mapper(emptyValue) : emptyValue;
     }
 
-    dynamic process(Uint8List rawBytes) {
-      final decoded = decode(rawBytes);
-      return mapper != null ? mapper(decoded) : decoded;
-    }
-
     if (bytes.lengthInBytes < isolateThresholdBytes) {
-      return process(bytes);
+      return _applyPipeline(bytes, decode, mapper);
     }
-    return await _offload(bytes, process);
-  }
 
-  /// Offloads [action] to a worker Isolate using bidirectional O(1) zero-copy transfer.
-  Future<R> _offload<R>(
-    Uint8List bytes,
-    R Function(Uint8List rawBytes) action,
-  ) async {
-    return await _semaphore.withResource(() async {
-      // Inbound: O(1) zero-copy transfer of raw byte buffer
+    return _semaphore.withResource(() {
+      // TransferableTypedData avoids heap deep copies on worker materialize().
       final transferable = TransferableTypedData.fromList([bytes]);
-
-      // Outbound: Isolate.run uses Isolate.exit to transfer parsed object tree in O(1)
-      return await Isolate.run(() {
-        final rawBytes = transferable.materialize().asUint8List();
-        return action(rawBytes);
-      });
+      return _runInIsolate(transferable, decode, mapper);
     });
   }
 
@@ -161,21 +108,45 @@ class TurboTransformer extends BackgroundTransformer {
     }
     return bytesBuilder.takeBytes();
   }
+
+  static dynamic _applyPipeline(
+    Uint8List rawBytes,
+    _ByteDecoder? decode,
+    TurboResponseMapper<dynamic>? mapper,
+  ) {
+    final decoded = decode != null ? decode(rawBytes) : rawBytes;
+    return mapper != null ? mapper(decoded) : decoded;
+  }
+
+  /// Runs primary decoding and optional mapping inside a worker Isolate.
+  ///
+  /// Kept `static` so the closure passed to [Isolate.run] captures only
+  /// [transferable], [decode], and [mapper]—never `this` or surrounding locals.
+  static Future<dynamic> _runInIsolate(
+    TransferableTypedData transferable,
+    _ByteDecoder? decode,
+    TurboResponseMapper<dynamic>? mapper,
+  ) {
+    // Isolate.run uses Isolate.exit to return the parsed object graph in O(1).
+    return Isolate.run(() {
+      final rawBytes = transferable.materialize().asUint8List();
+      return _applyPipeline(rawBytes, decode, mapper);
+    });
+  }
 }
 
 class _Semaphore {
-  final int maxConcurrent;
   int _permits;
-  final _queue = <Completer<void>>[];
+  final _queue = Queue<Completer<void>>();
 
-  _Semaphore(this.maxConcurrent) : _permits = maxConcurrent;
+  _Semaphore(this._permits);
 
   Future<T> withResource<T>(Future<T> Function() action) async {
     if (_permits > 0) {
       _permits--;
     } else {
       final completer = Completer<void>();
-      _queue.add(completer);
+      _queue.addLast(completer);
       await completer.future;
     }
 
@@ -183,7 +154,7 @@ class _Semaphore {
       return await action();
     } finally {
       if (_queue.isNotEmpty) {
-        _queue.removeAt(0).complete();
+        _queue.removeFirst().complete();
       } else {
         _permits++;
       }

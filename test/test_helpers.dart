@@ -96,3 +96,18 @@ int slowWorkerMapper(dynamic data) {
   final map = data as Map<String, dynamic>;
   return map['id'] as int;
 }
+
+/// Returns the debug name of the Isolate executing this mapper.
+String? isolateNameMapper(dynamic _) => Isolate.current.debugName;
+
+/// Typed bytes mapper for verifying [TurboOptions.bytes] Isolate transferability.
+String typedBytesIsolateMapper(Uint8List bytes) {
+  final isolateName = Isolate.current.debugName ?? 'unknown';
+  return 'len=${bytes.lengthInBytes};first=${bytes.isNotEmpty ? bytes[0] : -1};isolate=$isolateName';
+}
+
+/// Typed plain-text mapper for verifying [TurboOptions.plain] Isolate transferability.
+String typedPlainIsolateMapper(String text) {
+  final isolateName = Isolate.current.debugName ?? 'unknown';
+  return 'len=${text.length};isolate=$isolateName';
+}

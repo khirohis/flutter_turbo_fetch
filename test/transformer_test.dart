@@ -26,6 +26,21 @@ void main() {
             : TurboTransformer.defaultMinConcurrentIsolates;
         expect(defaultTransformer.maxConcurrentIsolates, expectedConcurrent);
       });
+
+      test('rejects maxConcurrentIsolates < 1 with RangeError and accepts 1', () {
+        expect(
+          () => TurboTransformer(maxConcurrentIsolates: 0),
+          throwsRangeError,
+        );
+        expect(
+          () => TurboTransformer(maxConcurrentIsolates: -1),
+          throwsRangeError,
+        );
+        expect(
+          TurboTransformer(maxConcurrentIsolates: 1).maxConcurrentIsolates,
+          1,
+        );
+      });
     });
 
     group('ResponseType decoding (below threshold & streaming)', () {
@@ -163,6 +178,31 @@ void main() {
         expect(jsonEmptyMapped, 'null_payload');
       });
 
+      test('resolves empty payloads (0 bytes) on Main Isolate even when isolateThresholdBytes is 0', () async {
+        final mainIsolateName = Isolate.current.debugName;
+        final transformer = TurboTransformer(isolateThresholdBytes: 0);
+        final emptyBytes = Uint8List(0);
+
+        for (final responseType in <ResponseType>[
+          ResponseType.bytes,
+          ResponseType.plain,
+          ResponseType.json,
+        ]) {
+          final isolateName = await transformer.transformResponse(
+            TurboOptions<String?>(
+              responseType: responseType,
+              mapper: isolateNameMapper,
+            ).compose(BaseOptions(), '/empty-${responseType.name}'),
+            ResponseBody.fromBytes(emptyBytes, 200),
+          );
+          expect(
+            isolateName,
+            equals(mainIsolateName),
+            reason: 'Empty payload for $responseType must not offload to a Worker Isolate',
+          );
+        }
+      });
+
       test('consolidates multi-chunk streams for bytes, plain, and json', () async {
         final transformer = TurboTransformer();
 
@@ -284,6 +324,42 @@ void main() {
         expect(result, isA<Uint8List>());
         expect((result as Uint8List).lengthInBytes, 4096);
         expect(result[0], 99);
+      });
+
+      test('offloads TurboOptions.bytes and TurboOptions.plain to Worker Isolate without capturing TurboOptions instance', () async {
+        final mainIsolateName = Isolate.current.debugName ?? 'main';
+        final transformer = TurboTransformer(isolateThresholdBytes: 1024);
+        final nonSendablePort = ReceivePort();
+
+        try {
+          // 1. TurboOptions.bytes with non-sendable validateStatus closure
+          final largeBytes = Uint8List(2048)..[0] = 77;
+          final bytesResult = await transformer.transformResponse(
+            TurboOptions<String>.bytes(
+              mapper: typedBytesIsolateMapper,
+              validateStatus: (status) =>
+                  status == 200 && nonSendablePort.isBroadcast == false,
+            ).compose(BaseOptions(), '/typed-bytes'),
+            ResponseBody.fromBytes(largeBytes, 200),
+          ) as String;
+          expect(bytesResult, startsWith('len=2048;first=77;isolate='));
+          expect(bytesResult, isNot('len=2048;first=77;isolate=$mainIsolateName'));
+
+          // 2. TurboOptions.plain with non-sendable validateStatus closure
+          final largeTextBytes = Uint8List.fromList(utf8.encode('B' * 2048));
+          final plainResult = await transformer.transformResponse(
+            TurboOptions<String>.plain(
+              mapper: typedPlainIsolateMapper,
+              validateStatus: (status) =>
+                  status == 200 && nonSendablePort.isBroadcast == false,
+            ).compose(BaseOptions(), '/typed-plain'),
+            ResponseBody.fromBytes(largeTextBytes, 200),
+          ) as String;
+          expect(plainResult, startsWith('len=2048;isolate='));
+          expect(plainResult, isNot('len=2048;isolate=$mainIsolateName'));
+        } finally {
+          nonSendablePort.close();
+        }
       });
     });
 

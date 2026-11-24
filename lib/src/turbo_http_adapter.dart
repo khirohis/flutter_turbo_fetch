@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:isolate';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'messages.g.dart';
@@ -13,8 +13,15 @@ class TurboHttpAdapter implements HttpClientAdapter {
   final bool _overridePlatformCheck;
 
   static final String _isolatePrefix = 'turbo_${Isolate.current.hashCode}_';
+  static final bool _isSupportedPlatform =
+      Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isMacOS ||
+      Platform.isWindows ||
+      Platform.isLinux;
+  static final Uint8List _emptyBytes = Uint8List(0);
   static int _requestCounter = 0;
-  final _activeRequests = <String, void Function()>{};
+  final _activeRequests = <String, bool>{};
   bool _closed = false;
 
   /// Whether to allow self-signed or invalid certificates for local testing (default: false).
@@ -38,131 +45,181 @@ class TurboHttpAdapter implements HttpClientAdapter {
       );
     }
 
-    if (!_overridePlatformCheck &&
-        !Platform.isAndroid &&
-        !Platform.isIOS &&
-        !Platform.isMacOS &&
-        !Platform.isWindows &&
-        !Platform.isLinux) {
+    if (!_overridePlatformCheck && !_isSupportedPlatform) {
       throw UnsupportedError(
         'TurboHttpAdapter is only supported on Android, iOS, macOS, Windows, and Linux.',
       );
     }
 
-    // Aggregate request body stream into a single byte array (unbounded size)
-    Uint8List? requestBody;
-    if (requestStream != null) {
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in requestStream) {
-        builder.add(chunk);
-      }
-      requestBody = builder.takeBytes();
-    }
-
-    // Convert request headers
-    final headers = <String?, String?>{};
-    options.headers.forEach((key, value) {
-      if (value != null) {
-        if (value is Iterable) {
-          headers[key] = value.map((e) => e.toString()).join(', ');
-        } else {
-          headers[key] = value.toString();
-        }
-      }
-    });
-
     final maxResponseBytes =
         options.extra[turboMaxResponseBytesExtraKey] as int?;
+    final requestId = '$_isolatePrefix${++_requestCounter}';
 
-    final requestId =
-        '$_isolatePrefix${++_requestCounter}';
-
-    bool isCompleted = false;
+    _activeRequests[requestId] = false;
+    final TurboHttpResponse response;
     bool isCancelled = false;
-    void doCancel() {
-      if (!isCompleted) {
-        isCancelled = true;
-        unawaited(_hostApi.cancelRequest(requestId));
-      }
-    }
-
-    _activeRequests[requestId] = doCancel;
     try {
-      if (cancelFuture != null) {
-        cancelFuture.whenComplete(doCancel);
+      cancelFuture?.whenComplete(() => _cancelRequest(requestId)).ignore();
+
+      // Aggregate request body stream into a single byte array (unbounded size)
+      Uint8List? requestBody;
+      if (requestStream != null) {
+        final builder = BytesBuilder(copy: false);
+        await for (final chunk in requestStream) {
+          builder.add(chunk);
+        }
+        requestBody = builder.takeBytes();
       }
 
-      final turboRequest = TurboHttpRequest(
-        requestId: requestId,
-        url: options.uri.toString(),
-        method: options.method.toUpperCase(),
-        headers: headers,
-        body: requestBody,
-        connectTimeoutMs: options.connectTimeout?.inMilliseconds,
-        receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
-        sendTimeoutMs: options.sendTimeout?.inMilliseconds,
-        followRedirects: options.followRedirects,
-        allowBadCertificates: allowBadCertificates,
-        maxResponseBytes: maxResponseBytes,
-      );
-      final TurboHttpResponse response;
-      try {
-        response = await _hostApi.executeRequest(turboRequest);
-      } catch (e, stackTrace) {
-        throw DioException(
-          requestOptions: options,
-          error: e,
-          stackTrace: stackTrace,
-          type: isCancelled ? DioExceptionType.cancel : DioExceptionType.unknown,
-          message: e.toString(),
-        );
-      }
-
-      if (response.errorCode != null) {
-        final errorCode = isCancelled ? 'cancel' : response.errorCode!;
-        final errorMessage = _resolveErrorMessage(
-          errorCode: errorCode,
-          rawMessage: response.errorMessage,
-          maxResponseBytes: maxResponseBytes,
-        );
-        throw DioException(
-          requestOptions: options,
-          type: _mapErrorCode(errorCode),
-          message: errorMessage,
-          error: errorMessage,
-        );
-      }
-
-      if (isCancelled) {
+      if (_activeRequests[requestId] == true) {
         throw DioException(
           requestOptions: options,
           type: DioExceptionType.cancel,
           message: 'Request was cancelled.',
+          error: 'Request was cancelled.',
         );
       }
 
-      final responseHeaders = <String, List<String>>{};
-      response.headers?.forEach((key, rawValues) {
-        if (key != null && rawValues != null) {
-          if (rawValues is Iterable) {
-            responseHeaders[key.toLowerCase()] =
-                rawValues.whereType<Object>().map((e) => e.toString()).toList();
-          } else {
-            responseHeaders[key.toLowerCase()] = [rawValues.toString()];
-          }
-        }
-      });
-
-      return ResponseBody.fromBytes(
-        response.body ?? Uint8List(0),
-        response.statusCode ?? HttpStatus.ok,
-        statusMessage: response.statusMessage,
-        headers: responseHeaders,
+      final turboRequest = _buildRequest(
+        requestId: requestId,
+        options: options,
+        requestBody: requestBody,
+        maxResponseBytes: maxResponseBytes,
+      );
+      response = await _hostApi.executeRequest(turboRequest);
+    } on DioException {
+      rethrow;
+    } catch (e, stackTrace) {
+      final cancelled = _activeRequests[requestId] == true;
+      throw DioException(
+        requestOptions: options,
+        error: e,
+        stackTrace: stackTrace,
+        type: cancelled ? DioExceptionType.cancel : DioExceptionType.unknown,
+        message: e.toString(),
       );
     } finally {
-      isCompleted = true;
-      _activeRequests.remove(requestId);
+      isCancelled = _activeRequests.remove(requestId) == true;
     }
+
+    _validateResponse(
+      response,
+      options: options,
+      isCancelled: isCancelled,
+      maxResponseBytes: maxResponseBytes,
+    );
+
+    return _buildResponseBody(response);
+  }
+
+  @override
+  void close({bool force = false}) {
+    _closed = true;
+    if (force) {
+      for (final requestId in _activeRequests.keys.toList()) {
+        _cancelRequest(requestId);
+      }
+    }
+  }
+
+  void _cancelRequest(String requestId) {
+    if (_activeRequests[requestId] == false) {
+      _activeRequests[requestId] = true;
+      unawaited(_hostApi.cancelRequest(requestId).catchError((Object _) {}));
+    }
+  }
+
+  TurboHttpRequest _buildRequest({
+    required String requestId,
+    required RequestOptions options,
+    required Uint8List? requestBody,
+    required int? maxResponseBytes,
+  }) {
+    final headers = <String?, String?>{};
+    for (final MapEntry(:key, :value) in options.headers.entries) {
+      if (value != null) {
+        if (value is Iterable) {
+          headers[key] = value.join(', ');
+        } else {
+          headers[key] = value is String ? value : value.toString();
+        }
+      }
+    }
+
+    return TurboHttpRequest(
+      requestId: requestId,
+      url: options.uri.toString(),
+      method: options.method.toUpperCase(),
+      headers: headers,
+      body: requestBody,
+      connectTimeoutMs: options.connectTimeout?.inMilliseconds,
+      receiveTimeoutMs: options.receiveTimeout?.inMilliseconds,
+      sendTimeoutMs: options.sendTimeout?.inMilliseconds,
+      followRedirects: options.followRedirects,
+      allowBadCertificates: allowBadCertificates,
+      maxResponseBytes: maxResponseBytes,
+    );
+  }
+
+  void _validateResponse(
+    TurboHttpResponse response, {
+    required RequestOptions options,
+    required bool isCancelled,
+    required int? maxResponseBytes,
+  }) {
+    if (isCancelled) {
+      final errorMessage = response.errorMessage ?? 'Request was cancelled.';
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+        message: errorMessage,
+        error: errorMessage,
+      );
+    }
+
+    final errorCode = response.errorCode;
+    if (errorCode != null) {
+      final errorMessage = _resolveErrorMessage(
+        errorCode: errorCode,
+        rawMessage: response.errorMessage,
+        maxResponseBytes: maxResponseBytes,
+      );
+      throw DioException(
+        requestOptions: options,
+        type: _mapErrorCode(errorCode),
+        message: errorMessage,
+        error: errorMessage,
+      );
+    }
+  }
+
+  ResponseBody _buildResponseBody(TurboHttpResponse response) {
+    final responseHeaders = <String, List<String>>{};
+    final rawHeaders = response.headers;
+    if (rawHeaders != null) {
+      for (final MapEntry(:key, value: rawValues) in rawHeaders.entries) {
+        if (key != null && rawValues != null) {
+          final normalizedKey = key.toLowerCase();
+          if (rawValues is Iterable) {
+            responseHeaders[normalizedKey] = <String>[
+              for (final e in rawValues)
+                if (e != null) e is String ? e : e.toString(),
+            ];
+          } else {
+            responseHeaders[normalizedKey] = <String>[
+              rawValues is String ? rawValues : rawValues.toString(),
+            ];
+          }
+        }
+      }
+    }
+
+    return ResponseBody.fromBytes(
+      response.body ?? _emptyBytes,
+      response.statusCode ?? HttpStatus.ok,
+      statusMessage: response.statusMessage,
+      headers: responseHeaders,
+    );
   }
 
   String? _resolveErrorMessage({
@@ -179,35 +236,13 @@ class TurboHttpAdapter implements HttpClientAdapter {
     return rawMessage;
   }
 
-  DioExceptionType _mapErrorCode(String errorCode) {
-    switch (errorCode) {
-      case 'cancel':
-        return DioExceptionType.cancel;
-      case 'connectionTimeout':
-        return DioExceptionType.connectionTimeout;
-      case 'sendTimeout':
-        return DioExceptionType.sendTimeout;
-      case 'receiveTimeout':
-        return DioExceptionType.receiveTimeout;
-      case 'badCertificate':
-        return DioExceptionType.badCertificate;
-      case 'connectionError':
-        return DioExceptionType.connectionError;
-      case 'maxResponseBytesExceeded':
-      default:
-        return DioExceptionType.unknown;
-    }
-  }
-
-  @override
-  void close({bool force = false}) {
-    _closed = true;
-    if (force) {
-      final inFlightCancels = _activeRequests.values.toList();
-      _activeRequests.clear();
-      for (final cancel in inFlightCancels) {
-        cancel();
-      }
-    }
-  }
+  DioExceptionType _mapErrorCode(String errorCode) => switch (errorCode) {
+    'cancel' => DioExceptionType.cancel,
+    'connectionTimeout' => DioExceptionType.connectionTimeout,
+    'sendTimeout' => DioExceptionType.sendTimeout,
+    'receiveTimeout' => DioExceptionType.receiveTimeout,
+    'badCertificate' => DioExceptionType.badCertificate,
+    'connectionError' => DioExceptionType.connectionError,
+    _ => DioExceptionType.unknown,
+  };
 }
