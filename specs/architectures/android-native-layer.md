@@ -45,14 +45,15 @@
 
 - **プロバイダ依存と `CronetEngine` 管理（`CronetClientManager`）**:
   - プラグインは Cronet API アーティファクトのみに依存し、プロバイダ実装（Google Play Services 版 / 同梱版 / 併用）の追加および Play Services 版利用時の `CronetProviderInstaller.installProvider(context)` 事前実行はアプリ側の責務とする。
-  - プラグイン内部の `CronetEngine.Builder(applicationContext)` で単一の共有 `CronetEngine` を生成する（外部からの `CronetEngine` 注入フックは設けない）。
+  - プラグイン内部の `CronetEngine.Builder(applicationContext)` で単一の共有 `CronetEngine` を生成する（外部からの `CronetEngine` 注入フックは設けない）。初回生成時はメインスレッドをブロックせずバックグラウンドで初期化し、定常リクエスト時の取得で不要なロック競合を起こさない設計とする。
   - プロトコル設定は `enableHttp2(true)` / `enableQuic(false)` を既定とする（将来 HTTP/3 指定へ拡張可能な構成とする）。
   - **遅延シャットダウン**: `CronetEngine.shutdown()` はアクティブな `UrlRequest` 残存時に `IllegalStateException` を送出し、かつネットワークスレッド上からの呼び出しが禁止されている。そのため参照カウント付きの管理ラッパーで保持し、`shutdown()` 時は全アクティブ `UrlRequest.cancel()` 後に実行中カウントが `0` になったタイミングで非ネットワークスレッド（デーモンスレッド）から `engine.shutdown()` を実行する。再アタッチ・再リクエスト時は新しい `CronetEngine` を生成して復帰する。
   - プロバイダ未導入・`installProvider` 未実行等により `CronetEngine` の初期化に失敗した場合は、クラッシュさせず `errorCode = "unknown"` と英語の診断メッセージを返却する。
 - **リクエスト実行・バッファリング・タイムアウト・制約（`CronetTurboHttpExecutor`）**:
-  - **読み出しバッファ**: 1 リクエストにつき固定 **64KiB** の Direct `ByteBuffer` を確保・再利用（`clear()`）し、ネイティブメモリ上で一括結合した単一の `ByteArray` を Dart へ返却する。
+  - **読み出しバッファとレスポンス結合**: 固定 **64KiB** の Direct `ByteBuffer` を有界プールでリクエスト間再利用し（`shutdown()` 時に破棄）、不要な中間コピーを避けて単一の `ByteArray` へ結合して Dart へ返却する。
+  - **コールバック実行基盤**: コールバック処理は有界のバックグラウンド実行基盤上で処理し、`shutdown()` 時にリソースを解放・再アタッチ時に復帰する。
   - **`maxResponseBytes` の 2 段階検証**: (1) `onResponseStarted` で `Content-Length` ヘッダ超過を検知した場合は読み出し前に即 `request.cancel()`、(2) `onReadCompleted` で累積受信バイト数が上限を超えた時点で即 `request.cancel()` し、いずれも `maxResponseBytesExceeded` を返却する。
-  - **フェーズ別タイムアウト**: `UrlRequest` には組み込みのフェーズ別タイムアウトがないため、`ScheduledExecutorService` でフェーズ別タイマー（`connect` / `send` / `receive`）を監視し、発火時は `request.cancel()` して対応するエラーコードを返却する（`start()` で `connect` 開始、ボディ送信中〜完了まで `send` 管理、送信完了または `onResponseStarted` で `receive` 開始、`onReadCompleted` ごとに `receive` タイマーをアイドルリセット）。
+  - **フェーズ別タイムアウト**: `UrlRequest` には組み込みのフェーズ別タイムアウトがないため、フェーズ別タイマー（`connect` / `send` / `receive`）を監視し、発火時は `request.cancel()` して対応するエラーコードを返却する（`start()` で `connect` 開始、ボディ送信中〜完了まで `send` 管理、送信完了または `onResponseStarted` で `receive` 開始、`receive` フェーズは無通信アイドル時間が `receiveTimeoutMs` を超えた時点でタイムアウト）。
   - **`allowBadCertificates = true` 非サポート**: Cronet は標準 API で動的な自己署名証明書バイパスを提供しないため、指定時は通信を開始せず即座に `errorCode = "unknown"` と英語の非サポートメッセージ（Android Network Security Config の利用案内を含む）を返却する。
   - **`followRedirects = false` の挙動**: `onRedirectReceived` で `UrlResponseInfo` から 3xx のステータスコード・ステータスメッセージ・ヘッダ（`Location` 含む）を採取し、空ボディ（`ByteArray(0)`）の通常レスポンスとして返却した上で内部キャンセルする（Cronet の API 制約により 3xx レスポンスボディは取得しない）。
   - **非空ボディ送信時の `Content-Type` 必須制約**: Cronet は `setUploadDataProvider()` 呼び出し時に `Content-Type` ヘッダを必須とする。プラグイン側で勝手なヘッダ補完は行わず、未指定時はリクエスト構築エラー（`connectionError`）として英語メッセージを返却する（空ボディまたは `null` ボディ時は `UploadDataProvider` を設定せず送信する）。
