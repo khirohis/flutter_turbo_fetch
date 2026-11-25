@@ -9,8 +9,10 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody
 import okhttp3.internal.http.HttpMethod
 import okio.BufferedSink
+import okio.BufferedSource
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
@@ -21,7 +23,9 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.net.UnknownServiceException
 import java.security.cert.CertificateException
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLException
 
 internal fun createDefaultTurboHttpExecutor(): TurboHttpExecutor = OkHttpTurboHttpExecutor()
@@ -67,10 +71,9 @@ internal open class OkHttpTurboHttpExecutor(
         request: TurboHttpRequest,
         onResult: (TurboHttpResponse) -> Unit
     ) {
-        val sendPhaseTracker = SendPhaseTracker()
-
+        val httpRequest: Request
         val call = try {
-            val httpRequest = buildRequest(request, sendPhaseTracker)
+            httpRequest = buildRequest(request)
             val requestClient = clientManager.acquireClient(request)
             requestClient.newCall(httpRequest)
         } catch (e: Exception) {
@@ -82,15 +85,31 @@ internal open class OkHttpTurboHttpExecutor(
             return
         }
 
+        val trackingBody = httpRequest.body as? TrackingRequestBody
         activeCalls[request.requestId] = call
 
-        call.enqueue(createCallback(request, sendPhaseTracker, onResult))
+        val completed = AtomicBoolean(false)
+        val finishOnce: (TurboHttpResponse) -> Unit = { response ->
+            if (completed.compareAndSet(false, true)) {
+                activeCalls.remove(request.requestId, call)
+                onResult(response)
+            }
+        }
+
+        try {
+            call.enqueue(createCallback(request, trackingBody, finishOnce))
+        } catch (t: Throwable) {
+            val errorCode = if (call.isCanceled()) "cancel" else "unknown"
+            finishOnce(
+                TurboHttpResponse(
+                    errorCode = errorCode,
+                    errorMessage = t.message ?: t.javaClass.simpleName
+                )
+            )
+        }
     }
 
-    private fun buildRequest(
-        request: TurboHttpRequest,
-        sendPhaseTracker: SendPhaseTracker
-    ): Request {
+    private fun buildRequest(request: TurboHttpRequest): Request {
         val headersBuilder = Headers.Builder()
         for ((key, value) in request.headers) {
             if (key != null && value != null) {
@@ -98,13 +117,10 @@ internal open class OkHttpTurboHttpExecutor(
             }
         }
 
-        val method = request.method.uppercase()
+        val method = request.method.uppercase(Locale.ROOT)
         val requestBody: RequestBody? = when {
             !HttpMethod.permitsRequestBody(method) -> null
-            request.body != null -> TrackingRequestBody(
-                delegate = request.body.toRequestBody(null),
-                tracker = sendPhaseTracker
-            )
+            request.body != null -> TrackingRequestBody(request.body.toRequestBody(null))
             HttpMethod.requiresRequestBody(method) -> ByteArray(0).toRequestBody(null)
             else -> null
         }
@@ -118,44 +134,38 @@ internal open class OkHttpTurboHttpExecutor(
 
     private fun createCallback(
         request: TurboHttpRequest,
-        sendPhaseTracker: SendPhaseTracker,
-        onResult: (TurboHttpResponse) -> Unit
+        trackingBody: TrackingRequestBody?,
+        finishOnce: (TurboHttpResponse) -> Unit
     ): Callback = object : Callback {
-        private fun complete(response: TurboHttpResponse) {
-            activeCalls.remove(request.requestId)
-            onResult(response)
-        }
-
-        private fun completeWithIoError(call: Call, e: IOException) {
-            val errorCode = classifyException(call, e, sendPhaseTracker.isSendingBody)
-            complete(
-                TurboHttpResponse(
-                    errorCode = errorCode,
-                    errorMessage = e.message ?: e.javaClass.simpleName
-                )
+        private fun buildIoErrorResponse(call: Call, e: IOException): TurboHttpResponse {
+            val errorCode = classifyException(call, e, trackingBody?.isSendingBody == true)
+            return TurboHttpResponse(
+                errorCode = errorCode,
+                errorMessage = e.message ?: e.javaClass.simpleName
             )
         }
 
         override fun onFailure(call: Call, e: IOException) {
-            completeWithIoError(call, e)
+            finishOnce(buildIoErrorResponse(call, e))
         }
 
         override fun onResponse(call: Call, response: Response) {
-            try {
-                response.use { res ->
-                    complete(buildResponse(res, request.maxResponseBytes))
+            val result = try {
+                try {
+                    buildResponse(response, request.maxResponseBytes)
+                } finally {
+                    runCatching { response.close() }
                 }
             } catch (e: IOException) {
-                completeWithIoError(call, e)
+                buildIoErrorResponse(call, e)
             } catch (e: Throwable) {
                 val errorCode = if (call.isCanceled()) "cancel" else "unknown"
-                complete(
-                    TurboHttpResponse(
-                        errorCode = errorCode,
-                        errorMessage = e.message ?: e.javaClass.simpleName
-                    )
+                TurboHttpResponse(
+                    errorCode = errorCode,
+                    errorMessage = e.message ?: e.javaClass.simpleName
                 )
             }
+            finishOnce(result)
         }
     }
 
@@ -163,47 +173,148 @@ internal open class OkHttpTurboHttpExecutor(
         res: Response,
         maxBytes: Long?
     ): TurboHttpResponse {
-        val bodyBytes: ByteArray
-        if (maxBytes == null) {
-            // Unlimited: read & concatenate all HTTP/2 frames into a single ByteArray
-            bodyBytes = res.body?.bytes() ?: ByteArray(0)
+        val responseBody = res.body
+        val bodyBytes: ByteArray = if (responseBody == null) {
+            ByteArray(0)
         } else {
-            val safeMaxBytes = maxBytes.coerceAtLeast(0L)
-            val responseBody = res.body
-            if (responseBody == null) {
-                bodyBytes = ByteArray(0)
-            } else {
-                val contentLength = responseBody.contentLength()
-                if (contentLength > safeMaxBytes) {
-                    return TurboHttpResponse(
-                        errorCode = "maxResponseBytesExceeded",
-                        errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes, contentLength: $contentLength)"
-                    )
-                }
-
-                val source = responseBody.source()
-                if (safeMaxBytes < Long.MAX_VALUE && source.request(safeMaxBytes + 1L)) {
-                    return TurboHttpResponse(
-                        errorCode = "maxResponseBytesExceeded",
-                        errorMessage = "Response body exceeded maxResponseBytes limit ($safeMaxBytes bytes)"
-                    )
-                }
-                bodyBytes = source.readByteArray()
+            val safeMaxBytes = maxBytes?.coerceAtLeast(0L)
+            when (val readResult = readResponseBody(responseBody, safeMaxBytes)) {
+                is BodyReadResult.Success -> readResult.bytes
+                is BodyReadResult.Exceeded -> return TurboHttpResponse(
+                    errorCode = "maxResponseBytesExceeded",
+                    errorMessage = readResult.message
+                )
             }
-        }
-
-        val rawMultimap = res.headers.toMultimap()
-        val headersMap = HashMap<String?, Any?>(rawMultimap.size)
-        for ((k, v) in rawMultimap) {
-            headersMap[k] = v
         }
 
         return TurboHttpResponse(
             statusCode = res.code.toLong(),
             statusMessage = res.message,
-            headers = headersMap,
+            headers = normalizeHeaders(res.headers),
             body = bodyBytes
         )
+    }
+
+    private fun normalizeHeaders(headers: Headers): Map<String?, Any?> {
+        val headerCount = headers.size
+        val result = HashMap<String?, MutableList<String>>(headerCount)
+        for (i in 0 until headerCount) {
+            val name = headers.name(i).lowercase(Locale.ROOT)
+            val value = headers.value(i)
+            result.getOrPut(name) { ArrayList(1) }.add(value)
+        }
+        return result
+    }
+
+    private sealed class BodyReadResult {
+        class Success(val bytes: ByteArray) : BodyReadResult()
+        class Exceeded(val message: String) : BodyReadResult()
+    }
+
+    private fun exceededResult(
+        maxBytes: Long,
+        contentLength: Long? = null
+    ): BodyReadResult.Exceeded {
+        val detail = if (contentLength != null) {
+            " ($maxBytes bytes, contentLength: $contentLength)"
+        } else {
+            " ($maxBytes bytes)"
+        }
+        return BodyReadResult.Exceeded("Response body exceeded maxResponseBytes limit$detail")
+    }
+
+    private fun readResponseBody(
+        responseBody: ResponseBody,
+        safeMaxBytes: Long?
+    ): BodyReadResult {
+        val contentLength = responseBody.contentLength()
+        if (safeMaxBytes != null && contentLength > safeMaxBytes) {
+            return exceededResult(safeMaxBytes, contentLength)
+        }
+        if (contentLength > Int.MAX_VALUE) {
+            throw IOException("Response body length ($contentLength) exceeds maximum ByteArray size")
+        }
+
+        val source = responseBody.source()
+        val chunks = ArrayList<ByteArray>(4)
+        var totalCount = 0L
+        var nextChunkSize = if (contentLength in 1L..MAX_DIRECT_ALLOC_BYTES) {
+            contentLength.toInt()
+        } else {
+            INITIAL_READ_CHUNK_SIZE
+        }
+
+        while (true) {
+            val remainingAllowed = if (safeMaxBytes != null) {
+                val remaining = safeMaxBytes - totalCount
+                if (remaining <= 0L) {
+                    return if (!source.exhausted()) {
+                        exceededResult(safeMaxBytes)
+                    } else {
+                        BodyReadResult.Success(mergeChunks(chunks, totalCount.toInt()))
+                    }
+                }
+                remaining
+            } else {
+                Long.MAX_VALUE
+            }
+
+            val capacity = minOf(nextChunkSize.toLong(), remainingAllowed).toInt()
+            val chunk = readChunk(source, capacity) ?: break
+
+            totalCount += chunk.size.toLong()
+            if (totalCount > Int.MAX_VALUE) {
+                throw IOException("Response body exceeds maximum ByteArray size")
+            }
+            chunks.add(chunk)
+
+            if (chunk.size < capacity) {
+                break
+            }
+            nextChunkSize = if (nextChunkSize < MAX_READ_CHUNK_SIZE) {
+                (nextChunkSize * 2).coerceAtMost(MAX_READ_CHUNK_SIZE)
+            } else {
+                MAX_READ_CHUNK_SIZE
+            }
+        }
+
+        return BodyReadResult.Success(mergeChunks(chunks, totalCount.toInt()))
+    }
+
+    private fun readChunk(source: BufferedSource, capacity: Int): ByteArray? {
+        if (source.exhausted()) {
+            return null
+        }
+        val buffer = ByteArray(capacity)
+        var filled = 0
+        while (filled < capacity) {
+            val bytesRead = source.read(buffer, filled, capacity - filled)
+            if (bytesRead == -1) {
+                break
+            }
+            filled += bytesRead
+        }
+        return when (filled) {
+            0 -> null
+            capacity -> buffer
+            else -> buffer.copyOf(filled)
+        }
+    }
+
+    private fun mergeChunks(chunks: List<ByteArray>, totalSize: Int): ByteArray {
+        return when (chunks.size) {
+            0 -> ByteArray(0)
+            1 -> chunks[0]
+            else -> {
+                val merged = ByteArray(totalSize)
+                var offset = 0
+                for (chunk in chunks) {
+                    System.arraycopy(chunk, 0, merged, offset, chunk.size)
+                    offset += chunk.size
+                }
+                merged
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -218,65 +329,66 @@ internal open class OkHttpTurboHttpExecutor(
         if (call.isCanceled()) {
             return "cancel"
         }
-        return when {
-            e is SocketTimeoutException -> {
-                val msg = e.message?.lowercase() ?: ""
+        return when (e) {
+            is SocketTimeoutException -> {
+                val msg = e.message?.lowercase(Locale.ROOT) ?: ""
                 when {
                     msg.contains("connect") -> "connectionTimeout"
                     isSendingBody -> "sendTimeout"
                     else -> "receiveTimeout"
                 }
             }
-            e is InterruptedIOException -> {
-                val msg = e.message?.lowercase() ?: ""
+            is InterruptedIOException -> {
+                val msg = e.message?.lowercase(Locale.ROOT) ?: ""
                 if (msg.contains("timeout")) {
                     if (isSendingBody) "sendTimeout" else "receiveTimeout"
                 } else {
                     "cancel"
                 }
             }
-            e is SSLException || e.cause is CertificateException || e.cause is SSLException -> {
-                "badCertificate"
+            is SSLException -> "badCertificate"
+            is UnknownHostException,
+            is ConnectException,
+            is NoRouteToHostException,
+            is SocketException,
+            is ProtocolException,
+            is UnknownServiceException -> "connectionError"
+            else -> {
+                if (e.cause is CertificateException || e.cause is SSLException) {
+                    "badCertificate"
+                } else {
+                    "unknown"
+                }
             }
-            e is UnknownHostException ||
-                e is ConnectException ||
-                e is NoRouteToHostException ||
-                e is SocketException ||
-                e is ProtocolException ||
-                e is UnknownServiceException -> "connectionError"
-            else -> "unknown"
         }
     }
 
     /**
-     * Tracks whether the request is currently in the body-sending phase so that
-     * [classifyException] can distinguish `sendTimeout` from `receiveTimeout`
-     * (OkHttp throws the same timeout exceptions for both phases).
-     */
-    private class SendPhaseTracker {
-        @Volatile
-        var isSendingBody: Boolean = false
-    }
-
-    /**
-     * Wraps a [RequestBody] to mark [SendPhaseTracker.isSendingBody] as `true`
-     * while writing the request payload to the network sink. If an [IOException]
-     * occurs during [writeTo], the flag remains `true` so the failure is classified
-     * as `sendTimeout`.
+     * Wraps a [RequestBody] to track whether the request is currently in the body-sending phase so
+     * [classifyException] can distinguish `sendTimeout` from `receiveTimeout`. If an [IOException]
+     * occurs during [writeTo], [isSendingBody] remains `true`.
      */
     private class TrackingRequestBody(
-        private val delegate: RequestBody,
-        private val tracker: SendPhaseTracker
+        private val delegate: RequestBody
     ) : RequestBody() {
+        @Volatile
+        var isSendingBody: Boolean = false
+
         override fun contentType(): MediaType? = delegate.contentType()
 
         override fun contentLength(): Long = delegate.contentLength()
 
         override fun writeTo(sink: BufferedSink) {
-            tracker.isSendingBody = true
+            isSendingBody = true
             delegate.writeTo(sink)
             sink.flush()
-            tracker.isSendingBody = false
+            isSendingBody = false
         }
+    }
+
+    companion object {
+        private const val INITIAL_READ_CHUNK_SIZE = 8 * 1024
+        private const val MAX_READ_CHUNK_SIZE = 64 * 1024
+        private const val MAX_DIRECT_ALLOC_BYTES = 4L * 1024L * 1024L
     }
 }

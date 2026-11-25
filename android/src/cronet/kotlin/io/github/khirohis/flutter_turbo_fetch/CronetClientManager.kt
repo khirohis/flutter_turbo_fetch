@@ -52,26 +52,24 @@ internal class CronetClientManager(
         }
 
         private fun releaseOne() {
-            var shouldDispatchShutdown = false
-            synchronized(this) {
+            updateAndMaybeShutdown {
                 if (inFlightCount > 0) {
                     inFlightCount--
                 }
-                if (inFlightCount == 0 && shutdownRequested && !shutdownDispatched) {
-                    shutdownDispatched = true
-                    shouldDispatchShutdown = true
-                }
-            }
-            if (shouldDispatchShutdown) {
-                dispatchShutdown()
             }
         }
 
         fun requestShutdown() {
+            updateAndMaybeShutdown {
+                shutdownRequested = true
+            }
+        }
+
+        private inline fun updateAndMaybeShutdown(update: () -> Unit) {
             var shouldDispatchShutdown = false
             synchronized(this) {
-                shutdownRequested = true
-                if (inFlightCount == 0 && !shutdownDispatched) {
+                update()
+                if (inFlightCount == 0 && shutdownRequested && !shutdownDispatched) {
                     shutdownDispatched = true
                     shouldDispatchShutdown = true
                 }
@@ -95,6 +93,7 @@ internal class CronetClientManager(
     @Volatile
     private var appContext: Context? = null
 
+    @Volatile
     private var currentManaged: ManagedCronetEngine? = null
 
     @Synchronized
@@ -104,16 +103,21 @@ internal class CronetClientManager(
         }
     }
 
-    @Synchronized
+    fun tryAcquireIfInitialized(): EngineHandle? = currentManaged?.tryAcquire()
+
     fun acquireEngine(): EngineHandle {
         currentManaged?.tryAcquire()?.let { return it }
 
-        val ctx = appContext
-            ?: throw IllegalStateException("CronetClientManager is not initialized with a Context.")
+        synchronized(this) {
+            currentManaged?.tryAcquire()?.let { return it }
 
-        val created = ManagedCronetEngine(engineFactory(ctx), shutdownRunner)
-        currentManaged = created
-        return checkNotNull(created.tryAcquire())
+            val ctx = appContext
+                ?: throw IllegalStateException("CronetClientManager is not initialized with a Context.")
+
+            val created = ManagedCronetEngine(engineFactory(ctx), shutdownRunner)
+            currentManaged = created
+            return checkNotNull(created.tryAcquire())
+        }
     }
 
     fun shutdown() {

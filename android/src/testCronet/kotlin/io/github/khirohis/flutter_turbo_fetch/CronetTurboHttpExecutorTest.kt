@@ -3,6 +3,8 @@ package io.github.khirohis.flutter_turbo_fetch
 import android.content.Context
 import org.chromium.net.NetworkException
 import org.mockito.Mockito
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
@@ -10,6 +12,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -606,6 +609,7 @@ internal class CronetTurboHttpExecutorTest {
             ) {
                 val active = harness.timerScheduler.activeHandles.single()
                 assertEquals(3000L, active.delayMs)
+                harness.timerScheduler.advanceTimeBy(3000L)
                 active.fire()
             }
             assertEquals("receiveTimeout", response.errorCode)
@@ -613,40 +617,26 @@ internal class CronetTurboHttpExecutorTest {
     }
 
     @Test
-    fun execute_receiveTimer_resetsOnEachReadCompletedChunk() {
+    fun execute_receiveTimer_defersRescheduleDuringActiveReadsAndTimesOutAfterIdleDuration() {
         val harness = createHarness()
         val info = FakeUrlResponseInfo(statusCode = 200, statusText = "OK")
         val chunk1 = "part1-".encodeToByteArray()
-        val chunk2 = "part2".encodeToByteArray()
 
-        val activeCountsDuringReads = mutableListOf<Int>()
         var step = 0
-
         harness.engine.onBuildRequest = { req ->
             req.onStart = {
                 req.callback.onResponseStarted(req, info)
             }
             req.onRead = { _, buffer ->
-                activeCountsDuringReads.add(harness.timerScheduler.pendingCount)
-                when (step++) {
-                    0 -> {
-                        val firstReceiveHandle = harness.timerScheduler.activeHandles.single()
-                        buffer.put(chunk1)
-                        req.callback.onReadCompleted(req, info, buffer)
-                        assertTrue(firstReceiveHandle.canceled, "Previous receive timer must be canceled on onReadCompleted")
-                    }
-                    1 -> {
-                        val secondReceiveHandle = harness.timerScheduler.activeHandles.single()
-                        buffer.put(chunk2)
-                        req.callback.onReadCompleted(req, info, buffer)
-                        assertTrue(secondReceiveHandle.canceled, "Receive timer must reset on subsequent onReadCompleted")
-                    }
-                    else -> {
-                        req.done = true
-                        req.callback.onSucceeded(req, info)
-                    }
+                if (step++ == 0) {
+                    // Advance 1000ms before chunk1 arrives; timer must NOT be canceled/re-scheduled on read.
+                    harness.timerScheduler.advanceTimeBy(1000L)
+                    buffer.put(chunk1)
+                    req.callback.onReadCompleted(req, info, buffer)
                 }
+                // Second read stalls until idle timeout fires.
             }
+            req.onCancel = { req.callback.onCanceled(req, info) }
         }
 
         val response = runAndAssertOnce(
@@ -656,14 +646,227 @@ internal class CronetTurboHttpExecutorTest {
                 sendTimeoutMs = null,
                 receiveTimeoutMs = 2500L
             )
-        )
+        ) {
+            // Only one receive timer should exist after chunk1 was received (no per-chunk reschedule churn).
+            assertEquals(1, harness.timerScheduler.handles.size)
+            val initialHandle = harness.timerScheduler.activeHandles.single()
+            assertEquals(2500L, initialHandle.delayMs)
 
-        assertNull(response.errorCode)
-        assertContentEquals(chunk1 + chunk2, response.body)
-        assertEquals(listOf(1, 1, 1), activeCountsDuringReads)
-        assertEquals(3, harness.timerScheduler.handles.size)
-        assertTrue(harness.timerScheduler.handles.all { it.canceled && !it.fired && it.delayMs == 2500L })
+            // Fire initial timer at t=2500ms (only 1500ms idle since chunk1 at t=1000ms):
+            // must reschedule for the remaining 1000ms instead of timing out prematurely.
+            harness.timerScheduler.advanceTimeBy(1500L)
+            initialHandle.fire()
+            assertEquals(2, harness.timerScheduler.handles.size)
+            val rescheduledHandle = harness.timerScheduler.activeHandles.single()
+            assertEquals(1000L, rescheduledHandle.delayMs)
+
+            // Advance remaining 1000ms with no read activity -> must now time out.
+            harness.timerScheduler.advanceTimeBy(1000L)
+            rescheduledHandle.fire()
+        }
+
+        assertEquals("receiveTimeout", response.errorCode)
         assertEquals(0, harness.timerScheduler.pendingCount)
+    }
+
+    @Test
+    fun execute_reusesPooledDirectBufferAcrossRequests_andClearsPoolOnShutdown() {
+        val harness = createHarness()
+        val info = FakeUrlResponseInfo(statusCode = 200, statusText = "OK")
+        val payload = "pooled-buffer-test".encodeToByteArray()
+
+        harness.engine.onBuildRequest = { req ->
+            var readDone = false
+            req.onStart = { req.callback.onResponseStarted(req, info) }
+            req.onRead = { _, buffer ->
+                if (!readDone) {
+                    readDone = true
+                    buffer.put(payload)
+                    req.callback.onReadCompleted(req, info, buffer)
+                } else {
+                    req.done = true
+                    req.callback.onSucceeded(req, info)
+                }
+            }
+        }
+
+        runAndAssertOnce(harness.executor, createCronetRequest(requestId = "pool-1"))
+        val firstBuffer = harness.engine.createdRequests[0].readBuffers.first()
+        assertEquals(1, harness.executor.pooledBufferCount)
+
+        runAndAssertOnce(harness.executor, createCronetRequest(requestId = "pool-2"))
+        val secondBuffer = harness.engine.createdRequests[1].readBuffers.first()
+        assertSame(firstBuffer, secondBuffer, "Direct ByteBuffer should be reused from bounded pool")
+        assertEquals(1, harness.executor.pooledBufferCount)
+
+        harness.executor.shutdown()
+        assertEquals(0, harness.executor.pooledBufferCount)
+
+        runAndAssertOnce(harness.executor, createCronetRequest(requestId = "pool-3"))
+        val thirdBuffer = harness.engine.createdRequests[2].readBuffers.first()
+        assertNotSame(firstBuffer, thirdBuffer, "Pool must be cleared on shutdown and allocate fresh buffer on recovery")
+    }
+
+    @Test
+    fun execute_knownAndUnknownLargeMultiChunkBodies_concatenateAccurately() {
+        val harness = createHarness()
+        val knownPayload = ByteArray(100 * 1024) { index -> ((index * 13) and 0xFF).toByte() }
+        val unknownPayload = ByteArray(150 * 1024) { index -> ((index * 29) and 0xFF).toByte() }
+
+        fun configureStream(payload: ByteArray, includeContentLength: Boolean) {
+            val headers = if (includeContentLength) {
+                listOf("Content-Length" to payload.size.toString())
+            } else {
+                emptyList()
+            }
+            val info = FakeUrlResponseInfo(statusCode = 200, statusText = "OK", headersList = headers)
+            harness.engine.onBuildRequest = { req ->
+                var offset = 0
+                req.onStart = { req.callback.onResponseStarted(req, info) }
+                req.onRead = { _, buffer ->
+                    if (offset < payload.size) {
+                        val toCopy = minOf(buffer.remaining(), payload.size - offset, 24 * 1024)
+                        buffer.put(payload, offset, toCopy)
+                        offset += toCopy
+                        req.callback.onReadCompleted(req, info, buffer)
+                    } else {
+                        req.done = true
+                        req.callback.onSucceeded(req, info)
+                    }
+                }
+            }
+        }
+
+        configureStream(knownPayload, includeContentLength = true)
+        val knownRes = runAndAssertOnce(harness.executor, createCronetRequest(requestId = "large-known"))
+        assertNull(knownRes.errorCode)
+        assertContentEquals(knownPayload, knownRes.body)
+
+        configureStream(unknownPayload, includeContentLength = false)
+        val unknownRes = runAndAssertOnce(harness.executor, createCronetRequest(requestId = "large-unknown"))
+        assertNull(unknownRes.errorCode)
+        assertContentEquals(unknownPayload, unknownRes.body)
+    }
+
+    @Test
+    fun execute_hugeSpoofedContentLengthWithEmptyStream_doesNotOomAndReturnsEmptyBody() {
+        val harness = createHarness()
+        val info = FakeUrlResponseInfo(
+            statusCode = 200,
+            statusText = "OK",
+            headersList = listOf("Content-Length" to (512L * 1024L * 1024L).toString())
+        )
+        harness.engine.onBuildRequest = { req ->
+            req.onStart = { req.callback.onResponseStarted(req, info) }
+            req.onRead = { _, _ ->
+                req.done = true
+                req.callback.onSucceeded(req, info)
+            }
+        }
+
+        val response = runAndAssertOnce(harness.executor, createCronetRequest(maxResponseBytes = null))
+        assertNull(response.errorCode)
+        assertNotNull(response.body)
+        assertEquals(0, response.body.size)
+    }
+
+    @Test
+    fun execute_uninitializedEngine_initializesAsynchronouslyAndSupportsEarlyCancel() {
+        var factoryCalls = 0
+        val fakeEngine = FakeCronetEngine()
+        val clientManager = CronetClientManager(
+            engineFactory = {
+                factoryCalls++
+                fakeEngine
+            },
+            shutdownRunner = { task -> task() }
+        )
+        val deferredExecutor = DeferredExecutor()
+        val timerScheduler = ManualTimerScheduler()
+        val executor = CronetTurboHttpExecutor(
+            clientManager = clientManager,
+            callbackExecutor = deferredExecutor,
+            timerScheduler = timerScheduler
+        )
+        executor.ensureReady(Mockito.mock(Context::class.java))
+
+        // 1. Cancel before background engine init runs: must complete with cancel without creating engine.
+        val canceledResponseRef = AtomicReference<TurboHttpResponse?>()
+        val cancelCallCount = AtomicInteger(0)
+        executor.execute(createCronetRequest(requestId = "early-cancel")) { response ->
+            cancelCallCount.incrementAndGet()
+            canceledResponseRef.set(response)
+        }
+        assertEquals(0, factoryCalls, "Engine must not be initialized synchronously on caller thread")
+        assertTrue(executor.hasActiveCall("early-cancel"))
+
+        executor.cancel("early-cancel")
+        deferredExecutor.runAll()
+
+        assertEquals(0, factoryCalls, "Canceled request must not initialize CronetEngine")
+        assertEquals(1, cancelCallCount.get())
+        assertEquals("cancel", canceledResponseRef.get()?.errorCode)
+        assertEquals(0, executor.activeCallCount)
+
+        // 2. Normal request initializes engine on background executor and completes.
+        val info = FakeUrlResponseInfo(statusCode = 200, statusText = "OK")
+        fakeEngine.onBuildRequest = { req ->
+            req.onStart = { req.callback.onResponseStarted(req, info) }
+            req.onRead = { _, _ ->
+                req.done = true
+                req.callback.onSucceeded(req, info)
+            }
+        }
+        val okResponseRef = AtomicReference<TurboHttpResponse?>()
+        executor.execute(createCronetRequest(requestId = "async-init")) { okResponseRef.set(it) }
+        assertEquals(0, factoryCalls, "Engine initialization must be deferred to background executor")
+
+        deferredExecutor.runAll()
+        assertEquals(1, factoryCalls)
+        assertNull(okResponseRef.get()?.errorCode)
+        assertEquals(200L, okResponseRef.get()?.statusCode)
+        assertEquals(0, executor.activeCallCount)
+    }
+
+    @Test
+    fun shutdown_withOwnedCallbackExecutorAndInFlightRequest_deliversOnCanceledWithoutRejection() {
+        val fakeEngine = FakeCronetEngine()
+        val requestStarted = CountDownLatch(1)
+        val resultLatch = CountDownLatch(1)
+        val resultRef = AtomicReference<TurboHttpResponse?>()
+
+        fakeEngine.onBuildRequest = { req ->
+            req.onStart = { requestStarted.countDown() }
+            req.onCancel = {
+                // Simulate Cronet native thread posting onCanceled to callbackExecutor asynchronously
+                // even after executor.shutdown() has been invoked.
+                req.callbackExecutor.execute {
+                    req.callback.onCanceled(req, null)
+                }
+            }
+        }
+
+        val clientManager = CronetClientManager(
+            engineFactory = { fakeEngine },
+            shutdownRunner = { task -> task() }
+        )
+        val executor = CronetTurboHttpExecutor(
+            clientManager = clientManager,
+            timerScheduler = ManualTimerScheduler()
+        )
+        executor.ensureReady(Mockito.mock(Context::class.java))
+
+        executor.execute(createCronetRequest(requestId = "owned-shutdown")) { response ->
+            resultRef.set(response)
+            resultLatch.countDown()
+        }
+
+        assertTrue(requestStarted.await(5, TimeUnit.SECONDS))
+        executor.shutdown()
+
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS), "onCanceled must complete without RejectedExecutionException")
+        assertEquals("cancel", resultRef.get()?.errorCode)
+        assertEquals(1, fakeEngine.shutdownCount)
     }
 
     @Test

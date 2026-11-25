@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -111,5 +112,111 @@ internal class OkHttpClientManagerTest {
         assertEquals(10_000, client.connectTimeoutMillis)
         assertEquals(10_000, client.readTimeoutMillis)
         assertEquals(10_000, client.writeTimeoutMillis)
+    }
+
+    @Test
+    fun acquireClient_reusesCachedDerivedClientForIdenticalConfig() {
+        val manager = OkHttpClientManager()
+        val requestA = createRequest(
+            connectTimeoutMs = 2000L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = true,
+            allowBadCertificates = false
+        )
+        val requestB = createRequest(
+            connectTimeoutMs = 2000L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = true,
+            allowBadCertificates = false
+        )
+
+        val first = manager.acquireClient(requestA)
+        val second = manager.acquireClient(requestB)
+
+        assertSame(first, second)
+    }
+
+    @Test
+    fun acquireClient_distinguishesDerivedClientsByConfig() {
+        val manager = OkHttpClientManager()
+        val baseReq = createRequest(
+            connectTimeoutMs = 2000L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = true,
+            allowBadCertificates = false
+        )
+        val diffTimeoutReq = createRequest(
+            connectTimeoutMs = 2500L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = true,
+            allowBadCertificates = false
+        )
+        val diffRedirectReq = createRequest(
+            connectTimeoutMs = 2000L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = false,
+            allowBadCertificates = false
+        )
+        val diffTlsReq = createRequest(
+            connectTimeoutMs = 2000L,
+            receiveTimeoutMs = 3000L,
+            sendTimeoutMs = 4000L,
+            followRedirects = true,
+            allowBadCertificates = true
+        )
+
+        val baseClient = manager.acquireClient(baseReq)
+        val diffTimeoutClient = manager.acquireClient(diffTimeoutReq)
+        val diffRedirectClient = manager.acquireClient(diffRedirectReq)
+        val diffTlsClient = manager.acquireClient(diffTlsReq)
+
+        assertNotSame(baseClient, diffTimeoutClient)
+        assertNotSame(baseClient, diffRedirectClient)
+        assertNotSame(baseClient, diffTlsClient)
+        assertEquals(2500, diffTimeoutClient.connectTimeoutMillis)
+        assertFalse(diffRedirectClient.followRedirects)
+        assertFalse(diffRedirectClient.followSslRedirects)
+    }
+
+    @Test
+    fun acquireClient_clearsDerivedClientCacheOnShutdownAndRecovery() {
+        val manager = OkHttpClientManager()
+        val request = createRequest(connectTimeoutMs = 1234L)
+
+        val beforeShutdown = manager.acquireClient(request)
+        assertSame(beforeShutdown, manager.acquireClient(request))
+
+        manager.shutdown()
+        assertEquals(0, manager.derivedClientCacheSize)
+        assertTrue(beforeShutdown.dispatcher.executorService.isShutdown)
+
+        val afterRecovery = manager.acquireClient(request)
+        assertNotSame(beforeShutdown, afterRecovery)
+        assertFalse(afterRecovery.dispatcher.executorService.isShutdown)
+        assertEquals(1234, afterRecovery.connectTimeoutMillis)
+    }
+
+    @Test
+    fun acquireClient_boundsDerivedClientCacheSize() {
+        val manager = OkHttpClientManager()
+
+        val firstClient = manager.acquireClient(createRequest(connectTimeoutMs = 100L))
+        val secondClient = manager.acquireClient(createRequest(connectTimeoutMs = 200L))
+        for (i in 3L..16L) {
+            val client = manager.acquireClient(createRequest(connectTimeoutMs = i * 100L))
+            assertEquals((i * 100L).toInt(), client.connectTimeoutMillis)
+        }
+        assertEquals(16, manager.derivedClientCacheSize)
+
+        // Inserting a 17th distinct config evicts the oldest (1st) entry in FIFO order.
+        manager.acquireClient(createRequest(connectTimeoutMs = 1700L))
+        assertEquals(16, manager.derivedClientCacheSize)
+        assertSame(secondClient, manager.acquireClient(createRequest(connectTimeoutMs = 200L)))
+        assertNotSame(firstClient, manager.acquireClient(createRequest(connectTimeoutMs = 100L)))
     }
 }
