@@ -17,13 +17,14 @@
 
 ## 2. OkHttp3 固有の設計・実装仕様（デフォルト）
 
-- **クライアント共有とリクエスト単位派生（`OkHttpClientManager`）**:
-  - 単一のベース `OkHttpClient`（`Dispatcher` / `ConnectionPool`）を共有する。
+- **クライアント共有と派生クライアント再利用（`OkHttpClientManager`）**:
+  - 単一のベース `OkHttpClient`（`Dispatcher` / `ConnectionPool`）を共有し、定常リクエスト時の取得で排他ロックによる競合を起こさない設計とする。
   - OkHttp 標準の `Dispatcher.maxRequestsPerHost`（`5`）による HTTP/2 多重化の頭打ちを防ぐため、内部固定設定として `Dispatcher.maxRequestsPerHost = 32` / `Dispatcher.maxRequests = 64` を維持する。
   - タイムアウト、リダイレクト追従（`followRedirects` / `followSslRedirects`）、および `allowBadCertificates` 時の全信頼 `X509TrustManager` + `HostnameVerifier` は、`sharedClient.newBuilder()` による軽量な派生クライアントで適用する。
-- **送信フェーズ追跡とストリーム先読み上限判定（`OkHttpTurboHttpExecutor`）**:
+  - 同一リクエスト設定に対する毎回のクライアント再構築を避けるため、設定の組み合わせごとに派生クライアントを有界キャッシュで再利用し、`shutdown()` およびベースクライアント再生成時にキャッシュを破棄する。
+- **送信フェーズ追跡とレスポンスボディ読み出し（`OkHttpTurboHttpExecutor`）**:
   - リクエストボディ送信中は `RequestBody.writeTo(sink)` 内で `isSendingBody` フラグを立て、タイムアウト発生時に `sendTimeout` と `receiveTimeout` を識別する。
-  - `maxResponseBytes` 上限判定では、`BufferedSource.request(safeMaxBytes + 1L)` で先行読み込みを行い、全データをメモリ展開する前に超過を検知して即時中断する。
+  - レスポンスボディの読み出しでは、不要な中間バッファリングによるピークメモリ増大を避けつつ、`maxResponseBytes` 上限を `Content-Length` と実データ量の 2 段階で検証し、超過検知時は全量をメモリ展開せず即座に中断して `maxResponseBytesExceeded` を返却する。
 
 ### 2.1 例外マッピング（OkHttp → 共通エラーコード）
 
