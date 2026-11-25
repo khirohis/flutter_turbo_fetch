@@ -1,3 +1,9 @@
+## 0.1.2
+
+* **Dart Layer Hardening & Refactoring**: Fixed unhandled asynchronous exceptions during request cancellation, prevented dispatching requests cancelled while reading `requestStream`, added validation requiring `maxConcurrentIsolates >= 1` in `TurboTransformer`, and simplified internal adapter/transformer/options pipelines.
+* **Dart Hot-Path Optimizations**: Optimized `TurboHttpAdapter` hot paths, semaphore queueing, and immediate main-isolate handling for empty response payloads.
+* **iOS Legacy Device Benchmarks**: Added physical iPhone 6s Release benchmark results under the split-pipeline protocol (`N=10` trials with 1:1 server audit) to `README.md` and the benchmark documentation.
+
 ## 0.1.1
 
 * **Android Cronet Engine Support (Opt-in)**: Added build-time Cronet engine selection (`flutter_turbo_fetch.androidEngine=cronet` in `android/gradle.properties`) alongside the default `OkHttp3` engine, excluding `OkHttp3` when Cronet is selected and providing full unit test coverage.
