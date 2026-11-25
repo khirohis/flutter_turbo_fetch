@@ -7,18 +7,22 @@ import org.chromium.net.UploadDataProvider
 import org.chromium.net.UploadDataSink
 import org.chromium.net.UrlRequest
 import org.chromium.net.UrlResponseInfo
-import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.ByteBuffer
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executor
-import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 internal fun createDefaultTurboHttpExecutor(): TurboHttpExecutor = CronetTurboHttpExecutor()
@@ -34,6 +38,8 @@ internal interface CronetTimerHandle {
 }
 
 internal interface CronetTimerScheduler {
+    fun nowMs(): Long = System.nanoTime() / 1_000_000L
+
     fun schedule(delayMs: Long, task: () -> Unit): CronetTimerHandle
 
     fun shutdown()
@@ -48,10 +54,12 @@ internal class ScheduledCronetTimerScheduler : CronetTimerScheduler {
         if (current != null && !current.isShutdown) {
             return current
         }
-        val created = Executors.newSingleThreadScheduledExecutor { runnable ->
+        val created = ScheduledThreadPoolExecutor(1) { runnable ->
             Thread(runnable, "turbo-fetch-cronet-timer").apply {
                 isDaemon = true
             }
+        }.apply {
+            removeOnCancelPolicy = true
         }
         executor = created
         return created
@@ -73,22 +81,115 @@ internal class ScheduledCronetTimerScheduler : CronetTimerScheduler {
     }
 }
 
+private class DirectByteBufferPool(
+    private val bufferSize: Int,
+    private val maxPooled: Int
+) {
+    private val pool = ConcurrentLinkedQueue<ByteBuffer>()
+    private val pooledCount = AtomicInteger(0)
+
+    val size: Int
+        get() = pooledCount.get()
+
+    fun acquire(): ByteBuffer {
+        val pooled = pool.poll()
+        if (pooled != null) {
+            pooledCount.decrementAndGet()
+            pooled.clear()
+            return pooled
+        }
+        return ByteBuffer.allocateDirect(bufferSize)
+    }
+
+    fun release(buffer: ByteBuffer) {
+        buffer.clear()
+        if (pooledCount.incrementAndGet() <= maxPooled) {
+            pool.offer(buffer)
+        } else {
+            pooledCount.decrementAndGet()
+        }
+    }
+
+    fun clear() {
+        while (pool.poll() != null) {
+            pooledCount.decrementAndGet()
+        }
+    }
+}
+
+private class ResponseBodyAccumulator {
+    private val chunks = ArrayList<ByteArray>(4)
+
+    var totalBytes: Long = 0L
+        private set
+
+    fun append(byteBuffer: ByteBuffer, bytesRead: Int): Boolean {
+        val newTotal = totalBytes + bytesRead.toLong()
+        if (newTotal > Int.MAX_VALUE) {
+            return false
+        }
+        totalBytes = newTotal
+        val chunk = ByteArray(bytesRead)
+        byteBuffer.get(chunk)
+        chunks.add(chunk)
+        return true
+    }
+
+    fun toByteArray(): ByteArray = when (chunks.size) {
+        0 -> ByteArray(0)
+        1 -> chunks[0]
+        else -> {
+            val merged = ByteArray(totalBytes.toInt())
+            var offset = 0
+            for (chunk in chunks) {
+                System.arraycopy(chunk, 0, merged, offset, chunk.size)
+                offset += chunk.size
+            }
+            merged
+        }
+    }
+}
+
 /**
- * Cronet-backed [TurboHttpExecutor] performing one-shot response body aggregation via a fixed
- * 64KiB reusable direct [ByteBuffer], phase-specific timeouts, strict pre-flight validation, and
+ * Cronet-backed [TurboHttpExecutor] performing one-shot response body aggregation via a bounded
+ * pool of 64KiB direct [ByteBuffer]s, watchdog phase timeouts, strict pre-flight validation, and
  * deferred engine cleanup.
  */
 internal open class CronetTurboHttpExecutor(
     private val clientManager: CronetClientManager = CronetClientManager(),
-    private val callbackExecutor: Executor = defaultCallbackExecutor(),
+    private val callbackExecutor: Executor? = null,
     private val timerScheduler: CronetTimerScheduler = ScheduledCronetTimerScheduler()
 ) : TurboHttpExecutor {
     private val activeCalls = ConcurrentHashMap<String, ActiveCronetCall>()
+    private val bufferPool = DirectByteBufferPool(READ_BUFFER_SIZE, MAX_POOLED_BUFFERS)
+
+    @Volatile
+    private var ownedCallbackExecutor: ExecutorService? = null
 
     internal val activeCallCount: Int
         get() = activeCalls.size
 
+    internal val pooledBufferCount: Int
+        get() = bufferPool.size
+
     internal fun hasActiveCall(requestId: String): Boolean = activeCalls.containsKey(requestId)
+
+    private fun ensureCallbackExecutor(): Executor {
+        callbackExecutor?.let { return it }
+        val current = ownedCallbackExecutor
+        if (current != null && !current.isShutdown) {
+            return current
+        }
+        synchronized(this) {
+            val latest = ownedCallbackExecutor
+            if (latest != null && !latest.isShutdown) {
+                return latest
+            }
+            val created = createBoundedCallbackExecutor()
+            ownedCallbackExecutor = created
+            return created
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Lifecycle & Call Management
@@ -104,6 +205,11 @@ internal open class CronetTurboHttpExecutor(
             activeCalls.remove(requestId)?.cancel()
         }
         timerScheduler.shutdown()
+        bufferPool.clear()
+        synchronized(this) {
+            ownedCallbackExecutor?.shutdown()
+            ownedCallbackExecutor = null
+        }
     }
 
     override fun cancel(requestId: String) {
@@ -120,10 +226,10 @@ internal open class CronetTurboHttpExecutor(
     ) {
         if (request.allowBadCertificates) {
             onResult(
-                TurboHttpResponse(
-                    errorCode = "unknown",
-                    errorMessage = "allowBadCertificates is not supported by the Android Cronet engine. " +
-                        "Configure Android Network Security Config for development certificates, or use the OkHttp3 engine."
+                errorResponse(
+                    code = "unknown",
+                    message = "allowBadCertificates is not supported by the Android Cronet engine. " +
+                            "Configure Android Network Security Config for development certificates, or use the OkHttp3 engine."
                 )
             )
             return
@@ -132,33 +238,62 @@ internal open class CronetTurboHttpExecutor(
         val validatedRequest = try {
             validateAndNormalizeRequest(request)
         } catch (e: IllegalArgumentException) {
-            onResult(
-                TurboHttpResponse(
-                    errorCode = "connectionError",
-                    errorMessage = e.message ?: "Invalid HTTP request parameters."
-                )
-            )
+            onResult(errorResponse("connectionError", e.message ?: "Invalid HTTP request parameters."))
             return
         }
 
-        val engineHandle = try {
-            clientManager.acquireEngine()
+        val executor = ensureCallbackExecutor()
+        val activeCall = ActiveCronetCall(request, onResult)
+        activeCalls[request.requestId] = activeCall
+
+        val fastHandle = clientManager.tryAcquireIfInitialized()
+        if (fastHandle != null) {
+            startRequestWithEngine(activeCall, validatedRequest, fastHandle, executor)
+        } else {
+            startWithAsyncEngineInit(activeCall, validatedRequest, executor)
+        }
+    }
+
+    private fun startWithAsyncEngineInit(
+        activeCall: ActiveCronetCall,
+        validatedRequest: ValidatedRequest,
+        executor: Executor
+    ) {
+        try {
+            executor.execute {
+                if (activeCall.isCompleted) {
+                    return@execute
+                }
+                val engineHandle = try {
+                    clientManager.acquireEngine()
+                } catch (t: Throwable) {
+                    activeCall.fail("unknown", t.message ?: "Failed to initialize CronetEngine.")
+                    return@execute
+                }
+                if (activeCall.isCompleted) {
+                    engineHandle.release()
+                    return@execute
+                }
+                startRequestWithEngine(activeCall, validatedRequest, engineHandle, executor)
+            }
         } catch (t: Throwable) {
-            onResult(
-                TurboHttpResponse(
-                    errorCode = "unknown",
-                    errorMessage = t.message ?: "Failed to initialize CronetEngine."
-                )
-            )
-            return
+            activeCall.fail("unknown", t.message ?: "Failed to schedule Cronet request.")
         }
+    }
 
-        val activeCall = ActiveCronetCall(request, engineHandle, onResult)
+    private fun startRequestWithEngine(
+        activeCall: ActiveCronetCall,
+        validatedRequest: ValidatedRequest,
+        engineHandle: CronetClientManager.EngineHandle,
+        executor: Executor
+    ) {
+        activeCall.attachEngineHandle(engineHandle)
+
         val builder = try {
             engineHandle.engine.newUrlRequestBuilder(
                 validatedRequest.url,
                 activeCall.callback,
-                callbackExecutor
+                executor
             ).apply {
                 setHttpMethod(validatedRequest.method)
                 for ((key, value) in validatedRequest.headers) {
@@ -167,53 +302,39 @@ internal open class CronetTurboHttpExecutor(
                 if (validatedRequest.body != null) {
                     setUploadDataProvider(
                         activeCall.createUploadProvider(validatedRequest.body),
-                        callbackExecutor
+                        executor
                     )
                 }
             }
         } catch (t: Throwable) {
-            engineHandle.release()
-            onResult(
-                TurboHttpResponse(
-                    errorCode = "unknown",
-                    errorMessage = t.message ?: "Failed to build Cronet UrlRequest."
-                )
-            )
+            activeCall.failAndRelease("unknown", t.message ?: "Failed to build Cronet UrlRequest.")
             return
         }
 
         val urlRequest = try {
             builder.build()
         } catch (t: Throwable) {
-            engineHandle.release()
-            onResult(
-                TurboHttpResponse(
-                    errorCode = "connectionError",
-                    errorMessage = t.message ?: "Failed to build Cronet UrlRequest."
-                )
-            )
+            activeCall.failAndRelease("connectionError", t.message ?: "Failed to build Cronet UrlRequest.")
             return
         }
 
         activeCall.attachUrlRequest(urlRequest)
-        activeCalls[request.requestId] = activeCall
+        if (activeCall.isCompleted) {
+            urlRequest.cancel()
+            activeCall.releaseResources()
+            return
+        }
 
         activeCall.schedulePhaseTimer(
-            delayMs = request.connectTimeoutMs,
+            delayMs = activeCall.request.connectTimeoutMs,
             errorCode = "connectionTimeout",
-            message = "Connection timed out after ${request.connectTimeoutMs}ms."
+            message = "Connection timed out after ${activeCall.request.connectTimeoutMs}ms."
         )
 
         try {
             urlRequest.start()
         } catch (t: Throwable) {
-            activeCall.finish(
-                TurboHttpResponse(
-                    errorCode = "unknown",
-                    errorMessage = t.message ?: "Failed to start Cronet UrlRequest."
-                )
-            )
-            engineHandle.release()
+            activeCall.failAndRelease("unknown", t.message ?: "Failed to start Cronet UrlRequest.")
         }
     }
 
@@ -305,58 +426,98 @@ internal open class CronetTurboHttpExecutor(
     // -------------------------------------------------------------------------
 
     private inner class ActiveCronetCall(
-        private val request: TurboHttpRequest,
-        private val engineHandle: CronetClientManager.EngineHandle,
+        val request: TurboHttpRequest,
         private val onResult: (TurboHttpResponse) -> Unit
     ) {
         private val completed = AtomicBoolean(false)
         private val urlRequestRef = AtomicReference<UrlRequest?>()
+        private val engineHandleRef = AtomicReference<CronetClientManager.EngineHandle?>()
+        private val leasedBufferRef = AtomicReference<ByteBuffer?>()
         private val timerLock = Any()
         private var currentTimer: CronetTimerHandle? = null
 
         @Volatile
         private var phase: RequestPhase = RequestPhase.CONNECTING
 
-        private val readBuffer: ByteBuffer = ByteBuffer.allocateDirect(READ_BUFFER_SIZE)
-        private val transferBuffer = ByteArray(READ_BUFFER_SIZE)
-        private val outputStream = ByteArrayOutputStream()
-        private var totalBytesRead = 0L
+        @Volatile
+        private var lastReceiveActivityMs: Long = 0L
+
+        private val bodyAccumulator = ResponseBodyAccumulator()
+
+        val isCompleted: Boolean
+            get() = completed.get()
+
+        fun attachEngineHandle(handle: CronetClientManager.EngineHandle) {
+            engineHandleRef.set(handle)
+        }
 
         fun attachUrlRequest(urlRequest: UrlRequest) {
             urlRequestRef.set(urlRequest)
         }
 
+        fun releaseResources() {
+            leasedBufferRef.getAndSet(null)?.let { bufferPool.release(it) }
+            engineHandleRef.getAndSet(null)?.release()
+        }
+
         fun createUploadProvider(bodyBytes: ByteArray): UploadDataProvider =
             TrackingUploadDataProvider(bodyBytes)
 
-        fun schedulePhaseTimer(delayMs: Long?, errorCode: String, message: String) {
+        private fun replaceTimer(delayMs: Long?, onTimeout: () -> Unit) {
             synchronized(timerLock) {
                 currentTimer?.cancel()
                 currentTimer = null
                 if (!completed.get() && delayMs != null && delayMs > 0L) {
-                    currentTimer = timerScheduler.schedule(delayMs) {
-                        finish(
-                            TurboHttpResponse(
-                                errorCode = errorCode,
-                                errorMessage = message
-                            )
-                        )
-                        urlRequestRef.get()?.cancel()
-                    }
+                    currentTimer = timerScheduler.schedule(delayMs, onTimeout)
                 }
             }
         }
 
         fun cancelTimer() {
-            synchronized(timerLock) {
-                currentTimer?.cancel()
-                currentTimer = null
+            replaceTimer(null) {}
+        }
+
+        fun schedulePhaseTimer(delayMs: Long?, errorCode: String, message: String) {
+            replaceTimer(delayMs) {
+                fail(errorCode, message)
+                urlRequestRef.get()?.cancel()
+            }
+        }
+
+        fun startReceiveWatchdog() {
+            val timeoutMs = request.receiveTimeoutMs
+            if (timeoutMs == null || timeoutMs <= 0L) {
+                cancelTimer()
+                return
+            }
+            lastReceiveActivityMs = timerScheduler.nowMs()
+            scheduleReceiveWatchdog(timeoutMs, timeoutMs)
+        }
+
+        private fun scheduleReceiveWatchdog(timeoutMs: Long, delayMs: Long) {
+            replaceTimer(delayMs) {
+                if (completed.get()) {
+                    return@replaceTimer
+                }
+                val elapsedMs = (timerScheduler.nowMs() - lastReceiveActivityMs).coerceAtLeast(0L)
+                val remainingMs = timeoutMs - elapsedMs
+                if (remainingMs > 0L) {
+                    scheduleReceiveWatchdog(timeoutMs, remainingMs)
+                } else {
+                    fail("receiveTimeout", "Response receive timed out after ${timeoutMs}ms.")
+                    urlRequestRef.get()?.cancel()
+                }
             }
         }
 
         fun cancel() {
             cancelTimer()
-            urlRequestRef.get()?.cancel()
+            val urlRequest = urlRequestRef.get()
+            if (urlRequest != null) {
+                urlRequest.cancel()
+            } else {
+                failAndRelease("cancel", "Request was cancelled.")
+            }
         }
 
         fun finish(response: TurboHttpResponse) {
@@ -365,6 +526,20 @@ internal open class CronetTurboHttpExecutor(
                 activeCalls.remove(request.requestId, this)
                 onResult(response)
             }
+        }
+
+        fun fail(errorCode: String, errorMessage: String) {
+            finish(errorResponse(errorCode, errorMessage))
+        }
+
+        fun failAndRelease(errorCode: String, errorMessage: String) {
+            releaseResources()
+            fail(errorCode, errorMessage)
+        }
+
+        fun failAndCancel(urlRequest: UrlRequest, errorCode: String, errorMessage: String) {
+            fail(errorCode, errorMessage)
+            urlRequest.cancel()
         }
 
         val callback: UrlRequest.Callback = object : UrlRequest.Callback() {
@@ -402,23 +577,18 @@ internal open class CronetTurboHttpExecutor(
                 val maxBytes = request.maxResponseBytes?.coerceAtLeast(0L)
                 val contentLength = extractContentLength(info)
                 if (maxBytes != null && contentLength != null && contentLength > maxBytes) {
-                    finish(
-                        TurboHttpResponse(
-                            errorCode = "maxResponseBytesExceeded",
-                            errorMessage = "Response body exceeded maxResponseBytes limit ($maxBytes bytes, contentLength: $contentLength)"
-                        )
+                    failAndCancel(
+                        urlRequest,
+                        "maxResponseBytesExceeded",
+                        "Response body exceeded maxResponseBytes limit ($maxBytes bytes, contentLength: $contentLength)"
                     )
-                    urlRequest.cancel()
                     return
                 }
 
-                schedulePhaseTimer(
-                    delayMs = request.receiveTimeoutMs,
-                    errorCode = "receiveTimeout",
-                    message = "Response receive timed out after ${request.receiveTimeoutMs}ms."
-                )
+                startReceiveWatchdog()
 
-                readBuffer.clear()
+                val readBuffer = bufferPool.acquire()
+                leasedBufferRef.set(readBuffer)
                 urlRequest.read(readBuffer)
             }
 
@@ -435,44 +605,38 @@ internal open class CronetTurboHttpExecutor(
                 byteBuffer.flip()
                 val bytesRead = byteBuffer.remaining()
                 val maxBytes = request.maxResponseBytes?.coerceAtLeast(0L)
-                if (maxBytes != null && bytesRead.toLong() > maxBytes - totalBytesRead) {
-                    finish(
-                        TurboHttpResponse(
-                            errorCode = "maxResponseBytesExceeded",
-                            errorMessage = "Response body exceeded maxResponseBytes limit ($maxBytes bytes)"
-                        )
+                if (maxBytes != null && bytesRead.toLong() > maxBytes - bodyAccumulator.totalBytes) {
+                    failAndCancel(
+                        urlRequest,
+                        "maxResponseBytesExceeded",
+                        "Response body exceeded maxResponseBytes limit ($maxBytes bytes)"
                     )
-                    urlRequest.cancel()
                     return
                 }
 
-                if (bytesRead > 0) {
-                    byteBuffer.get(transferBuffer, 0, bytesRead)
-                    outputStream.write(transferBuffer, 0, bytesRead)
-                    totalBytesRead += bytesRead
+                if (bytesRead > 0 && !bodyAccumulator.append(byteBuffer, bytesRead)) {
+                    failAndCancel(urlRequest, "unknown", "Response body exceeds maximum ByteArray size")
+                    return
                 }
                 byteBuffer.clear()
 
-                // Reset idle receive timer before requesting the next chunk.
-                schedulePhaseTimer(
-                    delayMs = request.receiveTimeoutMs,
-                    errorCode = "receiveTimeout",
-                    message = "Response receive timed out after ${request.receiveTimeoutMs}ms."
-                )
+                // Record activity timestamp without canceling/re-scheduling timer on every chunk.
+                lastReceiveActivityMs = timerScheduler.nowMs()
 
                 urlRequest.read(byteBuffer)
             }
 
             override fun onSucceeded(urlRequest: UrlRequest, info: UrlResponseInfo) {
+                val bodyBytes = bodyAccumulator.toByteArray()
+                releaseResources()
                 finish(
                     TurboHttpResponse(
                         statusCode = info.httpStatusCode.toLong(),
                         statusMessage = info.httpStatusText,
                         headers = normalizeHeaders(info),
-                        body = outputStream.toByteArray()
+                        body = bodyBytes
                     )
                 )
-                engineHandle.release()
             }
 
             override fun onFailed(
@@ -485,23 +649,11 @@ internal open class CronetTurboHttpExecutor(
                 } else {
                     "unknown"
                 }
-                finish(
-                    TurboHttpResponse(
-                        errorCode = errorCode,
-                        errorMessage = error?.message ?: "Cronet request failed."
-                    )
-                )
-                engineHandle.release()
+                failAndRelease(errorCode, error?.message ?: "Cronet request failed.")
             }
 
             override fun onCanceled(urlRequest: UrlRequest, info: UrlResponseInfo?) {
-                finish(
-                    TurboHttpResponse(
-                        errorCode = "cancel",
-                        errorMessage = "Request was cancelled."
-                    )
-                )
-                engineHandle.release()
+                failAndRelease("cancel", "Request was cancelled.")
             }
         }
 
@@ -514,16 +666,6 @@ internal open class CronetTurboHttpExecutor(
             override fun getLength(): Long = bytes.size.toLong()
 
             override fun read(uploadDataSink: UploadDataSink, byteBuffer: ByteBuffer) {
-                if (!uploadStarted) {
-                    uploadStarted = true
-                    phase = RequestPhase.SENDING_BODY
-                    schedulePhaseTimer(
-                        delayMs = request.sendTimeoutMs,
-                        errorCode = "sendTimeout",
-                        message = "Request send timed out after ${request.sendTimeoutMs}ms."
-                    )
-                }
-
                 val remainingBytes = bytes.size - offset
                 val toWrite = minOf(byteBuffer.remaining(), remainingBytes)
                 if (toWrite > 0) {
@@ -532,11 +674,16 @@ internal open class CronetTurboHttpExecutor(
                 }
 
                 if (offset >= bytes.size) {
+                    uploadStarted = true
                     phase = RequestPhase.RECEIVING
+                    startReceiveWatchdog()
+                } else if (!uploadStarted) {
+                    uploadStarted = true
+                    phase = RequestPhase.SENDING_BODY
                     schedulePhaseTimer(
-                        delayMs = request.receiveTimeoutMs,
-                        errorCode = "receiveTimeout",
-                        message = "Response receive timed out after ${request.receiveTimeoutMs}ms."
+                        delayMs = request.sendTimeoutMs,
+                        errorCode = "sendTimeout",
+                        message = "Request send timed out after ${request.sendTimeoutMs}ms."
                     )
                 }
 
@@ -556,26 +703,24 @@ internal open class CronetTurboHttpExecutor(
     // -------------------------------------------------------------------------
 
     private fun normalizeHeaders(info: UrlResponseInfo): Map<String?, Any?> {
-        val grouped = HashMap<String?, MutableList<String>>()
-        for (entry in info.allHeadersAsList) {
+        val list = info.allHeadersAsList
+        val grouped = HashMap<String?, MutableList<String>>(list.size)
+        for (entry in list) {
             val key = entry.key.lowercase(Locale.ROOT)
-            grouped.getOrPut(key) { mutableListOf() }.add(entry.value)
+            grouped.getOrPut(key) { ArrayList(1) }.add(entry.value)
         }
-        val result = HashMap<String?, Any?>(grouped.size)
-        for ((k, v) in grouped) {
-            result[k] = v
-        }
-        return result
+        return grouped
     }
 
-    private fun extractContentLength(info: UrlResponseInfo): Long? {
-        for (entry in info.allHeadersAsList) {
-            if (entry.key.equals("content-length", ignoreCase = true)) {
-                return entry.value.trim().toLongOrNull()
-            }
-        }
-        return null
-    }
+    private fun errorResponse(code: String, message: String): TurboHttpResponse =
+        TurboHttpResponse(errorCode = code, errorMessage = message)
+
+    private fun extractContentLength(info: UrlResponseInfo): Long? =
+        info.allHeadersAsList
+            .firstOrNull { it.key.equals("content-length", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.toLongOrNull()
 
     internal fun classifyNetworkException(e: NetworkException, phase: RequestPhase): String {
         val errorCode = e.errorCode
@@ -605,12 +750,14 @@ internal open class CronetTurboHttpExecutor(
             NetworkException.ERROR_ADDRESS_UNREACHABLE,
             NetworkException.ERROR_QUIC_PROTOCOL_FAILED,
             NetworkException.ERROR_OTHER -> "connectionError"
+
             else -> "unknown"
         }
     }
 
     companion object {
         private const val READ_BUFFER_SIZE = 64 * 1024
+        private const val MAX_POOLED_BUFFERS = 16
 
         // Chromium net_error_list.h SSL/TLS handshake error codes outside -200..-299.
         private val SSL_HANDSHAKE_INTERNAL_ERROR_CODES = setOf(
@@ -626,11 +773,21 @@ internal open class CronetTurboHttpExecutor(
             -156  // ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED
         )
 
-        private fun defaultCallbackExecutor(): Executor =
-            Executors.newCachedThreadPool { runnable ->
+        private fun createBoundedCallbackExecutor(): ExecutorService {
+            val maxThreads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+            return ThreadPoolExecutor(
+                maxThreads,
+                maxThreads,
+                30L,
+                TimeUnit.SECONDS,
+                LinkedBlockingQueue()
+            ) { runnable ->
                 Thread(runnable, "turbo-fetch-cronet-callback").apply {
                     isDaemon = true
                 }
+            }.apply {
+                allowCoreThreadTimeOut(true)
             }
+        }
     }
 }

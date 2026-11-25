@@ -22,6 +22,23 @@ internal class DirectExecutor : Executor {
     }
 }
 
+internal class DeferredExecutor : Executor {
+    private val queue = ArrayDeque<Runnable>()
+
+    val pendingCount: Int
+        get() = queue.size
+
+    override fun execute(command: Runnable) {
+        queue.addLast(command)
+    }
+
+    fun runAll() {
+        while (queue.isNotEmpty()) {
+            queue.removeFirst().run()
+        }
+    }
+}
+
 internal fun createCronetRequest(
     requestId: String = "test-req",
     url: String = "https://example.com/api",
@@ -330,12 +347,20 @@ internal class ManualTimerScheduler : CronetTimerScheduler {
     val handles = mutableListOf<ManualTimerHandle>()
     var shutdownCalled: Boolean = false
         private set
+    var currentTimeMs: Long = 0L
+        private set
 
     val activeHandles: List<ManualTimerHandle>
         get() = handles.filter { it.isActive }
 
     val pendingCount: Int
         get() = activeHandles.size
+
+    fun advanceTimeBy(deltaMs: Long) {
+        currentTimeMs += deltaMs
+    }
+
+    override fun nowMs(): Long = currentTimeMs
 
     override fun schedule(delayMs: Long, task: () -> Unit): CronetTimerHandle {
         val handle = ManualTimerHandle(delayMs, task)
