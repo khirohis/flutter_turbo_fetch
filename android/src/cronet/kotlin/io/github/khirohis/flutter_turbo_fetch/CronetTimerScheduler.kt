@@ -1,5 +1,6 @@
 package io.github.khirohis.flutter_turbo_fetch
 
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -38,7 +39,11 @@ internal class ScheduledCronetTimerScheduler : CronetTimerScheduler {
     }
 
     override fun schedule(delayMs: Long, task: () -> Unit): CronetTimerHandle {
-        val future: ScheduledFuture<*> = ensureExecutor().schedule(task, delayMs, TimeUnit.MILLISECONDS)
+        val future: ScheduledFuture<*> = try {
+            ensureExecutor().schedule(task, delayMs, TimeUnit.MILLISECONDS)
+        } catch (_: RejectedExecutionException) {
+            return NoOpTimerHandle
+        }
         return object : CronetTimerHandle {
             override fun cancel() {
                 future.cancel(false)
@@ -50,5 +55,9 @@ internal class ScheduledCronetTimerScheduler : CronetTimerScheduler {
     override fun shutdown() {
         executor?.shutdownNow()
         executor = null
+    }
+
+    private object NoOpTimerHandle : CronetTimerHandle {
+        override fun cancel() {}
     }
 }

@@ -15,16 +15,17 @@ import java.util.concurrent.atomic.AtomicReference
  * Per-request Cronet execution state machine managing phase timers, watchdog idle timeout,
  * direct [ByteBuffer] lease, upload streaming, and one-shot response body aggregation.
  */
-internal class ActiveCronetCall(
+internal class CronetActiveCall(
     val request: TurboHttpRequest,
     private val bufferPool: CronetDirectByteBufferPool,
     private val timerScheduler: CronetTimerScheduler,
-    private val onComplete: (ActiveCronetCall, TurboHttpResponse) -> Unit
+    private val onComplete: (CronetActiveCall, TurboHttpResponse) -> Unit
 ) {
     private val completed = AtomicBoolean(false)
     private val urlRequestRef = AtomicReference<UrlRequest?>()
     private val engineHandleRef = AtomicReference<CronetClientManager.EngineHandle?>()
     private val leasedBufferRef = AtomicReference<ByteBuffer?>()
+    private val lifecycleLock = Any()
     private val timerLock = Any()
     private var currentTimer: CronetTimerHandle? = null
 
@@ -35,6 +36,7 @@ internal class ActiveCronetCall(
     private var lastReceiveActivityMs: Long = 0L
 
     private val bodyAccumulator = ResponseBodyAccumulator()
+    private val maxResponseBytes: Long? = request.maxResponseBytes?.coerceAtLeast(0L)
 
     val isCompleted: Boolean
         get() = completed.get()
@@ -43,8 +45,24 @@ internal class ActiveCronetCall(
         engineHandleRef.set(handle)
     }
 
-    fun attachUrlRequest(urlRequest: UrlRequest) {
-        urlRequestRef.set(urlRequest)
+    fun start(urlRequest: UrlRequest) {
+        synchronized(lifecycleLock) {
+            if (completed.get()) {
+                releaseResources()
+                return
+            }
+            urlRequestRef.set(urlRequest)
+            schedulePhaseTimer(
+                delayMs = request.connectTimeoutMs,
+                errorCode = "connectionTimeout",
+                message = "Connection timed out after ${request.connectTimeoutMs}ms."
+            )
+            try {
+                urlRequest.start()
+            } catch (t: Throwable) {
+                failAndRelease("unknown", t.message ?: "Failed to start Cronet UrlRequest.")
+            }
+        }
     }
 
     fun releaseResources() {
@@ -103,13 +121,14 @@ internal class ActiveCronetCall(
     }
 
     fun cancel() {
-        cancelTimer()
-        val urlRequest = urlRequestRef.get()
-        if (urlRequest != null) {
-            urlRequest.cancel()
-        } else {
-            failAndRelease("cancel", "Request was cancelled.")
+        val urlRequestToCancel: UrlRequest = synchronized(lifecycleLock) {
+            cancelTimer()
+            urlRequestRef.get() ?: run {
+                failAndRelease("cancel", "Request was cancelled.")
+                return
+            }
         }
+        urlRequestToCancel.cancel()
     }
 
     fun finish(response: TurboHttpResponse) {
@@ -133,14 +152,21 @@ internal class ActiveCronetCall(
         urlRequest.cancel()
     }
 
+    private fun abortIfCompleted(urlRequest: UrlRequest): Boolean {
+        if (completed.get()) {
+            urlRequest.cancel()
+            return true
+        }
+        return false
+    }
+
     val callback: UrlRequest.Callback = object : UrlRequest.Callback() {
         override fun onRedirectReceived(
             urlRequest: UrlRequest,
             info: UrlResponseInfo,
             newLocationUrl: String
         ) {
-            if (completed.get()) {
-                urlRequest.cancel()
+            if (abortIfCompleted(urlRequest)) {
                 return
             }
             if (request.followRedirects) {
@@ -159,13 +185,12 @@ internal class ActiveCronetCall(
         }
 
         override fun onResponseStarted(urlRequest: UrlRequest, info: UrlResponseInfo) {
-            if (completed.get()) {
-                urlRequest.cancel()
+            if (abortIfCompleted(urlRequest)) {
                 return
             }
             phase = RequestPhase.RECEIVING
 
-            val maxBytes = request.maxResponseBytes?.coerceAtLeast(0L)
+            val maxBytes = maxResponseBytes
             val contentLength = extractContentLength(info)
             if (maxBytes != null && contentLength != null && contentLength > maxBytes) {
                 failAndCancel(
@@ -188,14 +213,13 @@ internal class ActiveCronetCall(
             info: UrlResponseInfo,
             byteBuffer: ByteBuffer
         ) {
-            if (completed.get()) {
-                urlRequest.cancel()
+            if (abortIfCompleted(urlRequest)) {
                 return
             }
 
             byteBuffer.flip()
             val bytesRead = byteBuffer.remaining()
-            val maxBytes = request.maxResponseBytes?.coerceAtLeast(0L)
+            val maxBytes = maxResponseBytes
             if (maxBytes != null && bytesRead.toLong() > maxBytes - bodyAccumulator.totalBytes) {
                 failAndCancel(
                     urlRequest,

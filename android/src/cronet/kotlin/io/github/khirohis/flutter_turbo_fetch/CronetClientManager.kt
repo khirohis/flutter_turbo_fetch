@@ -52,26 +52,24 @@ internal class CronetClientManager(
         }
 
         private fun releaseOne() {
-            var shouldDispatchShutdown = false
-            synchronized(this) {
+            updateAndMaybeShutdown {
                 if (inFlightCount > 0) {
                     inFlightCount--
                 }
-                if (inFlightCount == 0 && shutdownRequested && !shutdownDispatched) {
-                    shutdownDispatched = true
-                    shouldDispatchShutdown = true
-                }
-            }
-            if (shouldDispatchShutdown) {
-                dispatchShutdown()
             }
         }
 
         fun requestShutdown() {
+            updateAndMaybeShutdown {
+                shutdownRequested = true
+            }
+        }
+
+        private inline fun updateAndMaybeShutdown(update: () -> Unit) {
             var shouldDispatchShutdown = false
             synchronized(this) {
-                shutdownRequested = true
-                if (inFlightCount == 0 && !shutdownDispatched) {
+                update()
+                if (inFlightCount == 0 && shutdownRequested && !shutdownDispatched) {
                     shutdownDispatched = true
                     shouldDispatchShutdown = true
                 }

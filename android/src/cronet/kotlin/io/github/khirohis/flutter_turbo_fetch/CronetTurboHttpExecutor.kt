@@ -20,7 +20,7 @@ internal open class CronetTurboHttpExecutor(
     private val callbackExecutor: Executor? = null,
     private val timerScheduler: CronetTimerScheduler = ScheduledCronetTimerScheduler()
 ) : TurboHttpExecutor {
-    private val activeCalls = ConcurrentHashMap<String, ActiveCronetCall>()
+    private val activeCalls = ConcurrentHashMap<String, CronetActiveCall>()
     private val bufferPool = CronetDirectByteBufferPool(READ_BUFFER_SIZE, MAX_POOLED_BUFFERS)
 
     @Volatile
@@ -61,14 +61,22 @@ internal open class CronetTurboHttpExecutor(
 
     override fun shutdown() {
         clientManager.shutdown()
+        var hadActiveCalls = false
         for (requestId in activeCalls.keys) {
-            activeCalls.remove(requestId)?.cancel()
+            val removed = activeCalls.remove(requestId)
+            if (removed != null) {
+                hadActiveCalls = true
+                removed.cancel()
+            }
         }
         timerScheduler.shutdown()
         bufferPool.clear()
         synchronized(this) {
-            ownedCallbackExecutor?.shutdown()
+            val executorToRelease = ownedCallbackExecutor
             ownedCallbackExecutor = null
+            if (!hadActiveCalls) {
+                executorToRelease?.shutdown()
+            }
         }
     }
 
@@ -108,7 +116,7 @@ internal open class CronetTurboHttpExecutor(
         }
 
         val executor = ensureCallbackExecutor()
-        val activeCall = ActiveCronetCall(
+        val activeCall = CronetActiveCall(
             request = request,
             bufferPool = bufferPool,
             timerScheduler = timerScheduler,
@@ -128,7 +136,7 @@ internal open class CronetTurboHttpExecutor(
     }
 
     private fun startWithAsyncEngineInit(
-        activeCall: ActiveCronetCall,
+        activeCall: CronetActiveCall,
         validatedRequest: ValidatedCronetRequest,
         executor: Executor
     ) {
@@ -155,7 +163,7 @@ internal open class CronetTurboHttpExecutor(
     }
 
     private fun startRequestWithEngine(
-        activeCall: ActiveCronetCall,
+        activeCall: CronetActiveCall,
         validatedRequest: ValidatedCronetRequest,
         engineHandle: CronetClientManager.EngineHandle,
         executor: Executor
@@ -191,24 +199,7 @@ internal open class CronetTurboHttpExecutor(
             return
         }
 
-        activeCall.attachUrlRequest(urlRequest)
-        if (activeCall.isCompleted) {
-            urlRequest.cancel()
-            activeCall.releaseResources()
-            return
-        }
-
-        activeCall.schedulePhaseTimer(
-            delayMs = activeCall.request.connectTimeoutMs,
-            errorCode = "connectionTimeout",
-            message = "Connection timed out after ${activeCall.request.connectTimeoutMs}ms."
-        )
-
-        try {
-            urlRequest.start()
-        } catch (t: Throwable) {
-            activeCall.failAndRelease("unknown", t.message ?: "Failed to start Cronet UrlRequest.")
-        }
+        activeCall.start(urlRequest)
     }
 
     internal fun classifyNetworkException(e: NetworkException, phase: RequestPhase): String =

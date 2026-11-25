@@ -3,6 +3,8 @@ package io.github.khirohis.flutter_turbo_fetch
 import android.content.Context
 import org.chromium.net.NetworkException
 import org.mockito.Mockito
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
@@ -824,6 +826,47 @@ internal class CronetTurboHttpExecutorTest {
         assertNull(okResponseRef.get()?.errorCode)
         assertEquals(200L, okResponseRef.get()?.statusCode)
         assertEquals(0, executor.activeCallCount)
+    }
+
+    @Test
+    fun shutdown_withOwnedCallbackExecutorAndInFlightRequest_deliversOnCanceledWithoutRejection() {
+        val fakeEngine = FakeCronetEngine()
+        val requestStarted = CountDownLatch(1)
+        val resultLatch = CountDownLatch(1)
+        val resultRef = AtomicReference<TurboHttpResponse?>()
+
+        fakeEngine.onBuildRequest = { req ->
+            req.onStart = { requestStarted.countDown() }
+            req.onCancel = {
+                // Simulate Cronet native thread posting onCanceled to callbackExecutor asynchronously
+                // even after executor.shutdown() has been invoked.
+                req.callbackExecutor.execute {
+                    req.callback.onCanceled(req, null)
+                }
+            }
+        }
+
+        val clientManager = CronetClientManager(
+            engineFactory = { fakeEngine },
+            shutdownRunner = { task -> task() }
+        )
+        val executor = CronetTurboHttpExecutor(
+            clientManager = clientManager,
+            timerScheduler = ManualTimerScheduler()
+        )
+        executor.ensureReady(Mockito.mock(Context::class.java))
+
+        executor.execute(createCronetRequest(requestId = "owned-shutdown")) { response ->
+            resultRef.set(response)
+            resultLatch.countDown()
+        }
+
+        assertTrue(requestStarted.await(5, TimeUnit.SECONDS))
+        executor.shutdown()
+
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS), "onCanceled must complete without RejectedExecutionException")
+        assertEquals("cancel", resultRef.get()?.errorCode)
+        assertEquals(1, fakeEngine.shutdownCount)
     }
 
     @Test
