@@ -11,6 +11,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSource
 import okio.Sink
+import okio.Source
 import okio.Timeout
 import okio.buffer
 import java.io.IOException
@@ -423,6 +424,194 @@ internal class OkHttpTurboHttpExecutorTest {
         val response = executeSync(executor, createRequest(maxResponseBytes = Long.MAX_VALUE))
         assertNull(response.errorCode)
         assertContentEquals(payload, response.body)
+    }
+
+    @Test
+    fun execute_unknownContentLengthExactBoundaryLargePayload_succeeds() {
+        val payload = ByteArray(128 * 1024) { index -> (index and 0xFF).toByte() }
+        val unknownLengthBody = object : ResponseBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength(): Long = -1L
+            override fun source(): BufferedSource = Buffer().write(payload)
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(unknownLengthBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = payload.size.toLong()))
+        assertNull(response.errorCode)
+        assertContentEquals(payload, response.body)
+    }
+
+    @Test
+    fun execute_unknownContentLengthExceedingLimit_abortsWithoutReadingEntireStream() {
+        val totalStreamBytes = 1024 * 1024L // 1 MiB
+        val limitBytes = 64 * 1024L // 64 KiB
+        var bytesProduced = 0L
+
+        val countingSource = object : Source {
+            override fun read(sink: Buffer, byteCount: Long): Long {
+                val remaining = totalStreamBytes - bytesProduced
+                if (remaining <= 0L) return -1L
+                val toWrite = minOf(byteCount, remaining, 16 * 1024L).toInt()
+                sink.write(ByteArray(toWrite) { 7 })
+                bytesProduced += toWrite
+                return toWrite.toLong()
+            }
+
+            override fun timeout(): Timeout = Timeout.NONE
+            override fun close() {}
+        }
+
+        val unknownLengthBody = object : ResponseBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength(): Long = -1L
+            override fun source(): BufferedSource = countingSource.buffer()
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(unknownLengthBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = limitBytes))
+        assertEquals("maxResponseBytesExceeded", response.errorCode)
+        assertNull(response.body)
+        assertTrue(
+            bytesProduced < totalStreamBytes / 2,
+            "Expected stream read to abort early, but read $bytesProduced / $totalStreamBytes bytes"
+        )
+    }
+
+    @Test
+    fun execute_knownContentLengthWithExtraTrailingBytes_returnsExceededError() {
+        val actualPayload = ByteArray(40) { 9 }
+        val mismatchedLengthBody = object : ResponseBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength(): Long = 32L
+            override fun source(): BufferedSource = Buffer().write(actualPayload)
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(mismatchedLengthBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = 32L))
+        assertEquals("maxResponseBytesExceeded", response.errorCode)
+        assertNull(response.body)
+    }
+
+    @Test
+    fun execute_knownContentLengthLargePayloadWithNullLimit_returnsFullBody() {
+        val payload = ByteArray(200 * 1024) { index -> ((index * 31) and 0xFF).toByte() }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(payload.toResponseBody("application/octet-stream".toMediaType()))
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = null))
+        assertNull(response.errorCode)
+        assertContentEquals(payload, response.body)
+    }
+
+    @Test
+    fun execute_unknownContentLengthLargePayloadWithNullLimit_returnsFullBody() {
+        val payload = ByteArray(200 * 1024) { index -> ((index * 17) and 0xFF).toByte() }
+        val unknownLengthBody = object : ResponseBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength(): Long = -1L
+            override fun source(): BufferedSource = Buffer().write(payload)
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(unknownLengthBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = null))
+        assertNull(response.errorCode)
+        assertContentEquals(payload, response.body)
+    }
+
+    @Test
+    fun execute_responseCloseThrowsAfterBodyRead_invokesCallbackOnceWithSuccessResponse() {
+        val payload = "safe-body".encodeToByteArray()
+        val throwingCloseBody = object : ResponseBody() {
+            override fun contentType() = "text/plain".toMediaType()
+            override fun contentLength(): Long = payload.size.toLong()
+            override fun source(): BufferedSource = Buffer().write(payload)
+            override fun close() {
+                throw IOException("Simulated close failure")
+            }
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(throwingCloseBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest())
+        assertNull(response.errorCode)
+        assertEquals(200L, response.statusCode)
+        assertContentEquals(payload, response.body)
+    }
+
+    @Test
+    fun execute_hugeSpoofedContentLengthWithEmptyStream_doesNotOomAndHandlesSafely() {
+        val spoofedHugeBody = object : ResponseBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength(): Long = 512L * 1024L * 1024L // 512 MiB
+            override fun source(): BufferedSource = Buffer() // Empty stream
+        }
+
+        val executor = createInterceptedExecutor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_2)
+                .code(200)
+                .message("OK")
+                .body(spoofedHugeBody)
+                .build()
+        }
+
+        val response = executeSync(executor, createRequest(maxResponseBytes = null))
+        assertNull(response.errorCode)
+        assertNotNull(response.body)
+        assertEquals(0, response.body.size)
     }
 
     @Test
