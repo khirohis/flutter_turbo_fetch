@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <winhttp.h>
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -623,6 +624,437 @@ TURBO_TEST(TurboHttpExecutor_Execute_EmptyResponseBody_ReturnsEmptyBodySafely) {
   ASSERT_EQ(200, *response.status_code());
   ASSERT_NE(nullptr, response.body());
   ASSERT_TRUE(response.body()->empty());
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_WriteAllRequestBody_HandlesPartialWritesAndCompletes) {
+  std::vector<uint8_t> body(100);
+  for (size_t i = 0; i < body.size(); ++i) {
+    body[i] = static_cast<uint8_t>(i & 0xff);
+  }
+
+  RequestContext ctx;
+  std::vector<uint8_t> received;
+  const std::vector<DWORD> chunk_limits = {30, 40, 30};
+  size_t call_index = 0;
+  DWORD win32_err = ERROR_SUCCESS;
+
+  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+      body, ctx,
+      [&](const uint8_t* data, DWORD len, DWORD* bytes_written) -> bool {
+        ASSERT_TRUE(call_index < chunk_limits.size());
+        DWORD to_take =
+            (len < chunk_limits[call_index]) ? len : chunk_limits[call_index];
+        received.insert(received.end(), data, data + to_take);
+        *bytes_written = to_take;
+        ++call_index;
+        return true;
+      },
+      &win32_err);
+
+  ASSERT_TRUE(ok);
+  ASSERT_EQ(static_cast<size_t>(3), call_index);
+  ASSERT_EQ(body, received);
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_WriteAllRequestBody_StopsOnCancelBetweenChunks) {
+  const std::vector<uint8_t> body(64, 0xAB);
+  RequestContext ctx;
+  int call_count = 0;
+  DWORD win32_err = ERROR_SUCCESS;
+
+  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+      body, ctx,
+      [&](const uint8_t* /*data*/, DWORD /*len*/,
+          DWORD* bytes_written) -> bool {
+        ++call_count;
+        *bytes_written = 16;
+        ctx.is_cancelled = true;
+        return true;
+      },
+      &win32_err);
+
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(1, call_count);
+  ASSERT_EQ(static_cast<DWORD>(ERROR_WINHTTP_OPERATION_CANCELLED), win32_err);
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_WriteAllRequestBody_StopsOnZeroByteWriteProgress) {
+  const std::vector<uint8_t> body(32, 0xCD);
+  RequestContext ctx;
+  int call_count = 0;
+  DWORD win32_err = ERROR_SUCCESS;
+
+  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+      body, ctx,
+      [&](const uint8_t* /*data*/, DWORD /*len*/,
+          DWORD* bytes_written) -> bool {
+        ++call_count;
+        *bytes_written = 0;
+        return true;
+      },
+      &win32_err);
+
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(1, call_count);
+  ASSERT_EQ(static_cast<DWORD>(ERROR_WINHTTP_CONNECTION_ERROR), win32_err);
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_ReadResponseBodyDirect_ReadsKnownUnknownAndExpandedLengths) {
+  RequestContext ctx;
+
+  // 1. Known Content-Length read in multiple chunks
+  {
+    const std::vector<uint8_t> source(256, 0x5A);
+    size_t offset = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/256, /*max_response_bytes=*/std::nullopt, ctx,
+        [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          if (offset >= source.size()) {
+            *bytes_read = 0;
+            return true;
+          }
+          size_t n = std::min<size_t>({static_cast<size_t>(max_len),
+                                       static_cast<size_t>(64),
+                                       source.size() - offset});
+          std::copy(source.begin() + offset, source.begin() + offset + n, dst);
+          offset += n;
+          *bytes_read = static_cast<DWORD>(n);
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(source, out_body);
+  }
+
+  // 2. Unknown Content-Length (chunked / HTTP/2 streaming) triggering growth
+  {
+    const std::vector<uint8_t> source(150000, 0x3C);
+    size_t offset = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt,
+        ctx,
+        [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          if (offset >= source.size()) {
+            *bytes_read = 0;
+            return true;
+          }
+          size_t n = std::min<size_t>({static_cast<size_t>(max_len),
+                                       static_cast<size_t>(40000),
+                                       source.size() - offset});
+          std::copy(source.begin() + offset, source.begin() + offset + n, dst);
+          offset += n;
+          *bytes_read = static_cast<DWORD>(n);
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(source, out_body);
+  }
+
+  // 3. Body larger than Content-Length (e.g., transparent gzip decompression)
+  {
+    const std::vector<uint8_t> source(1024, 0x7E);
+    size_t offset = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/128, /*max_response_bytes=*/2048, ctx,
+        [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          if (offset >= source.size()) {
+            *bytes_read = 0;
+            return true;
+          }
+          size_t n = std::min<size_t>({static_cast<size_t>(max_len),
+                                       static_cast<size_t>(256),
+                                       source.size() - offset});
+          std::copy(source.begin() + offset, source.begin() + offset + n, dst);
+          offset += n;
+          *bytes_read = static_cast<DWORD>(n);
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(source, out_body);
+  }
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_ReadResponseBodyDirect_EnforcesMaxResponseBytesAndBoundary) {
+  RequestContext ctx;
+
+  // 1. Content-Length exceeds maxResponseBytes: read_fn must never be called
+  {
+    int read_calls = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/100, /*max_response_bytes=*/64, ctx,
+        [&](uint8_t* /*dst*/, DWORD /*max_len*/,
+            DWORD* bytes_read) -> bool {
+          ++read_calls;
+          *bytes_read = 0;
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_FALSE(ok);
+    ASSERT_EQ(0, read_calls);
+    ASSERT_EQ(std::string("maxResponseBytesExceeded"), err_code);
+    ASSERT_TRUE(out_body.empty());
+  }
+
+  // 2. Exact boundary succeeds
+  {
+    const std::vector<uint8_t> source(64, 0x11);
+    size_t offset = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/std::nullopt, /*max_response_bytes=*/64, ctx,
+        [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          if (offset >= source.size()) {
+            *bytes_read = 0;
+            return true;
+          }
+          size_t n = std::min<size_t>(static_cast<size_t>(max_len),
+                                      source.size() - offset);
+          std::copy(source.begin() + offset, source.begin() + offset + n, dst);
+          offset += n;
+          *bytes_read = static_cast<DWORD>(n);
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(source, out_body);
+  }
+
+  // 3. Exceeding by 1 byte aborts immediately and clears out_body
+  {
+    const std::vector<uint8_t> source(65, 0x22);
+    size_t offset = 0;
+    std::vector<uint8_t> out_body;
+    std::string err_code;
+    std::string err_msg;
+    DWORD win32_err = ERROR_SUCCESS;
+
+    bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+        /*content_length=*/std::nullopt, /*max_response_bytes=*/64, ctx,
+        [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          if (offset >= source.size()) {
+            *bytes_read = 0;
+            return true;
+          }
+          size_t n = std::min<size_t>(static_cast<size_t>(max_len),
+                                      source.size() - offset);
+          std::copy(source.begin() + offset, source.begin() + offset + n, dst);
+          offset += n;
+          *bytes_read = static_cast<DWORD>(n);
+          return true;
+        },
+        &out_body, &err_code, &err_msg, &win32_err);
+
+    ASSERT_FALSE(ok);
+    ASSERT_EQ(std::string("maxResponseBytesExceeded"), err_code);
+    ASSERT_TRUE(out_body.empty());
+  }
+}
+
+TURBO_TEST(TurboHttpExecutor_ReadResponseBodyDirect_CancelsMidStream) {
+  RequestContext ctx;
+  int read_calls = 0;
+  std::vector<uint8_t> out_body;
+  std::string err_code;
+  std::string err_msg;
+  DWORD win32_err = ERROR_SUCCESS;
+
+  bool ok = TurboHttpExecutor::ReadResponseBodyDirect(
+      /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt, ctx,
+      [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+        ++read_calls;
+        DWORD n = (max_len < 32) ? max_len : 32;
+        std::fill(dst, dst + n, static_cast<uint8_t>(0xEE));
+        *bytes_read = n;
+        ctx.is_cancelled = true;
+        return true;
+      },
+      &out_body, &err_code, &err_msg, &win32_err);
+
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(1, read_calls);
+  ASSERT_EQ(std::string("cancel"), err_code);
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_ParseRawHeaders_HandlesWhitespaceColonsAndContentLengthEdgeCases) {
+  const std::wstring raw_headers =
+      L"HTTP/2 200 OK\r\n"
+      L"  Date :  Thu, 26 Nov 2026 11:00:00 GMT  \r\n"
+      L"X-Empty:   \r\n"
+      L"Set-Cookie: a=1\r\n"
+      L"set-cookie: b=2\r\n"
+      L"Content-Length: 123abc\r\n\r\n";
+
+  std::optional<int64_t> content_length;
+  flutter::EncodableMap parsed =
+      TurboHttpExecutor::ParseRawHeaders(raw_headers, &content_length);
+
+  // Trailing garbage in Content-Length must be rejected
+  ASSERT_FALSE(content_length.has_value());
+
+  auto date_it = parsed.find(flutter::EncodableValue("date"));
+  ASSERT_TRUE(date_it != parsed.end());
+  const auto& date_list = std::get<flutter::EncodableList>(date_it->second);
+  ASSERT_EQ(static_cast<size_t>(1), date_list.size());
+  ASSERT_EQ(std::string("Thu, 26 Nov 2026 11:00:00 GMT"),
+            std::get<std::string>(date_list[0]));
+
+  auto empty_it = parsed.find(flutter::EncodableValue("x-empty"));
+  ASSERT_TRUE(empty_it != parsed.end());
+  const auto& empty_list = std::get<flutter::EncodableList>(empty_it->second);
+  ASSERT_EQ(static_cast<size_t>(1), empty_list.size());
+  ASSERT_EQ(std::string(""), std::get<std::string>(empty_list[0]));
+
+  auto cookie_it = parsed.find(flutter::EncodableValue("set-cookie"));
+  ASSERT_TRUE(cookie_it != parsed.end());
+  const auto& cookie_list = std::get<flutter::EncodableList>(cookie_it->second);
+  ASSERT_EQ(static_cast<size_t>(2), cookie_list.size());
+  ASSERT_EQ(std::string("a=1"), std::get<std::string>(cookie_list[0]));
+  ASSERT_EQ(std::string("b=2"), std::get<std::string>(cookie_list[1]));
+
+  // Negative and overflowing Content-Length must be ignored
+  std::optional<int64_t> neg_len;
+  TurboHttpExecutor::ParseRawHeaders(
+      L"HTTP/2 200 OK\r\nContent-Length: -5\r\n\r\n", &neg_len);
+  ASSERT_FALSE(neg_len.has_value());
+
+  std::optional<int64_t> overflow_len;
+  TurboHttpExecutor::ParseRawHeaders(
+      L"HTTP/2 200 OK\r\nContent-Length: 999999999999999999999999\r\n\r\n",
+      &overflow_len);
+  ASSERT_FALSE(overflow_len.has_value());
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_ParseRawHeaders_HandlesAsciiAndNonAsciiHeaderValues) {
+  // Pure ASCII headers (exercises ASCII fast path)
+  {
+    const std::wstring ascii_raw =
+        L"HTTP/2 200 OK\r\nX-Ascii: hello-world-123\r\n\r\n";
+    std::optional<int64_t> content_length;
+    flutter::EncodableMap parsed =
+        TurboHttpExecutor::ParseRawHeaders(ascii_raw, &content_length);
+    auto it = parsed.find(flutter::EncodableValue("x-ascii"));
+    ASSERT_TRUE(it != parsed.end());
+    const auto& list = std::get<flutter::EncodableList>(it->second);
+    ASSERT_EQ(static_cast<size_t>(1), list.size());
+    ASSERT_EQ(std::string("hello-world-123"), std::get<std::string>(list[0]));
+  }
+
+  // Non-ASCII UTF-16 header value (exercises WideCharToMultiByte fallback)
+  {
+    const std::wstring unicode_raw =
+        L"HTTP/2 200 OK\r\nX-Unicode: caf\u00E9-\u30C6\u30B9\u30C8\r\n\r\n";
+    std::optional<int64_t> content_length;
+    flutter::EncodableMap parsed =
+        TurboHttpExecutor::ParseRawHeaders(unicode_raw, &content_length);
+    auto it = parsed.find(flutter::EncodableValue("x-unicode"));
+    ASSERT_TRUE(it != parsed.end());
+    const auto& list = std::get<flutter::EncodableList>(it->second);
+    ASSERT_EQ(static_cast<size_t>(1), list.size());
+    ASSERT_EQ(std::string("caf\xC3\xA9-\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88"),
+              std::get<std::string>(list[0]));
+  }
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_Execute_HandlesNonAsciiUrlAndHeaderValueSafely) {
+  TurboHttpExecutor executor(
+      [](const TurboHttpRequest& /*req*/, RequestContext& /*ctx*/) -> TurboHttpResponse {
+        TurboHttpResponse res;
+        res.set_status_code(200);
+        res.set_body(std::vector<uint8_t>{});
+        return res;
+      });
+
+  flutter::EncodableMap headers = {
+      {flutter::EncodableValue("X-Label"),
+       flutter::EncodableValue("caf\xC3\xA9-\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88")},
+  };
+
+  TurboHttpResponse response = ExecuteSync(
+      executor,
+      CreateRequest(
+          "req-unicode",
+          "https://example.com/search?q=\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88",
+          "GET", headers));
+  ASSERT_EQ(nullptr, response.error_code());
+  ASSERT_NE(nullptr, response.status_code());
+  ASSERT_EQ(200, *response.status_code());
+}
+
+TURBO_TEST(
+    TurboHttpExecutor_Execute_ConcurrentRequests_CompleteSafelyWithZeroActiveLeft) {
+  constexpr int kConcurrency = 16;
+  TurboHttpExecutor executor(
+      [](const TurboHttpRequest& req, RequestContext& /*ctx*/) -> TurboHttpResponse {
+        TurboHttpResponse res;
+        res.set_status_code(200);
+        res.set_body(std::vector<uint8_t>(req.request_id().begin(),
+                                          req.request_id().end()));
+        return res;
+      });
+
+  std::mutex mtx;
+  std::condition_variable cv;
+  int completed = 0;
+
+  for (int i = 0; i < kConcurrency; ++i) {
+    const std::string req_id = "concurrent-" + std::to_string(i);
+    executor.Execute(
+        CreateRequest(req_id, "https://example.com/item/" + std::to_string(i)),
+        [&](TurboHttpResponse res) {
+          ASSERT_EQ(nullptr, res.error_code());
+          ASSERT_NE(nullptr, res.status_code());
+          ASSERT_EQ(200, *res.status_code());
+          {
+            std::lock_guard<std::mutex> lock(mtx);
+            ++completed;
+          }
+          cv.notify_one();
+        });
+  }
+
+  std::unique_lock<std::mutex> lock(mtx);
+  ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                          [&] { return completed == kConcurrency; }));
+  ASSERT_EQ(static_cast<size_t>(0), executor.active_request_count());
 }
 
 }  // namespace test
