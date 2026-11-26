@@ -1,5 +1,6 @@
 #include "turbo_http_executor.h"
 #include "winhttp_helpers.h"
+#include "winhttp_transport.h"
 
 #include <windows.h>
 #include <winhttp.h>
@@ -61,7 +62,7 @@ TurboHttpResponse ExecuteSync(TurboHttpExecutor& executor,
   return std::move(*result_opt);
 }
 
-TurboHttpExecutor::ReadDataFn MakeSliceReader(
+WinHttpTransport::ReadDataFn MakeSliceReader(
     const std::vector<uint8_t>& source,
     size_t max_chunk = (std::numeric_limits<size_t>::max)()) {
   size_t offset = 0;
@@ -247,7 +248,7 @@ TURBO_TEST(
     TurboHttpExecutor_Execute_MaxResponseBytesNull_ReturnsFullBodyAndHeaders) {
   const std::vector<uint8_t> expected_bytes = {'t', 'u', 'r', 'b', 'o'};
   TurboHttpExecutor executor(
-      [expected_bytes](const TurboHttpRequest& /*req*/,
+      [expected_bytes](const ValidatedWinHttpRequest& /*req*/,
                        RequestContext& /*ctx*/) -> TurboHttpResponse {
         TurboHttpResponse res;
         res.set_status_code(201);
@@ -281,7 +282,7 @@ TURBO_TEST(TurboHttpExecutor_Cancel_CancelsInFlightRequest) {
   bool allow_finish = false;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& /*req*/,
+      [&](const ValidatedWinHttpRequest& /*req*/,
           RequestContext& ctx) -> TurboHttpResponse {
         {
           std::lock_guard<std::mutex> lock(sync_mtx);
@@ -350,7 +351,7 @@ TURBO_TEST(
   bool allow_finish = false;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& /*req*/,
+      [&](const ValidatedWinHttpRequest& /*req*/,
           RequestContext& ctx) -> TurboHttpResponse {
         {
           std::unique_lock<std::mutex> lock(sync_mtx);
@@ -410,7 +411,7 @@ TURBO_TEST(
   bool allow_finish = false;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& /*req*/,
+      [&](const ValidatedWinHttpRequest& /*req*/,
           RequestContext& ctx) -> TurboHttpResponse {
         {
           std::lock_guard<std::mutex> lock(sync_mtx);
@@ -493,10 +494,11 @@ TURBO_TEST(TurboHttpExecutor_Execute_PostWithRequestBody_TransmitsPayloadCorrect
   std::vector<uint8_t> captured_body;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& req, RequestContext& /*ctx*/) -> TurboHttpResponse {
-        ASSERT_EQ(std::string("POST"), req.method());
-        if (req.body() != nullptr) {
-          captured_body = *req.body();
+      [&](const ValidatedWinHttpRequest& req,
+          RequestContext& /*ctx*/) -> TurboHttpResponse {
+        ASSERT_EQ(std::string("POST"), req.method);
+        if (req.body.has_value()) {
+          captured_body = *req.body;
         }
         TurboHttpResponse res;
         res.set_status_code(200);
@@ -519,9 +521,10 @@ TURBO_TEST(TurboHttpExecutor_Execute_PostWithNullBody_HandlesSafelyWithoutCrash)
   bool executed = false;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& req, RequestContext& /*ctx*/) -> TurboHttpResponse {
-        ASSERT_EQ(std::string("POST"), req.method());
-        ASSERT_EQ(nullptr, req.body());
+      [&](const ValidatedWinHttpRequest& req,
+          RequestContext& /*ctx*/) -> TurboHttpResponse {
+        ASSERT_EQ(std::string("POST"), req.method);
+        ASSERT_FALSE(req.body.has_value());
         executed = true;
 
         TurboHttpResponse res;
@@ -544,7 +547,8 @@ TURBO_TEST(TurboHttpExecutor_Execute_PostWithNullBody_HandlesSafelyWithoutCrash)
 
 TURBO_TEST(TurboHttpExecutor_Execute_EmptyResponseBody_ReturnsEmptyBodySafely) {
   TurboHttpExecutor executor(
-      [](const TurboHttpRequest& /*req*/, RequestContext& /*ctx*/) -> TurboHttpResponse {
+      [](const ValidatedWinHttpRequest& /*req*/,
+         RequestContext& /*ctx*/) -> TurboHttpResponse {
         TurboHttpResponse res;
         res.set_status_code(200);
         res.set_body(std::vector<uint8_t>{});
@@ -562,7 +566,7 @@ TURBO_TEST(TurboHttpExecutor_Execute_EmptyResponseBody_ReturnsEmptyBodySafely) {
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_WriteAllRequestBody_HandlesPartialWritesAndCompletes) {
+    WinHttpTransport_WriteAllRequestBody_HandlesPartialWritesAndCompletes) {
   std::vector<uint8_t> body(100);
   for (size_t i = 0; i < body.size(); ++i) {
     body[i] = static_cast<uint8_t>(i & 0xff);
@@ -574,7 +578,7 @@ TURBO_TEST(
   size_t call_index = 0;
   DWORD win32_err = ERROR_SUCCESS;
 
-  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+  bool ok = WinHttpTransport::WriteAllRequestBody(
       body, ctx,
       [&](const uint8_t* data, DWORD len, DWORD* bytes_written) -> bool {
         ASSERT_TRUE(call_index < chunk_limits.size());
@@ -593,13 +597,13 @@ TURBO_TEST(
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_WriteAllRequestBody_StopsOnCancelBetweenChunks) {
+    WinHttpTransport_WriteAllRequestBody_StopsOnCancelBetweenChunks) {
   const std::vector<uint8_t> body(64, 0xAB);
   RequestContext ctx;
   int call_count = 0;
   DWORD win32_err = ERROR_SUCCESS;
 
-  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+  bool ok = WinHttpTransport::WriteAllRequestBody(
       body, ctx,
       [&](const uint8_t* /*data*/, DWORD /*len*/,
           DWORD* bytes_written) -> bool {
@@ -616,13 +620,13 @@ TURBO_TEST(
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_WriteAllRequestBody_StopsOnZeroByteWriteProgress) {
+    WinHttpTransport_WriteAllRequestBody_StopsOnZeroByteWriteProgress) {
   const std::vector<uint8_t> body(32, 0xCD);
   RequestContext ctx;
   int call_count = 0;
   DWORD win32_err = ERROR_SUCCESS;
 
-  bool ok = TurboHttpExecutor::WriteAllRequestBody(
+  bool ok = WinHttpTransport::WriteAllRequestBody(
       body, ctx,
       [&](const uint8_t* /*data*/, DWORD /*len*/,
           DWORD* bytes_written) -> bool {
@@ -638,13 +642,13 @@ TURBO_TEST(
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_ReadResponseBodyDirect_ReadsKnownUnknownAndExpandedLengths) {
+    WinHttpTransport_ReadResponseBodyDirect_ReadsKnownUnknownAndExpandedLengths) {
   RequestContext ctx;
 
   // 1. Known Content-Length read in multiple chunks
   {
     const std::vector<uint8_t> source(256, 0x5A);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/256, /*max_response_bytes=*/std::nullopt, ctx,
         MakeSliceReader(source, /*max_chunk=*/64));
 
@@ -655,7 +659,7 @@ TURBO_TEST(
   // 2. Unknown Content-Length (chunked / HTTP/2 streaming) triggering growth
   {
     const std::vector<uint8_t> source(150000, 0x3C);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt,
         ctx, MakeSliceReader(source, /*max_chunk=*/40000));
 
@@ -666,7 +670,7 @@ TURBO_TEST(
   // 3. Body larger than Content-Length (e.g., transparent gzip decompression)
   {
     const std::vector<uint8_t> source(1024, 0x7E);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/128, /*max_response_bytes=*/2048, ctx,
         MakeSliceReader(source, /*max_chunk=*/256));
 
@@ -676,13 +680,13 @@ TURBO_TEST(
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_ReadResponseBodyDirect_EnforcesMaxResponseBytesAndBoundary) {
+    WinHttpTransport_ReadResponseBodyDirect_EnforcesMaxResponseBytesAndBoundary) {
   RequestContext ctx;
 
   // 1. Content-Length exceeds maxResponseBytes: read_fn must never be called
   {
     int read_calls = 0;
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/100, /*max_response_bytes=*/64, ctx,
         [&](uint8_t* /*dst*/, DWORD /*max_len*/,
             DWORD* bytes_read) -> bool {
@@ -700,7 +704,7 @@ TURBO_TEST(
   // 2. Exact boundary succeeds
   {
     const std::vector<uint8_t> source(64, 0x11);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/std::nullopt, /*max_response_bytes=*/64, ctx,
         MakeSliceReader(source));
 
@@ -711,7 +715,7 @@ TURBO_TEST(
   // 3. Exceeding by 1 byte aborts immediately and clears body
   {
     const std::vector<uint8_t> source(65, 0x22);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/std::nullopt, /*max_response_bytes=*/64, ctx,
         MakeSliceReader(source));
 
@@ -722,7 +726,7 @@ TURBO_TEST(
 
   // 4. Empty body with maxResponseBytes == 0 succeeds
   {
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/0, /*max_response_bytes=*/0, ctx,
         [](uint8_t* /*dst*/, DWORD /*max_len*/, DWORD* bytes_read) -> bool {
           *bytes_read = 0;
@@ -735,7 +739,7 @@ TURBO_TEST(
 
   // 5. 1-byte body with maxResponseBytes == 0 fails
   {
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/std::nullopt, /*max_response_bytes=*/0, ctx,
         [](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
           ASSERT_TRUE(max_len >= 1);
@@ -752,7 +756,7 @@ TURBO_TEST(
   // 6. INT64_MAX boundary succeeds without overflow
   {
     const std::vector<uint8_t> source(64, 0x33);
-    ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
         /*content_length=*/64, /*max_response_bytes=*/INT64_MAX, ctx,
         MakeSliceReader(source));
 
@@ -761,11 +765,11 @@ TURBO_TEST(
   }
 }
 
-TURBO_TEST(TurboHttpExecutor_ReadResponseBodyDirect_CancelsMidStream) {
+TURBO_TEST(WinHttpTransport_ReadResponseBodyDirect_CancelsMidStream) {
   RequestContext ctx;
   int read_calls = 0;
 
-  ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+  ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
       /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt, ctx,
       [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
         ++read_calls;
@@ -865,7 +869,8 @@ TURBO_TEST(
 TURBO_TEST(
     TurboHttpExecutor_Execute_HandlesNonAsciiUrlAndHeaderValueSafely) {
   TurboHttpExecutor executor(
-      [](const TurboHttpRequest& /*req*/, RequestContext& /*ctx*/) -> TurboHttpResponse {
+      [](const ValidatedWinHttpRequest& /*req*/,
+         RequestContext& /*ctx*/) -> TurboHttpResponse {
         TurboHttpResponse res;
         res.set_status_code(200);
         res.set_body(std::vector<uint8_t>{});
@@ -892,11 +897,12 @@ TURBO_TEST(
     TurboHttpExecutor_Execute_ConcurrentRequests_CompleteSafelyWithZeroActiveLeft) {
   constexpr int kConcurrency = 16;
   TurboHttpExecutor executor(
-      [](const TurboHttpRequest& req, RequestContext& /*ctx*/) -> TurboHttpResponse {
+      [](const ValidatedWinHttpRequest& req,
+         RequestContext& /*ctx*/) -> TurboHttpResponse {
         TurboHttpResponse res;
         res.set_status_code(200);
-        res.set_body(std::vector<uint8_t>(req.request_id().begin(),
-                                          req.request_id().end()));
+        res.set_body(std::vector<uint8_t>(req.request_id.begin(),
+                                          req.request_id.end()));
         return res;
       });
 
@@ -942,7 +948,7 @@ TURBO_TEST(
     TurboHttpExecutor_ExecuteAndShutdown_ConcurrentStress_CompletesSafely) {
   constexpr int kRequests = 32;
   TurboHttpExecutor executor(
-      [](const TurboHttpRequest& /*req*/,
+      [](const ValidatedWinHttpRequest& /*req*/,
          RequestContext& ctx) -> TurboHttpResponse {
         if (ctx.is_cancelled.load()) {
           TurboHttpResponse res;
@@ -993,7 +999,7 @@ TURBO_TEST(
   bool release_second = false;
 
   TurboHttpExecutor executor(
-      [&](const TurboHttpRequest& /*req*/,
+      [&](const ValidatedWinHttpRequest& /*req*/,
           RequestContext& /*ctx*/) -> TurboHttpResponse {
         int my_index = 0;
         {
@@ -1076,9 +1082,9 @@ TURBO_TEST(
 }
 
 TURBO_TEST(
-    TurboHttpExecutor_ReadResponseBodyDirect_AbortsOnOverflowingBytesRead) {
+    WinHttpTransport_ReadResponseBodyDirect_AbortsOnOverflowingBytesRead) {
   RequestContext ctx;
-  ReadBodyResult result = TurboHttpExecutor::ReadResponseBodyDirect(
+  ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
       /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt, ctx,
       [](uint8_t* /*dst*/, DWORD max_len, DWORD* bytes_read) -> bool {
         *bytes_read = max_len + 1;
@@ -1088,6 +1094,301 @@ TURBO_TEST(
   ASSERT_FALSE(result.ok);
   ASSERT_TRUE(result.body.empty());
   ASSERT_EQ(std::string("unknown"), result.error_code);
+}
+
+TURBO_TEST(WinHttpHelpers_ValidateWinHttpRequest_NormalizesValidRequest) {
+  const std::vector<uint8_t> payload = {'h', 'i'};
+  flutter::EncodableMap headers = {
+      {flutter::EncodableValue("X-Token"), flutter::EncodableValue("abc123")},
+  };
+  const int64_t connect_ms = 1000;
+  const int64_t send_ms = 2000;
+  const int64_t recv_ms = 3000;
+  const int64_t max_bytes = 4096;
+  TurboHttpRequest request("req-validate", "https://example.com:8443/v1?k=v",
+                           "POST", headers, &payload, &connect_ms, &recv_ms,
+                           &send_ms, false, true, &max_bytes);
+
+  ValidatedWinHttpRequest validated;
+  std::string error_message;
+  ASSERT_TRUE(ValidateWinHttpRequest(request, &validated, &error_message));
+  ASSERT_EQ(std::string("req-validate"), validated.request_id);
+  ASSERT_EQ(std::string("POST"), validated.method);
+  ASSERT_TRUE(validated.parsed_url.is_https);
+  ASSERT_EQ(static_cast<INTERNET_PORT>(8443), validated.parsed_url.port);
+  ASSERT_TRUE(validated.parsed_url.host == L"example.com");
+  ASSERT_TRUE(validated.parsed_url.path_and_query == L"/v1?k=v");
+  ASSERT_TRUE(validated.formatted_headers == L"X-Token: abc123\r\n");
+  ASSERT_TRUE(validated.body.has_value());
+  ASSERT_EQ(payload, *validated.body);
+  ASSERT_TRUE(validated.connect_timeout_ms.has_value());
+  ASSERT_EQ(1000, *validated.connect_timeout_ms);
+  ASSERT_TRUE(validated.send_timeout_ms.has_value());
+  ASSERT_EQ(2000, *validated.send_timeout_ms);
+  ASSERT_TRUE(validated.receive_timeout_ms.has_value());
+  ASSERT_EQ(3000, *validated.receive_timeout_ms);
+  ASSERT_TRUE(validated.max_response_bytes.has_value());
+  ASSERT_EQ(4096, *validated.max_response_bytes);
+  ASSERT_FALSE(validated.follow_redirects);
+  ASSERT_TRUE(validated.allow_bad_certificates);
+}
+
+TURBO_TEST(WinHttpHelpers_ValidateWinHttpRequest_RejectsInvalidUrlAndHeaders) {
+  ValidatedWinHttpRequest validated;
+  std::string error_message;
+
+  // Unsupported scheme
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-ftp", "ftp://example.com/file"), &validated,
+      &error_message));
+  ASSERT_FALSE(error_message.empty());
+
+  // Malformed header name
+  flutter::EncodableMap bad_headers = {
+      {flutter::EncodableValue("Bad Header"), flutter::EncodableValue("v")},
+  };
+  error_message.clear();
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-bad-hdr", "https://example.com/", "GET", bad_headers),
+      &validated, &error_message));
+  ASSERT_FALSE(error_message.empty());
+
+  // Non-ASCII header name must be rejected
+  flutter::EncodableMap non_ascii_name = {
+      {flutter::EncodableValue("X-\xC3\xA9"), flutter::EncodableValue("v")},
+  };
+  error_message.clear();
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-non-ascii-name", "https://example.com/", "GET",
+                    non_ascii_name),
+      &validated, &error_message));
+
+  // Non-ASCII header value containing CRLF injection must still be rejected
+  flutter::EncodableMap non_ascii_crlf = {
+      {flutter::EncodableValue("X-Label"),
+       flutter::EncodableValue("caf\xC3\xA9\r\nInjected: 1")},
+  };
+  error_message.clear();
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-non-ascii-crlf", "https://example.com/", "GET",
+                    non_ascii_crlf),
+      &validated, &error_message));
+}
+
+TURBO_TEST(
+    WinHttpHelpers_ValidateWinHttpRequest_HandlesLongUrlAndMixedAsciiUnicodeHeaders) {
+  // URL exceeding 512 chars exercises heap fallback in ParseRequestUrl
+  const std::string long_query(600, 'a');
+  const std::string long_url = "https://example.com/path?q=" + long_query;
+  flutter::EncodableMap headers = {
+      {flutter::EncodableValue("X-Ascii"), flutter::EncodableValue("plain")},
+      {flutter::EncodableValue("X-Unicode"),
+       flutter::EncodableValue("caf\xC3\xA9-\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88")},
+  };
+
+  ValidatedWinHttpRequest validated;
+  std::string error_message;
+  ASSERT_TRUE(ValidateWinHttpRequest(
+      CreateRequest("req-long-mixed", long_url, "GET", headers), &validated,
+      &error_message));
+  ASSERT_TRUE(validated.parsed_url.host == L"example.com");
+  ASSERT_TRUE(validated.parsed_url.path_and_query ==
+              L"/path?q=" + std::wstring(600, L'a'));
+  ASSERT_TRUE(validated.formatted_headers.find(L"X-Ascii: plain\r\n") !=
+              std::wstring::npos);
+  ASSERT_TRUE(validated.formatted_headers.find(
+                  L"X-Unicode: caf\u00E9-\u30C6\u30B9\u30C8\r\n") !=
+              std::wstring::npos);
+}
+
+TURBO_TEST(
+    WinHttpHelpers_ParseRawHttpHeaders_HandlesZeroContentLengthAndNoTrailingCrlf) {
+  const std::wstring raw_headers =
+      L"HTTP/2 200 OK\r\n"
+      L"Content-Length:   0  \r\n"
+      L"X-Final: tail-without-crlf";
+
+  std::optional<int64_t> content_length;
+  flutter::EncodableMap parsed =
+      ParseRawHttpHeaders(raw_headers, &content_length);
+
+  ASSERT_TRUE(content_length.has_value());
+  ASSERT_EQ(0, *content_length);
+  auto it = parsed.find(flutter::EncodableValue("x-final"));
+  ASSERT_TRUE(it != parsed.end());
+  const auto& list = std::get<flutter::EncodableList>(it->second);
+  ASSERT_EQ(static_cast<size_t>(1), list.size());
+  ASSERT_EQ(std::string("tail-without-crlf"), std::get<std::string>(list[0]));
+}
+
+TURBO_TEST(
+    WinHttpTransport_ReadResponseBodyDirect_HandlesSmallUnknownAndLargeKnownLengths) {
+  RequestContext ctx;
+
+  // 1. Small unknown-length body (< 8 KiB initial size)
+  {
+    const std::vector<uint8_t> source(500, 0x41);
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
+        /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt,
+        ctx, MakeSliceReader(source, /*max_chunk=*/200));
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(source, result.body);
+  }
+
+  // 2. Exact 8 KiB boundary with unknown Content-Length
+  {
+    const std::vector<uint8_t> source(8192, 0x42);
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
+        /*content_length=*/std::nullopt, /*max_response_bytes=*/std::nullopt,
+        ctx, MakeSliceReader(source, /*max_chunk=*/4096));
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(source, result.body);
+  }
+
+  // 3. Large known Content-Length (> 64 KiB chunk) read across multiple chunks
+  {
+    const std::vector<uint8_t> source(256 * 1024 + 123, 0x43);
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
+        /*content_length=*/static_cast<int64_t>(source.size()),
+        /*max_response_bytes=*/std::nullopt, ctx,
+        MakeSliceReader(source, /*max_chunk=*/32768));
+    ASSERT_TRUE(result.ok);
+    ASSERT_EQ(source, result.body);
+  }
+
+  // 4. Mid-stream read error clears partially read body
+  {
+    int calls = 0;
+    ReadBodyResult result = WinHttpTransport::ReadResponseBodyDirect(
+        /*content_length=*/1024 * 1024, /*max_response_bytes=*/std::nullopt,
+        ctx, [&](uint8_t* dst, DWORD max_len, DWORD* bytes_read) -> bool {
+          ++calls;
+          if (calls == 1) {
+            DWORD n = std::min<DWORD>(max_len, 1024);
+            std::fill(dst, dst + n, static_cast<uint8_t>(0x55));
+            *bytes_read = n;
+            return true;
+          }
+          return false;
+        });
+    ASSERT_FALSE(result.ok);
+    ASSERT_TRUE(result.body.empty());
+    ASSERT_EQ(static_cast<size_t>(0), result.body.capacity());
+  }
+}
+
+TURBO_TEST(
+    WinHttpHelpers_ValidateWinHttpRequest_RejectsInvalidMethodAndControlCharsInUrl) {
+  ValidatedWinHttpRequest validated;
+  std::string error_message;
+
+  // Empty, whitespace, CRLF, and non-ASCII HTTP methods must be rejected
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-empty-method", "https://example.com/", ""), &validated,
+      &error_message));
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-space-method", "https://example.com/", "GET /"),
+      &validated, &error_message));
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-crlf-method", "https://example.com/", "GET\r\nX"),
+      &validated, &error_message));
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-nonascii-method", "https://example.com/", "G\xC3\xA9T"),
+      &validated, &error_message));
+
+  // Valid custom RFC token method must be accepted
+  ASSERT_TRUE(ValidateWinHttpRequest(
+      CreateRequest("req-custom-method", "https://example.com/", "M-SEARCH"),
+      &validated, &error_message));
+  ASSERT_EQ(std::string("M-SEARCH"), validated.method);
+
+  // URL containing NUL byte or CRLF control characters must be rejected
+  const std::string nul_url("https://example.com/a\0b", 23);
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-nul-url", nul_url), &validated, &error_message));
+  ASSERT_FALSE(ValidateWinHttpRequest(
+      CreateRequest("req-crlf-url", "https://example.com/a\r\nb"), &validated,
+      &error_message));
+}
+
+TURBO_TEST(
+    WinHttpTransport_WriteAllRequestBody_StopsOnOverflowingBytesWritten) {
+  const std::vector<uint8_t> body(32, 0xEE);
+  RequestContext ctx;
+  DWORD win32_err = ERROR_SUCCESS;
+
+  bool ok = WinHttpTransport::WriteAllRequestBody(
+      body, ctx,
+      [](const uint8_t* /*data*/, DWORD len, DWORD* bytes_written) -> bool {
+        *bytes_written = len + 1;
+        return true;
+      },
+      &win32_err);
+
+  ASSERT_FALSE(ok);
+  ASSERT_EQ(static_cast<DWORD>(ERROR_WINHTTP_CONNECTION_ERROR), win32_err);
+}
+
+TURBO_TEST(TurboHttpExecutor_Shutdown_CancelsAllDuplicateRequestIdCalls) {
+  std::mutex sync_mtx;
+  std::condition_variable cv;
+  int started_count = 0;
+  std::atomic<int> cancelled_count{0};
+
+  TurboHttpExecutor executor(
+      [&](const ValidatedWinHttpRequest& /*req*/,
+          RequestContext& ctx) -> TurboHttpResponse {
+        {
+          std::lock_guard<std::mutex> lock(sync_mtx);
+          ++started_count;
+        }
+        cv.notify_all();
+
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!ctx.is_cancelled.load() &&
+               std::chrono::steady_clock::now() < deadline) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+
+        if (ctx.is_cancelled.load()) {
+          cancelled_count.fetch_add(1);
+          return MakeCancelResponse();
+        }
+        TurboHttpResponse res;
+        res.set_status_code(200);
+        return res;
+      });
+
+  std::mutex done_mtx;
+  std::condition_variable done_cv;
+  int done_count = 0;
+
+  for (int i = 0; i < 2; ++i) {
+    executor.Execute(CreateRequest("dup-shutdown"), [&](TurboHttpResponse /*r*/) {
+      {
+        std::lock_guard<std::mutex> lock(done_mtx);
+        ++done_count;
+      }
+      done_cv.notify_all();
+    });
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(sync_mtx);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5),
+                            [&] { return started_count == 2; }));
+  }
+
+  executor.Shutdown();
+
+  {
+    std::unique_lock<std::mutex> lock(done_mtx);
+    ASSERT_TRUE(done_cv.wait_for(lock, std::chrono::seconds(5),
+                                 [&] { return done_count == 2; }));
+  }
+  ASSERT_EQ(2, cancelled_count.load());
+  ASSERT_EQ(static_cast<size_t>(0), executor.active_request_count());
 }
 
 }  // namespace test

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "messages.g.h"
 
@@ -26,37 +27,44 @@ struct ParsedUrl {
   std::wstring path_and_query;
 };
 
+struct ValidatedWinHttpRequest {
+  std::string request_id;
+  std::string method;
+  ParsedUrl parsed_url;
+  std::wstring formatted_headers;
+  std::optional<std::vector<uint8_t>> body;
+  std::optional<int64_t> connect_timeout_ms;
+  std::optional<int64_t> send_timeout_ms;
+  std::optional<int64_t> receive_timeout_ms;
+  std::optional<int64_t> max_response_bytes;
+  bool follow_redirects = true;
+  bool allow_bad_certificates = false;
+};
+
+// Pure UTF-8 <-> UTF-16 conversion helpers (ASCII fast path + Win32 fallback).
 std::wstring Utf8ToWide(std::string_view str);
 std::string WideToUtf8(std::wstring_view wstr);
 
-bool ParseRequestUrl(std::string_view url,
-                     ParsedUrl* out_parsed,
-                     std::string* out_error_message);
+// Validates and normalizes an incoming Pigeon request before dispatch.
+bool ValidateWinHttpRequest(const TurboHttpRequest& request,
+                            ValidatedWinHttpRequest* out_validated,
+                            std::string* out_error_message);
 
-bool FormatAndValidateHeaders(const flutter::EncodableMap& headers,
-                              std::wstring* out_formatted);
-
-LPCWSTR ResolveMethodWide(std::string_view method,
-                          std::wstring* custom_storage);
-
-int ClampTimeoutMs(std::optional<int64_t> timeout_opt, int default_ms);
-
+// Maps Win32/WinHTTP errors and request phases to unified turbo-fetch codes.
 std::string ClassifyWinHttpError(bool is_cancelled,
                                  DWORD win32_error,
                                  RequestPhase phase);
 
+// Parses CRLF-delimited raw HTTP response headers into a lowercase-keyed
+// multi-value EncodableMap, optionally extracting Content-Length.
 flutter::EncodableMap ParseRawHttpHeaders(
     std::wstring_view raw_headers,
     std::optional<int64_t>* out_content_length);
 
-std::wstring_view QueryWinHttpHeaderString(HINTERNET h_request,
-                                           DWORD info_level,
-                                           wchar_t* stack_buf,
-                                           DWORD stack_buf_bytes,
-                                           std::wstring* heap_fallback);
-
+// Response constructors for error and cancellation outcomes.
 TurboHttpResponse MakeErrorResponse(std::string_view code,
                                     std::string_view message);
+TurboHttpResponse MakeCancelResponse();
 
 }  // namespace flutter_turbo_fetch
 

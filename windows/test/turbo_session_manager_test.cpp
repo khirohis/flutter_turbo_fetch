@@ -112,6 +112,32 @@ TURBO_TEST(TurboSessionManager_Shutdown_ClearsConnectionCacheAndRecovers) {
   manager.Shutdown();
 }
 
+TURBO_TEST(
+    TurboSessionManager_AcquireConnection_LongHostAndMultiPortOrdering) {
+  TurboSessionManager manager;
+
+  const std::wstring long_host_a = L"very-long-subdomain-a.api.example.com";
+  const std::wstring long_host_b = L"very-long-subdomain-b.api.example.com";
+
+  auto a443 = manager.AcquireConnection(long_host_a, 443);
+  auto a8443 = manager.AcquireConnection(long_host_a, 8443);
+  auto b443 = manager.AcquireConnection(long_host_b, 443);
+
+  ASSERT_NE(nullptr, a443);
+  ASSERT_NE(nullptr, a8443);
+  ASSERT_NE(nullptr, b443);
+  ASSERT_EQ(static_cast<size_t>(3), manager.CachedConnectionCount());
+
+  // Repeated lookups must hit exact cached entries
+  ASSERT_EQ(a443->handle, manager.AcquireConnection(long_host_a, 443)->handle);
+  ASSERT_EQ(a8443->handle,
+            manager.AcquireConnection(long_host_a, 8443)->handle);
+  ASSERT_EQ(b443->handle, manager.AcquireConnection(long_host_b, 443)->handle);
+  ASSERT_EQ(static_cast<size_t>(3), manager.CachedConnectionCount());
+
+  manager.Shutdown();
+}
+
 }  // namespace test
 }  // namespace flutter_turbo_fetch
 

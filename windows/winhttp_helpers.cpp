@@ -8,55 +8,212 @@ namespace flutter_turbo_fetch {
 
 namespace {
 
-std::string_view TrimAsciiView(std::string_view s) {
+constexpr size_t kUrlStackChars = 512;
+
+bool IsAsciiSpace(wchar_t wc) {
+  return wc <= 0x7F && std::isspace(static_cast<unsigned char>(wc)) != 0;
+}
+
+std::wstring_view TrimAsciiWideView(std::wstring_view s) {
   size_t first = 0;
-  while (first < s.size() &&
-         std::isspace(static_cast<unsigned char>(s[first]))) {
+  while (first < s.size() && IsAsciiSpace(s[first])) {
     ++first;
   }
   size_t last = s.size();
-  while (last > first &&
-         std::isspace(static_cast<unsigned char>(s[last - 1]))) {
+  while (last > first && IsAsciiSpace(s[last - 1])) {
     --last;
   }
   return s.substr(first, last - first);
 }
 
-void AssignLowerAscii(std::string_view src, std::string* dst) {
+void AssignLowerAsciiFromWide(std::wstring_view src, std::string* dst) {
   dst->resize(src.size());
+  bool is_ascii = true;
   for (size_t i = 0; i < src.size(); ++i) {
-    unsigned char c = static_cast<unsigned char>(src[i]);
-    (*dst)[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A'))
-                                       : static_cast<char>(c);
+    uint16_t wc = static_cast<uint16_t>(src[i]);
+    if (wc >= 0x80) {
+      is_ascii = false;
+      break;
+    }
+    (*dst)[i] = (wc >= 'A' && wc <= 'Z') ? static_cast<char>(wc + ('a' - 'A'))
+                                         : static_cast<char>(wc);
+  }
+  if (!is_ascii) {
+    *dst = WideToUtf8(src);
+    for (char& ch : *dst) {
+      unsigned char c = static_cast<unsigned char>(ch);
+      if (c >= 'A' && c <= 'Z') {
+        ch = static_cast<char>(c + ('a' - 'A'));
+      }
+    }
   }
 }
 
-bool ContainsForbiddenHeaderChars(std::string_view s, bool is_name) {
-  if (is_name && s.empty()) {
-    return true;
-  }
+bool ContainsForbiddenHeaderValueChars(std::string_view s) {
   for (unsigned char c : s) {
     if (c == '\r' || c == '\n' || c == '\0') {
-      return true;
-    }
-    if (is_name && (c <= 0x20 || c == ':' || c >= 0x7f)) {
       return true;
     }
   }
   return false;
 }
 
-std::wstring_view TrimTrailingNulls(const wchar_t* data,
-                                    size_t max_chars,
-                                    DWORD bytes) {
-  size_t chars = bytes / sizeof(wchar_t);
-  if (chars > max_chars) {
-    chars = max_chars;
+bool IsValidHttpMethod(std::string_view method) {
+  constexpr std::string_view kDelimiters = "()<>@,;:\\\"/[]?={}";
+  if (method.empty()) {
+    return false;
   }
-  while (chars > 0 && data[chars - 1] == L'\0') {
-    --chars;
+  for (unsigned char c : method) {
+    if (c <= 0x20 || c >= 0x7f ||
+        kDelimiters.find(static_cast<char>(c)) != std::string_view::npos) {
+      return false;
+    }
   }
-  return std::wstring_view(data, chars);
+  return true;
+}
+
+bool ContainsControlChars(std::string_view s) {
+  for (unsigned char c : s) {
+    if (c < 0x20 || c == 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ParseRequestUrl(std::string_view url,
+                     ParsedUrl* out_parsed,
+                     std::string* out_error_message) {
+  if (url.empty()) {
+    *out_error_message = "Invalid or empty URL.";
+    return false;
+  }
+
+  wchar_t url_stack[kUrlStackChars + 1];
+  std::wstring url_heap;
+  const wchar_t* url_ptr = nullptr;
+  size_t url_len = 0;
+
+  if (url.size() <= kUrlStackChars) {
+    bool is_ascii = true;
+    for (size_t i = 0; i < url.size(); ++i) {
+      unsigned char c = static_cast<unsigned char>(url[i]);
+      if (c < 0x20 || c == 0x7f) {
+        *out_error_message = "URL contains forbidden control characters.";
+        return false;
+      }
+      if (c >= 0x80) {
+        is_ascii = false;
+        break;
+      }
+      url_stack[i] = static_cast<wchar_t>(c);
+    }
+    if (is_ascii) {
+      url_stack[url.size()] = L'\0';
+      url_ptr = url_stack;
+      url_len = url.size();
+    }
+  }
+
+  if (url_ptr == nullptr) {
+    if (ContainsControlChars(url)) {
+      *out_error_message = "URL contains forbidden control characters.";
+      return false;
+    }
+    url_heap = Utf8ToWide(url);
+    if (url_heap.empty() || url_heap.size() > static_cast<size_t>(MAXDWORD)) {
+      *out_error_message = "Invalid or empty URL.";
+      return false;
+    }
+    url_ptr = url_heap.c_str();
+    url_len = url_heap.size();
+  }
+
+  URL_COMPONENTS url_comp{};
+  url_comp.dwStructSize = sizeof(url_comp);
+  url_comp.dwSchemeLength = static_cast<DWORD>(-1);
+  url_comp.dwHostNameLength = static_cast<DWORD>(-1);
+  url_comp.dwUrlPathLength = static_cast<DWORD>(-1);
+  url_comp.dwExtraInfoLength = static_cast<DWORD>(-1);
+
+  if (!WinHttpCrackUrl(url_ptr, static_cast<DWORD>(url_len), 0, &url_comp) ||
+      url_comp.dwHostNameLength == 0 ||
+      (url_comp.nScheme != INTERNET_SCHEME_HTTP &&
+       url_comp.nScheme != INTERNET_SCHEME_HTTPS)) {
+    *out_error_message =
+        "Failed to parse URL or unsupported scheme: " + std::string(url);
+    return false;
+  }
+
+  out_parsed->is_https = (url_comp.nScheme == INTERNET_SCHEME_HTTPS);
+  out_parsed->port = url_comp.nPort;
+  out_parsed->host.assign(url_comp.lpszHostName, url_comp.dwHostNameLength);
+  if (url_comp.dwUrlPathLength > 0) {
+    out_parsed->path_and_query.assign(url_comp.lpszUrlPath,
+                                      url_comp.dwUrlPathLength);
+  } else {
+    out_parsed->path_and_query = L"/";
+  }
+  if (url_comp.dwExtraInfoLength > 0) {
+    out_parsed->path_and_query.append(url_comp.lpszExtraInfo,
+                                      url_comp.dwExtraInfoLength);
+  }
+  return true;
+}
+
+bool FormatAndValidateHeaders(const flutter::EncodableMap& headers,
+                              std::wstring* out_formatted) {
+  if (headers.empty()) {
+    out_formatted->clear();
+    return true;
+  }
+
+  std::wstring formatted;
+  formatted.reserve(headers.size() * 48);
+  for (const auto& kv : headers) {
+    if (!std::holds_alternative<std::string>(kv.first) ||
+        !std::holds_alternative<std::string>(kv.second)) {
+      continue;
+    }
+    const auto& key = std::get<std::string>(kv.first);
+    const auto& val = std::get<std::string>(kv.second);
+    if (key.empty()) {
+      return false;
+    }
+
+    for (unsigned char c : key) {
+      if (c <= 0x20 || c == ':' || c >= 0x7f) {
+        return false;
+      }
+      formatted.push_back(static_cast<wchar_t>(c));
+    }
+    formatted.append(L": ");
+
+    const size_t val_start = formatted.size();
+    bool val_ascii = true;
+    for (unsigned char c : val) {
+      if (c == '\r' || c == '\n' || c == '\0') {
+        return false;
+      }
+      if (c >= 0x80) {
+        val_ascii = false;
+        break;
+      }
+      formatted.push_back(static_cast<wchar_t>(c));
+    }
+    if (!val_ascii) {
+      if (val.size() > static_cast<size_t>(INT_MAX) ||
+          ContainsForbiddenHeaderValueChars(val)) {
+        return false;
+      }
+      formatted.resize(val_start);
+      formatted.append(Utf8ToWide(val));
+    }
+    formatted.append(L"\r\n");
+  }
+
+  *out_formatted = std::move(formatted);
+  return true;
 }
 
 }  // namespace
@@ -122,102 +279,59 @@ std::string WideToUtf8(std::wstring_view wstr) {
   return result;
 }
 
-bool ParseRequestUrl(std::string_view url,
-                     ParsedUrl* out_parsed,
-                     std::string* out_error_message) {
-  const std::wstring url_w = Utf8ToWide(url);
-  if (url_w.empty() || url_w.size() > static_cast<size_t>(MAXDWORD)) {
-    *out_error_message = "Invalid or empty URL.";
+bool ValidateWinHttpRequest(const TurboHttpRequest& request,
+                            ValidatedWinHttpRequest* out_validated,
+                            std::string* out_error_message) {
+  if (!IsValidHttpMethod(request.method())) {
+    *out_error_message = "Invalid HTTP method.";
     return false;
   }
 
-  URL_COMPONENTS url_comp{};
-  url_comp.dwStructSize = sizeof(url_comp);
-  url_comp.dwSchemeLength = static_cast<DWORD>(-1);
-  url_comp.dwHostNameLength = static_cast<DWORD>(-1);
-  url_comp.dwUrlPathLength = static_cast<DWORD>(-1);
-  url_comp.dwExtraInfoLength = static_cast<DWORD>(-1);
-
-  if (!WinHttpCrackUrl(url_w.c_str(), static_cast<DWORD>(url_w.size()), 0,
-                       &url_comp) ||
-      url_comp.dwHostNameLength == 0 ||
-      (url_comp.nScheme != INTERNET_SCHEME_HTTP &&
-       url_comp.nScheme != INTERNET_SCHEME_HTTPS)) {
-    *out_error_message =
-        "Failed to parse URL or unsupported scheme: " + std::string(url);
+  ParsedUrl parsed_url;
+  if (!ParseRequestUrl(request.url(), &parsed_url, out_error_message)) {
     return false;
   }
 
-  out_parsed->is_https = (url_comp.nScheme == INTERNET_SCHEME_HTTPS);
-  out_parsed->port = url_comp.nPort;
-  out_parsed->host.assign(url_comp.lpszHostName, url_comp.dwHostNameLength);
-  if (url_comp.dwUrlPathLength > 0) {
-    out_parsed->path_and_query.assign(url_comp.lpszUrlPath,
-                                      url_comp.dwUrlPathLength);
-  } else {
-    out_parsed->path_and_query = L"/";
+  std::wstring formatted_headers;
+  if (!FormatAndValidateHeaders(request.headers(), &formatted_headers)) {
+    *out_error_message = "Invalid characters in request header.";
+    return false;
   }
-  if (url_comp.dwExtraInfoLength > 0) {
-    out_parsed->path_and_query.append(url_comp.lpszExtraInfo,
-                                      url_comp.dwExtraInfoLength);
+  if (formatted_headers.size() > static_cast<size_t>(MAXDWORD)) {
+    *out_error_message = "Request headers exceed WinHTTP DWORD size limit.";
+    return false;
   }
+  if (request.body() != nullptr &&
+      request.body()->size() > static_cast<size_t>(MAXDWORD)) {
+    *out_error_message = "Request body exceeds WinHTTP DWORD size limit.";
+    return false;
+  }
+
+  ValidatedWinHttpRequest validated;
+  validated.request_id = request.request_id();
+  validated.method = request.method();
+  validated.parsed_url = std::move(parsed_url);
+  validated.formatted_headers = std::move(formatted_headers);
+  if (request.body() != nullptr) {
+    validated.body = *request.body();
+  }
+  if (request.connect_timeout_ms() != nullptr) {
+    validated.connect_timeout_ms = *request.connect_timeout_ms();
+  }
+  if (request.send_timeout_ms() != nullptr) {
+    validated.send_timeout_ms = *request.send_timeout_ms();
+  }
+  if (request.receive_timeout_ms() != nullptr) {
+    validated.receive_timeout_ms = *request.receive_timeout_ms();
+  }
+  if (request.max_response_bytes() != nullptr) {
+    validated.max_response_bytes = *request.max_response_bytes();
+  }
+  validated.follow_redirects = request.follow_redirects();
+  validated.allow_bad_certificates = request.allow_bad_certificates();
+
+  *out_validated = std::move(validated);
   return true;
-}
-
-bool FormatAndValidateHeaders(const flutter::EncodableMap& headers,
-                              std::wstring* out_formatted) {
-  if (headers.empty()) {
-    out_formatted->clear();
-    return true;
-  }
-
-  std::string utf8_headers;
-  utf8_headers.reserve(headers.size() * 48);
-  for (const auto& kv : headers) {
-    if (!std::holds_alternative<std::string>(kv.first) ||
-        !std::holds_alternative<std::string>(kv.second)) {
-      continue;
-    }
-    const auto& key = std::get<std::string>(kv.first);
-    const auto& val = std::get<std::string>(kv.second);
-    if (ContainsForbiddenHeaderChars(key, /*is_name=*/true) ||
-        ContainsForbiddenHeaderChars(val, /*is_name=*/false)) {
-      return false;
-    }
-    utf8_headers.append(key);
-    utf8_headers.append(": ");
-    utf8_headers.append(val);
-    utf8_headers.append("\r\n");
-  }
-  *out_formatted = Utf8ToWide(utf8_headers);
-  return true;
-}
-
-LPCWSTR ResolveMethodWide(std::string_view method,
-                          std::wstring* custom_storage) {
-  if (method == "GET") return L"GET";
-  if (method == "POST") return L"POST";
-  if (method == "PUT") return L"PUT";
-  if (method == "DELETE") return L"DELETE";
-  if (method == "PATCH") return L"PATCH";
-  if (method == "HEAD") return L"HEAD";
-  if (method == "OPTIONS") return L"OPTIONS";
-  *custom_storage = Utf8ToWide(method);
-  return custom_storage->c_str();
-}
-
-int ClampTimeoutMs(std::optional<int64_t> timeout_opt, int default_ms) {
-  if (!timeout_opt.has_value()) {
-    return default_ms;
-  }
-  int64_t val = *timeout_opt;
-  if (val <= 0) {
-    return 0;
-  }
-  if (val > static_cast<int64_t>(INT_MAX)) {
-    return INT_MAX;
-  }
-  return static_cast<int>(val);
 }
 
 std::string ClassifyWinHttpError(bool is_cancelled,
@@ -281,89 +395,61 @@ flutter::EncodableMap ParseRawHttpHeaders(
   }
 
   flutter::EncodableMap result;
-  const std::string utf8_raw = WideToUtf8(raw_headers);
-  const std::string_view raw_view(utf8_raw);
-
   std::string key_buf;
   key_buf.reserve(32);
 
   size_t pos = 0;
   bool is_first_line = true;
-  while (pos < raw_view.size()) {
-    size_t end = raw_view.find("\r\n", pos);
-    if (end == std::string_view::npos) {
-      end = raw_view.size();
+  while (pos < raw_headers.size()) {
+    size_t end = raw_headers.find(L"\r\n", pos);
+    if (end == std::wstring_view::npos) {
+      end = raw_headers.size();
     }
-    std::string_view line = raw_view.substr(pos, end - pos);
-    pos = (end < raw_view.size()) ? end + 2 : raw_view.size();
+    std::wstring_view line = raw_headers.substr(pos, end - pos);
+    pos = (end < raw_headers.size()) ? end + 2 : raw_headers.size();
 
     if (line.empty()) {
       continue;
     }
-    if (is_first_line && line.size() >= 5 && line.substr(0, 5) == "HTTP/") {
+    if (is_first_line && line.size() >= 5 && line.substr(0, 5) == L"HTTP/") {
       is_first_line = false;
       continue;
     }
     is_first_line = false;
 
-    size_t colon = line.find(':');
-    if (colon == std::string_view::npos || colon == 0) {
+    size_t colon = line.find(L':');
+    if (colon == std::wstring_view::npos || colon == 0) {
       continue;
     }
 
-    std::string_view key_view = TrimAsciiView(line.substr(0, colon));
+    std::wstring_view key_view = TrimAsciiWideView(line.substr(0, colon));
     if (key_view.empty()) {
       continue;
     }
-    std::string_view value_view = TrimAsciiView(line.substr(colon + 1));
+    std::wstring_view value_view = TrimAsciiWideView(line.substr(colon + 1));
 
-    AssignLowerAscii(key_view, &key_buf);
-
-    auto [it, inserted] = result.try_emplace(
-        flutter::EncodableValue(key_buf),
-        flutter::EncodableValue(flutter::EncodableList{}));
-    std::get<flutter::EncodableList>(it->second)
-        .emplace_back(std::string(value_view));
+    AssignLowerAsciiFromWide(key_view, &key_buf);
+    std::string value_utf8 = WideToUtf8(value_view);
 
     if (out_content_length != nullptr && key_buf == "content-length" &&
-        !value_view.empty()) {
+        !value_utf8.empty()) {
       int64_t parsed_len = 0;
-      const char* begin = value_view.data();
-      const char* finish = begin + value_view.size();
+      const char* begin = value_utf8.data();
+      const char* finish = begin + value_utf8.size();
       auto [ptr, ec] = std::from_chars(begin, finish, parsed_len);
       if (ec == std::errc() && ptr == finish && parsed_len >= 0) {
         *out_content_length = parsed_len;
       }
     }
+
+    auto [it, inserted] = result.try_emplace(
+        flutter::EncodableValue(key_buf),
+        flutter::EncodableValue(flutter::EncodableList{}));
+    std::get<flutter::EncodableList>(it->second)
+        .emplace_back(std::move(value_utf8));
   }
 
   return result;
-}
-
-std::wstring_view QueryWinHttpHeaderString(HINTERNET h_request,
-                                           DWORD info_level,
-                                           wchar_t* stack_buf,
-                                           DWORD stack_buf_bytes,
-                                           std::wstring* heap_fallback) {
-  DWORD bytes = stack_buf_bytes;
-  if (WinHttpQueryHeaders(h_request, info_level, WINHTTP_HEADER_NAME_BY_INDEX,
-                          stack_buf, &bytes, WINHTTP_NO_HEADER_INDEX)) {
-    return TrimTrailingNulls(stack_buf, stack_buf_bytes / sizeof(wchar_t),
-                             bytes);
-  }
-
-  if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && bytes > 0) {
-    heap_fallback->resize((bytes + sizeof(wchar_t) - 1) / sizeof(wchar_t),
-                          L'\0');
-    if (WinHttpQueryHeaders(h_request, info_level, WINHTTP_HEADER_NAME_BY_INDEX,
-                            heap_fallback->data(), &bytes,
-                            WINHTTP_NO_HEADER_INDEX)) {
-      return TrimTrailingNulls(heap_fallback->data(), heap_fallback->size(),
-                               bytes);
-    }
-  }
-
-  return std::wstring_view();
 }
 
 TurboHttpResponse MakeErrorResponse(std::string_view code,
@@ -372,6 +458,10 @@ TurboHttpResponse MakeErrorResponse(std::string_view code,
   res.set_error_code(code);
   res.set_error_message(message);
   return res;
+}
+
+TurboHttpResponse MakeCancelResponse() {
+  return MakeErrorResponse("cancel", "Request was cancelled.");
 }
 
 }  // namespace flutter_turbo_fetch

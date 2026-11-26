@@ -6,10 +6,11 @@
 
 #include <cstddef>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unordered_map>
+#include <string_view>
 
 namespace flutter_turbo_fetch {
 
@@ -45,7 +46,7 @@ class TurboSessionManager {
   // creating and caching a new one if absent. Returns nullptr on failure
   // (preserving GetLastError()).
   std::shared_ptr<ScopedWinHttpHandle> AcquireConnection(
-      const std::wstring& host,
+      std::wstring_view host,
       INTERNET_PORT port);
 
   // Closes cached connection handles and the shared WinHTTP session handle.
@@ -58,17 +59,34 @@ class TurboSessionManager {
   struct ConnectionKey {
     std::wstring host;
     INTERNET_PORT port = 0;
-
-    bool operator==(const ConnectionKey& other) const {
-      return port == other.port && host == other.host;
-    }
   };
 
-  struct ConnectionKeyHash {
-    size_t operator()(const ConnectionKey& key) const {
-      size_t h1 = std::hash<std::wstring>{}(key.host);
-      size_t h2 = std::hash<INTERNET_PORT>{}(key.port);
-      return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+  struct ConnectionKeyView {
+    std::wstring_view host;
+    INTERNET_PORT port = 0;
+  };
+
+  struct ConnectionKeyLess {
+    using is_transparent = void;
+
+    static bool Compare(std::wstring_view lhs_host,
+                        INTERNET_PORT lhs_port,
+                        std::wstring_view rhs_host,
+                        INTERNET_PORT rhs_port) {
+      if (lhs_port != rhs_port) {
+        return lhs_port < rhs_port;
+      }
+      return lhs_host < rhs_host;
+    }
+
+    bool operator()(const ConnectionKey& a, const ConnectionKey& b) const {
+      return Compare(a.host, a.port, b.host, b.port);
+    }
+    bool operator()(const ConnectionKey& a, const ConnectionKeyView& b) const {
+      return Compare(a.host, a.port, b.host, b.port);
+    }
+    bool operator()(const ConnectionKeyView& a, const ConnectionKey& b) const {
+      return Compare(a.host, a.port, b.host, b.port);
     }
   };
 
@@ -76,9 +94,9 @@ class TurboSessionManager {
 
   mutable std::mutex mutex_;
   HINTERNET session_handle_ = nullptr;
-  std::unordered_map<ConnectionKey,
-                     std::shared_ptr<ScopedWinHttpHandle>,
-                     ConnectionKeyHash>
+  std::map<ConnectionKey,
+           std::shared_ptr<ScopedWinHttpHandle>,
+           ConnectionKeyLess>
       connection_cache_;
   std::deque<ConnectionKey> connection_order_;
 };

@@ -41,7 +41,7 @@ HINTERNET TurboSessionManager::AcquireSession() {
 }
 
 std::shared_ptr<ScopedWinHttpHandle> TurboSessionManager::AcquireConnection(
-    const std::wstring& host,
+    std::wstring_view host,
     INTERNET_PORT port) {
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -50,13 +50,13 @@ std::shared_ptr<ScopedWinHttpHandle> TurboSessionManager::AcquireConnection(
     return nullptr;
   }
 
-  ConnectionKey key{host, port};
-  auto it = connection_cache_.find(key);
+  auto it = connection_cache_.find(ConnectionKeyView{host, port});
   if (it != connection_cache_.end()) {
     return it->second;
   }
 
-  HINTERNET h_connect = WinHttpConnect(session, host.c_str(), port, 0);
+  ConnectionKey key{std::wstring(host), port};
+  HINTERNET h_connect = WinHttpConnect(session, key.host.c_str(), port, 0);
   if (h_connect == nullptr) {
     return nullptr;
   }
