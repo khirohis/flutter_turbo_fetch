@@ -12,6 +12,8 @@ list(APPEND PLUGIN_SOURCES
   "turbo_http_executor.h"
   "turbo_session_manager.cpp"
   "turbo_session_manager.h"
+  "winhttp_helpers.cpp"
+  "winhttp_helpers.h"
   "messages.g.cpp"
   "messages.g.h"
 )

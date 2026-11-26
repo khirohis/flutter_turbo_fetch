@@ -11,20 +11,14 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "messages.g.h"
 #include "turbo_session_manager.h"
+#include "winhttp_helpers.h"
 
 namespace flutter_turbo_fetch {
-
-enum class RequestPhase {
-  kConnecting,
-  kSendingBody,
-  kReceiving,
-};
 
 struct RequestContext {
   std::mutex handle_mutex;
@@ -50,6 +44,13 @@ struct RequestContext {
       h_request = nullptr;
     }
   }
+};
+
+struct ReadBodyResult {
+  bool ok = false;
+  std::vector<uint8_t> body;
+  std::string error_code;
+  std::string error_message;
 };
 
 class TurboHttpExecutor {
@@ -78,17 +79,6 @@ class TurboHttpExecutor {
   size_t active_request_count() const;
   bool has_active_request(const std::string& request_id) const;
 
-  // Classifies a Win32 / WinHTTP error into the platform-unified error code.
-  static std::string ClassifyError(const RequestContext& ctx,
-                                   DWORD win32_error,
-                                   RequestPhase phase);
-
-  // Parses CRLF-delimited raw HTTP response headers into a lowercase-keyed
-  // multi-value EncodableMap, optionally extracting Content-Length.
-  static flutter::EncodableMap ParseRawHeaders(
-      std::wstring_view raw_headers,
-      std::optional<int64_t>* out_content_length);
-
   // Writes the entire request body via write_fn, handling partial writes and
   // cancellation between chunks.
   static bool WriteAllRequestBody(const std::vector<uint8_t>& body,
@@ -96,36 +86,15 @@ class TurboHttpExecutor {
                                   const WriteDataFn& write_fn,
                                   DWORD* out_win32_error);
 
-  // Reads the response body directly into out_body without intermediate chunk
-  // copies, enforcing maxResponseBytes and cancellation checks.
-  static bool ReadResponseBodyDirect(
+  // Reads the response body directly into the result buffer without
+  // intermediate chunk copies, enforcing maxResponseBytes and cancellation.
+  static ReadBodyResult ReadResponseBodyDirect(
       std::optional<int64_t> content_length,
       std::optional<int64_t> max_response_bytes,
       const RequestContext& ctx,
-      const ReadDataFn& read_fn,
-      std::vector<uint8_t>* out_body,
-      std::string* out_error_code,
-      std::string* out_error_message,
-      DWORD* out_win32_error);
-
-  // Helper used by unit tests to validate maxResponseBytes both via
-  // Content-Length and cumulative chunk byte counts.
-  static bool ValidateAndAssembleChunks(
-      std::optional<int64_t> content_length,
-      std::optional<int64_t> max_response_bytes,
-      const std::vector<std::vector<uint8_t>>& chunks,
-      std::vector<uint8_t>* out_body,
-      std::string* out_error_code,
-      std::string* out_error_message);
+      const ReadDataFn& read_fn);
 
  private:
-  struct ParsedUrl {
-    bool is_https = false;
-    INTERNET_PORT port = 0;
-    std::wstring host;
-    std::wstring path_and_query;
-  };
-
   struct RequestParams {
     std::string request_id;
     std::string method;
@@ -148,6 +117,11 @@ class TurboHttpExecutor {
     std::function<void(TurboHttpResponse)> on_result;
   };
 
+  static RequestParams BuildRequestParams(const TurboHttpRequest& request);
+  static void ConfigureRequestOptions(HINTERNET raw_request,
+                                      const RequestParams& params,
+                                      bool is_https);
+
   static void CALLBACK WorkCallback(PTP_CALLBACK_INSTANCE instance,
                                     PVOID parameter);
 
@@ -169,7 +143,7 @@ class TurboHttpExecutor {
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<RequestContext>>
       active_requests_;
-  std::atomic<bool> is_shutdown_{false};
+  bool is_shutdown_ = false;
 };
 
 }  // namespace flutter_turbo_fetch
