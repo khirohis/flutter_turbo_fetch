@@ -10,6 +10,12 @@ find_package(CURL REQUIRED)
 list(APPEND PLUGIN_SOURCES
   "flutter_turbo_fetch_plugin.cc"
   "flutter_turbo_fetch_plugin.h"
+  "curl_helpers.cc"
+  "curl_helpers.h"
+  "curl_request_context.cc"
+  "curl_request_context.h"
+  "curl_transport.cc"
+  "curl_transport.h"
   "turbo_http_executor.cc"
   "turbo_http_executor.h"
   "turbo_session_manager.cc"
@@ -21,6 +27,7 @@ list(APPEND PLUGIN_SOURCES
 # Standard Flutter Linux Plugin Target
 if(TARGET flutter)
   find_package(PkgConfig REQUIRED)
+  find_package(Threads REQUIRED)
   pkg_check_modules(GTK REQUIRED gtk+-3.0)
 
   add_library(${PLUGIN_NAME} SHARED
@@ -29,6 +36,7 @@ if(TARGET flutter)
   )
 
   apply_standard_settings(${PLUGIN_NAME})
+  target_compile_features(${PLUGIN_NAME} PRIVATE cxx_std_17)
   set_target_properties(${PLUGIN_NAME} PROPERTIES
     CXX_VISIBILITY_PRESET hidden
   )
@@ -44,6 +52,7 @@ if(TARGET flutter)
   )
   target_link_libraries(${PLUGIN_NAME} PRIVATE
     flutter
+    Threads::Threads
     ${GTK_LIBRARIES}
     ${CURL_LIBRARIES}
   )
@@ -61,25 +70,14 @@ if(BUILD_TESTING)
 
   set(TEST_BINARY_NAME "${PROJECT_NAME}_linux_test")
 
-  if(NOT DEFINED FLUTTER_ENGINE_DIR)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64")
-      set(FLUTTER_ENGINE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64"
-      )
-    else()
-      set(FLUTTER_ENGINE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/../.fvm/flutter_sdk/bin/cache/artifacts/engine/windows-x64"
-      )
-    endif()
-  endif()
-
-  set(WRAPPER_ROOT "${FLUTTER_ENGINE_DIR}/cpp_client_wrapper")
-
   add_executable(${TEST_BINARY_NAME}
     "test/turbo_session_manager_test.cpp"
     "test/turbo_http_executor_test.cpp"
     "test/flutter_turbo_fetch_plugin_test.cpp"
     "flutter_turbo_fetch_plugin.cc"
+    "curl_helpers.cc"
+    "curl_request_context.cc"
+    "curl_transport.cc"
     "turbo_http_executor.cc"
     "turbo_session_manager.cc"
   )
@@ -106,4 +104,3 @@ if(BUILD_TESTING)
 
   add_test(NAME ${TEST_BINARY_NAME} COMMAND ${TEST_BINARY_NAME})
 endif()
-

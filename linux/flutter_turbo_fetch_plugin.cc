@@ -6,6 +6,7 @@
 #include "messages.g.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -13,7 +14,10 @@
 
 struct _FlutterTurboFetchPlugin {
   GObject parent_instance;
-  std::unique_ptr<flutter_turbo_fetch::FlutterTurboFetchPlugin> cpp_plugin;
+  // Raw pointer owned by GObject lifecycle (initialized in register, deleted in
+  // dispose) because g_object_new zero-initializes memory without running C++
+  // constructors or destructors.
+  flutter_turbo_fetch::FlutterTurboFetchPlugin* cpp_plugin;
 };
 
 G_DEFINE_TYPE(FlutterTurboFetchPlugin, flutter_turbo_fetch_plugin, g_object_get_type())
@@ -21,7 +25,25 @@ G_DEFINE_TYPE(FlutterTurboFetchPlugin, flutter_turbo_fetch_plugin, g_object_get_
 struct AsyncResponseData {
   FlutterTurboFetchTurboFetchHostApiResponseHandle* response_handle;
   flutter_turbo_fetch::TurboHttpResponse response;
+
+  AsyncResponseData(FlutterTurboFetchTurboFetchHostApiResponseHandle* handle,
+                    flutter_turbo_fetch::TurboHttpResponse res)
+      : response_handle(handle), response(std::move(res)) {}
+
+  AsyncResponseData(const AsyncResponseData&) = delete;
+  AsyncResponseData& operator=(const AsyncResponseData&) = delete;
+
+  ~AsyncResponseData() {
+    if (response_handle != nullptr) {
+      g_object_unref(response_handle);
+      response_handle = nullptr;
+    }
+  }
 };
+
+static void destroy_async_response_data(gpointer user_data) {
+  delete static_cast<AsyncResponseData*>(user_data);
+}
 
 static gboolean on_async_response_idle(gpointer user_data) {
   auto* data = static_cast<AsyncResponseData*>(user_data);
@@ -60,7 +82,9 @@ static gboolean on_async_response_idle(gpointer user_data) {
                                    ? data->response.error_message()->c_str()
                                    : nullptr;
 
-  FlutterTurboFetchTurboHttpResponse* g_response =
+  // Use g_autoptr so the GObject response wrapper is unref'd after
+  // respond_execute_request finishes serializing it.
+  g_autoptr(FlutterTurboFetchTurboHttpResponse) g_response =
       flutter_turbo_fetch_turbo_http_response_new(
           status_code_ptr, status_message, headers_val, body_ptr, body_len,
           error_code, error_message);
@@ -68,8 +92,6 @@ static gboolean on_async_response_idle(gpointer user_data) {
   flutter_turbo_fetch_turbo_fetch_host_api_respond_execute_request(
       data->response_handle, g_response);
 
-  g_object_unref(data->response_handle);
-  delete data;
   return G_SOURCE_REMOVE;
 }
 
@@ -78,6 +100,17 @@ static void on_execute_request(
     FlutterTurboFetchTurboFetchHostApiResponseHandle* response_handle,
     gpointer user_data) {
   auto* self = FLUTTER_TURBO_FETCH_PLUGIN(user_data);
+  if (self->cpp_plugin == nullptr) {
+    int64_t zero_status = 0;
+    g_autoptr(FlutterTurboFetchTurboHttpResponse) g_response =
+        flutter_turbo_fetch_turbo_http_response_new(
+            &zero_status, nullptr, nullptr, nullptr, 0,
+            flutter_turbo_fetch::TurboErrorCodes::kCancel,
+            "Plugin has been disposed.");
+    flutter_turbo_fetch_turbo_fetch_host_api_respond_execute_request(
+        response_handle, g_response);
+    return;
+  }
 
   const gchar* req_id =
       flutter_turbo_fetch_turbo_http_request_get_request_id(request);
@@ -90,6 +123,7 @@ static void on_execute_request(
   std::unordered_map<std::string, std::string> cpp_headers;
   if (headers && fl_value_get_type(headers) == FL_VALUE_TYPE_MAP) {
     size_t len = fl_value_get_length(headers);
+    cpp_headers.reserve(len);
     for (size_t i = 0; i < len; ++i) {
       FlValue* k = fl_value_get_map_key(headers, i);
       FlValue* v = fl_value_get_map_value(headers, i);
@@ -103,11 +137,9 @@ static void on_execute_request(
   size_t body_len = 0;
   const uint8_t* body =
       flutter_turbo_fetch_turbo_http_request_get_body(request, &body_len);
-  std::vector<uint8_t> cpp_body;
-  const std::vector<uint8_t>* cpp_body_ptr = nullptr;
-  if (body && body_len > 0) {
-    cpp_body.assign(body, body + body_len);
-    cpp_body_ptr = &cpp_body;
+  std::optional<std::vector<uint8_t>> cpp_body;
+  if (body != nullptr && body_len > 0) {
+    cpp_body.emplace(body, body + body_len);
   }
 
   int64_t* conn_timeout =
@@ -125,52 +157,63 @@ static void on_execute_request(
 
   flutter_turbo_fetch::TurboHttpRequest cpp_req(
       req_id ? req_id : "", url ? url : "", method ? method : "GET",
-      std::move(cpp_headers), cpp_body_ptr, conn_timeout, recv_timeout,
-      send_timeout, follow_redirects, allow_bad_certs, max_bytes);
+      std::move(cpp_headers), std::move(cpp_body), conn_timeout, recv_timeout,
+      send_timeout, follow_redirects != FALSE, allow_bad_certs != FALSE,
+      max_bytes);
 
   g_object_ref(response_handle);
   self->cpp_plugin->Execute(
-      cpp_req,
+      std::move(cpp_req),
       [response_handle](flutter_turbo_fetch::TurboHttpResponse response) {
-        auto* data = new AsyncResponseData{response_handle, std::move(response)};
-        g_idle_add(on_async_response_idle, data);
+        auto* data =
+            new AsyncResponseData(response_handle, std::move(response));
+        // Dispatch at G_PRIORITY_DEFAULT with a GDestroyNotify so completed
+        // responses are neither starved behind redraw work nor leaked on
+        // main-loop teardown.
+        g_idle_add_full(G_PRIORITY_DEFAULT, on_async_response_idle, data,
+                        destroy_async_response_data);
       });
 }
 
 static FlutterTurboFetchTurboFetchHostApiCancelRequestResponse*
 on_cancel_request(const gchar* request_id, gpointer user_data) {
   auto* self = FLUTTER_TURBO_FETCH_PLUGIN(user_data);
-  if (request_id) {
+  if (self->cpp_plugin != nullptr && request_id != nullptr) {
     self->cpp_plugin->CancelRequest(request_id);
   }
   return flutter_turbo_fetch_turbo_fetch_host_api_cancel_request_response_new();
 }
 
 static const FlutterTurboFetchTurboFetchHostApiVTable g_host_api_vtable = {
-    .execute_request = on_execute_request,
-    .cancel_request = on_cancel_request,
+    on_execute_request,
+    on_cancel_request,
 };
 
 static void flutter_turbo_fetch_plugin_dispose(GObject* object) {
   FlutterTurboFetchPlugin* self = FLUTTER_TURBO_FETCH_PLUGIN(object);
-  if (self->cpp_plugin) {
+  if (self->cpp_plugin != nullptr) {
     self->cpp_plugin->Shutdown();
-    self->cpp_plugin.reset();
+    delete self->cpp_plugin;
+    self->cpp_plugin = nullptr;
   }
   G_OBJECT_CLASS(flutter_turbo_fetch_plugin_parent_class)->dispose(object);
 }
 
-static void flutter_turbo_fetch_plugin_class_init(FlutterTurboFetchPluginClass* klass) {
+static void flutter_turbo_fetch_plugin_class_init(
+    FlutterTurboFetchPluginClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = flutter_turbo_fetch_plugin_dispose;
 }
 
-static void flutter_turbo_fetch_plugin_init(FlutterTurboFetchPlugin* self) {}
+static void flutter_turbo_fetch_plugin_init(FlutterTurboFetchPlugin* self) {
+  self->cpp_plugin = nullptr;
+}
 
-void flutter_turbo_fetch_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
+void flutter_turbo_fetch_plugin_register_with_registrar(
+    FlPluginRegistrar* registrar) {
   FlutterTurboFetchPlugin* plugin = FLUTTER_TURBO_FETCH_PLUGIN(
       g_object_new(flutter_turbo_fetch_plugin_get_type(), nullptr));
 
-  plugin->cpp_plugin = std::make_unique<flutter_turbo_fetch::FlutterTurboFetchPlugin>();
+  plugin->cpp_plugin = new flutter_turbo_fetch::FlutterTurboFetchPlugin();
 
   FlBinaryMessenger* messenger = fl_plugin_registrar_get_messenger(registrar);
   flutter_turbo_fetch_turbo_fetch_host_api_set_method_handlers(
@@ -191,9 +234,7 @@ FlutterTurboFetchPlugin::FlutterTurboFetchPlugin(
     std::unique_ptr<TurboHttpExecutor> executor)
     : executor_(std::move(executor)) {}
 
-FlutterTurboFetchPlugin::~FlutterTurboFetchPlugin() {
-  Shutdown();
-}
+FlutterTurboFetchPlugin::~FlutterTurboFetchPlugin() { Shutdown(); }
 
 void FlutterTurboFetchPlugin::Shutdown() {
   if (executor_) {
@@ -208,6 +249,12 @@ void FlutterTurboFetchPlugin::Execute(
     const TurboHttpRequest& request,
     std::function<void(TurboHttpResponse)> on_result) {
   executor_->Execute(request, std::move(on_result));
+}
+
+void FlutterTurboFetchPlugin::Execute(
+    TurboHttpRequest&& request,
+    std::function<void(TurboHttpResponse)> on_result) {
+  executor_->Execute(std::move(request), std::move(on_result));
 }
 
 void FlutterTurboFetchPlugin::CancelRequest(const std::string& request_id) {

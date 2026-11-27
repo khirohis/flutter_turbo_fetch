@@ -15,9 +15,6 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE(FlutterTurboFetchPlugin, flutter_turbo_fetch_plugin,
                      FLUTTER, TURBO_FETCH_PLUGIN, GObject)
 
-FLUTTER_PLUGIN_EXPORT FlutterTurboFetchPlugin* flutter_turbo_fetch_plugin_new(
-    FlPluginRegistrar* registrar);
-
 FLUTTER_PLUGIN_EXPORT void flutter_turbo_fetch_plugin_register_with_registrar(
     FlPluginRegistrar* registrar);
 

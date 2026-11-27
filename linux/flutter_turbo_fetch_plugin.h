@@ -21,6 +21,9 @@ class FlutterTurboFetchPlugin {
   void Execute(const TurboHttpRequest& request,
                std::function<void(TurboHttpResponse)> on_result);
 
+  void Execute(TurboHttpRequest&& request,
+               std::function<void(TurboHttpResponse)> on_result);
+
   void CancelRequest(const std::string& request_id);
 
   void Shutdown();
@@ -35,4 +38,3 @@ class FlutterTurboFetchPlugin {
 }  // namespace flutter_turbo_fetch
 
 #endif  // FLUTTER_PLUGIN_FLUTTER_TURBO_FETCH_PLUGIN_INTERNAL_H_
-
