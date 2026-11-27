@@ -1,7 +1,9 @@
 #include "flutter_turbo_fetch_plugin.h"
 
-#include <iostream>
+#include <atomic>
+#include <functional>
 #include <memory>
+#include <string>
 
 #include "test/test_assertions.h"
 
@@ -10,27 +12,50 @@ namespace test {
 
 TURBO_TEST(FlutterTurboFetchPlugin_ExecuteAndCancelDelegateToExecutor) {
   TurboSessionManager session_manager;
-  FlutterTurboFetchPlugin plugin(
-      std::make_unique<TurboHttpExecutor>(session_manager));
+  std::shared_ptr<CurlRequestContext> captured_ctx;
+  std::function<void(TurboHttpResponse)> captured_complete;
+
+  auto executor = std::make_unique<TurboHttpExecutor>(
+      session_manager,
+      [&](ValidatedCurlRequest /*req*/,
+          std::shared_ptr<CurlRequestContext> ctx,
+          std::function<void(TurboHttpResponse)> on_complete) {
+        captured_ctx = std::move(ctx);
+        captured_complete = std::move(on_complete);
+      });
+
+  FlutterTurboFetchPlugin plugin(std::move(executor));
 
   const int64_t timeout_ms = 5000;
   TurboHttpRequest req("test-plugin-req", "https://example.com/api", "GET", {},
                        nullptr, &timeout_ms, &timeout_ms, &timeout_ms, true,
                        false, nullptr);
 
-  std::atomic<bool> called{false};
-  plugin.Execute(req, [&](const TurboHttpResponse&) {
-    called.store(true);
+  std::atomic<int> callback_count{0};
+  std::string observed_error;
+  plugin.Execute(req, [&](const TurboHttpResponse& res) {
+    callback_count.fetch_add(1);
+    if (res.error_code() != nullptr) {
+      observed_error = *res.error_code();
+    }
   });
 
-  // Verify delegation by cancelling via plugin
+  ASSERT_NE(nullptr, captured_ctx.get());
   plugin.CancelRequest("test-plugin-req");
+  ASSERT_TRUE(captured_ctx->is_cancelled.load());
+
+  captured_complete(MakeCancelResponse());
+  ASSERT_EQ(1, callback_count.load());
+  ASSERT_EQ(std::string(TurboErrorCodes::kCancel), observed_error);
+
   plugin.Shutdown();
-  ASSERT_TRUE(called.load());
 }
 
 TURBO_TEST(FlutterTurboFetchPlugin_Shutdown_CleansUpExecutorAndOwnedSessionSafely) {
   FlutterTurboFetchPlugin plugin;
+
+  // Shutdown before any requests, then Execute after Shutdown must return cancel.
+  plugin.Shutdown();
 
   const int64_t timeout_ms = 5000;
   TurboHttpRequest req("test-plugin-shutdown", "https://example.com/api", "GET",
@@ -45,8 +70,10 @@ TURBO_TEST(FlutterTurboFetchPlugin_Shutdown_CleansUpExecutorAndOwnedSessionSafel
     }
   });
 
-  plugin.Shutdown();
   ASSERT_EQ(1, callback_count.load());
+
+  // Repeated Shutdown must be idempotent and safe.
+  plugin.Shutdown();
 }
 
 }  // namespace test
@@ -55,4 +82,3 @@ TURBO_TEST(FlutterTurboFetchPlugin_Shutdown_CleansUpExecutorAndOwnedSessionSafel
 int main() {
   return flutter_turbo_fetch::test::RunAllTests();
 }
-

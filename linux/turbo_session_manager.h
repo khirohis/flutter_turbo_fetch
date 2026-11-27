@@ -37,6 +37,7 @@ class TurboSessionManager {
   mutable std::mutex mutex_;
   CURLM* multi_handle_ = nullptr;
   bool is_shutdown_ = false;
+  bool global_init_acquired_ = false;
 };
 
 }  // namespace flutter_turbo_fetch

@@ -1,39 +1,56 @@
 #include "turbo_session_manager.h"
 
-#include <atomic>
+#include <mutex>
 
 namespace flutter_turbo_fetch {
 
 namespace {
 
-// Global curl initialization tracker.
-std::atomic<int> g_global_init_ref_count{0};
+// Mutex-guarded global curl initialization tracker so concurrent
+// TurboSessionManager lifecycles cannot race curl_global_init/cleanup.
+std::mutex& GlobalCurlInitMutex() {
+  static std::mutex mtx;
+  return mtx;
+}
 
-void EnsureCurlGlobalInit() {
-  if (g_global_init_ref_count.fetch_add(1) == 0) {
-    curl_global_init(CURL_GLOBAL_ALL);
+int g_global_init_ref_count = 0;
+
+bool EnsureCurlGlobalInit() {
+  std::lock_guard<std::mutex> lock(GlobalCurlInitMutex());
+  if (g_global_init_ref_count == 0) {
+    if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
+      return false;
+    }
   }
+  ++g_global_init_ref_count;
+  return true;
 }
 
 void EnsureCurlGlobalCleanup() {
-  if (g_global_init_ref_count.fetch_sub(1) == 1) {
+  std::lock_guard<std::mutex> lock(GlobalCurlInitMutex());
+  if (g_global_init_ref_count <= 0) {
+    return;
+  }
+  --g_global_init_ref_count;
+  if (g_global_init_ref_count == 0) {
     curl_global_cleanup();
   }
 }
 
 }  // namespace
 
-TurboSessionManager::TurboSessionManager() {
-  EnsureCurlGlobalInit();
-}
+TurboSessionManager::TurboSessionManager()
+    : global_init_acquired_(EnsureCurlGlobalInit()) {}
 
 TurboSessionManager::~TurboSessionManager() {
   Shutdown();
-  EnsureCurlGlobalCleanup();
+  if (global_init_acquired_) {
+    EnsureCurlGlobalCleanup();
+  }
 }
 
 void TurboSessionManager::InitializeMultiHandleLocked() {
-  if (multi_handle_ != nullptr) {
+  if (!global_init_acquired_ || multi_handle_ != nullptr) {
     return;
   }
 
